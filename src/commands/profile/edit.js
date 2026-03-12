@@ -7,6 +7,74 @@ import { PreviewPanel, showSuccessMessage } from '../../tui/components/preview-p
 import { readJson, writeJson, exists } from '../../utils/files.js';
 import { getVariablesPath, hasTemplate } from '../../utils/paths.js';
 import { preloadModels } from '../../tui/model-aggregator.js';
+import blessed from 'blessed';
+
+function showApplyConfirm(screen, callback) {
+  const confirmBox = blessed.box({
+    parent: screen,
+    top: 'center',
+    left: 'center',
+    width: 'shrink',
+    height: 'shrink',
+    border: { type: 'line' },
+    label: ' Apply Profile ',
+    tags: true,
+    style: {
+      fg: 'white',
+      border: { fg: 'cyan' },
+    },
+  });
+
+  const message = blessed.box({
+    parent: confirmBox,
+    top: 1,
+    left: 'center',
+    width: 'shrink',
+    height: 1,
+    content: ' Apply profile now? ',
+    tags: true,
+  });
+
+  let selected = 0; // 0 = Yes, 1 = No
+  const options = ['  Yes  ', '  No  '];
+
+  const optionBox = blessed.box({
+    parent: confirmBox,
+    top: 3,
+    left: 'center',
+    width: 'shrink',
+    height: 1,
+    content: options[selected],
+    tags: true,
+    style: {
+      fg: 'black',
+      bg: 'cyan',
+    },
+  });
+
+  function updateOption() {
+    optionBox.setContent(options[selected]);
+    screen.render();
+  }
+
+  confirmBox.key(['left', 'right'], () => {
+    selected = selected === 0 ? 1 : 0;
+    updateOption();
+  });
+
+  confirmBox.key(['enter'], () => {
+    confirmBox.destroy();
+    callback(selected === 0);
+  });
+
+  confirmBox.key(['escape'], () => {
+    confirmBox.destroy();
+    callback(false);
+  });
+
+  confirmBox.focus();
+  screen.render();
+}
 
 async function saveVariables(profileName, variables) {
   const variablesPath = getVariablesPath(profileName);
@@ -136,10 +204,28 @@ export async function editAction(profileName, _options) {
 
   async function handleSave() {
     await saveVariables(targetProfile, variables);
-    previewPanel.hide();
-    showSuccessMessage(screen, 'Saved successfully!', () => {
-      screen.destroy();
-      process.exit(0);
+
+    showApplyConfirm(screen, async (apply) => {
+      if (apply) {
+        try {
+          const manager = new ProfileManager();
+          await manager.switchProfile(targetProfile);
+          showSuccessMessage(screen, 'Applied successfully!', () => {
+            screen.destroy();
+            process.exit(0);
+          });
+        } catch (error) {
+          showSuccessMessage(screen, 'Saved! Apply failed: ' + error.message, () => {
+            screen.destroy();
+            process.exit(0);
+          });
+        }
+      } else {
+        showSuccessMessage(screen, 'Saved successfully!', () => {
+          screen.destroy();
+          process.exit(0);
+        });
+      }
     });
   }
 

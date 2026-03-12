@@ -56,6 +56,9 @@ oos profile mv old-name new-name
 
 # 显示配置详情
 oos profile show my-profile
+
+# 打开配置目录（在文件资源管理器中）
+oos profile open my-profile
 ```
 
 ### 模板管理

@@ -62,7 +62,7 @@ export async function renderAction(profileName, options = {}) {
     if (error instanceof MissingVariableError) {
       throw new ProfileError(
         `Missing variable: ${error.variableName}. ` +
-          `Use 'oos var set ${profileName} ${error.variableName} <value>' to set it.`
+          `Please set this variable in your profile variables file.`
       );
     }
     throw error;

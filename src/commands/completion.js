@@ -20,7 +20,7 @@ _oos_completion() {
 
   case \${COMP_CWORD} in
     1)
-      COMPREPLY=($(compgen -W "profile template var render current validate init completion --help -h --version -v" -- "\${cur}"))
+      COMPREPLY=($(compgen -W "profile template render current validate init completion --help -h --version -v" -- "\${cur}"))
       ;;
     2)
       case "\${words[1]}" in
@@ -29,9 +29,6 @@ _oos_completion() {
           ;;
         template)
           COMPREPLY=($(compgen -W "list ls create show" -- "\${cur}"))
-          ;;
-        var)
-          COMPREPLY=($(compgen -W "set get list ls" -- "\${cur}"))
           ;;
       esac
       ;;
@@ -51,9 +48,6 @@ _oos_completion() {
               ;;
           esac
           ;;
-        var)
-          COMPREPLY=($(compgen -W "$(_oos_get_profiles)" -- "\${cur}"))
-          ;;
       esac
       ;;
     4)
@@ -65,13 +59,6 @@ _oos_completion() {
               ;;
           esac
           ;;
-        var)
-          case "\${words[2]}" in
-            get)
-              COMPREPLY=($(compgen -W "$(_oos_get_var_names \${words[3]})" -- "\${cur}"))
-              ;;
-          esac
-          ;;
       esac
       ;;
   esac
@@ -79,11 +66,6 @@ _oos_completion() {
 
 _oos_get_profiles() {
   oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}"
-}
-
-_oos_get_var_names() {
-  local profile="$1"
-  oos var list "$profile" --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(Object.keys(j).join(' '))}catch{}"
 }
 
 complete -F _oos_completion oos
@@ -109,7 +91,6 @@ _oos() {
       _values 'commands' \\
         'profile[Profile management]' \\
         'template[Template management]' \\
-        'var[Variable management]' \\
         'render[Render template]' \\
         'current[Show current config]' \\
         'validate[Validate config]' \\
@@ -147,28 +128,6 @@ _oos() {
               ;;
           esac
           ;;
-        var)
-          case $words[3] in
-            list|ls)
-              _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
-              ;;
-            set)
-              if [[ $CURRENT -eq 4 ]]; then
-                _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
-              fi
-              ;;
-            get)
-              if [[ $CURRENT -eq 4 ]]; then
-                _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
-              elif [[ $CURRENT -eq 5 ]]; then
-                _values 'variables' $(oos var list $words[4] --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(Object.keys(j).join(' '))}catch{}")
-              fi
-              ;;
-            *)
-              _values 'subcommands' set get list ls
-              ;;
-          esac
-          ;;
         render)
           _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
           ;;
@@ -188,7 +147,6 @@ complete -c oos -f
 # Top level commands
 complete -c oos -n __fish_use_subcommand -a profile -d 'Profile management'
 complete -c oos -n __fish_use_subcommand -a template -d 'Template management'
-complete -c oos -n __fish_use_subcommand -a var -d 'Variable management'
 complete -c oos -n __fish_use_subcommand -a render -d 'Render template'
 complete -c oos -n __fish_use_subcommand -a current -d 'Show current config'
 complete -c oos -n __fish_use_subcommand -a validate -d 'Validate config'
@@ -221,14 +179,6 @@ complete -c oos -n '__fish_seen_subcommand_from template' -a show -d 'Show templ
 
 complete -c oos -n '__fish_seen_subcommand_from template; and __fish_seen_subcommand_from show' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
 
-# Var subcommands
-complete -c oos -n '__fish_seen_subcommand_from var' -a set -d 'Set variable'
-complete -c oos -n '__fish_seen_subcommand_from var' -a get -d 'Get variable'
-complete -c oos -n '__fish_seen_subcommand_from var' -a list -d 'List variables'
-complete -c oos -n '__fish_seen_subcommand_from var' -a ls -d 'List variables'
-
-complete -c oos -n '__fish_seen_subcommand_from var; and __fish_seen_subcommand_from set get list ls' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
-
 # Render
 complete -c oos -n '__fish_seen_subcommand_from render' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
 
@@ -250,7 +200,7 @@ Register-ArgumentCompleter -Native -CommandName 'oos' -ScriptBlock {
     $tokens = @($commandElements | ForEach-Object { $_.Extent.Text })
 
     if ($tokens.Count -eq 1) {
-        @('profile', 'template', 'var', 'render', 'current', 'validate', 'init', 'completion') |
+        @('profile', 'template', 'render', 'current', 'validate', 'init', 'completion') |
             Where-Object { $_ -like "$wordToComplete*" } |
             ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
         return
@@ -277,23 +227,6 @@ Register-ArgumentCompleter -Native -CommandName 'oos' -ScriptBlock {
             }
             elseif ($tokens[2] -eq 'show') {
                 (oos profile list --json 2>$null | ConvertFrom-Json).name |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
-            }
-        }
-        'var' {
-            if ($tokens.Count -eq 2) {
-                @('set', 'get', 'list', 'ls') |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
-            }
-            elseif ($tokens[2] -in @('set', 'get', 'list', 'ls') -and $tokens.Count -eq 3) {
-                (oos profile list --json 2>$null | ConvertFrom-Json).name |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
-            }
-            elseif ($tokens[2] -eq 'get' -and $tokens.Count -eq 4) {
-                (oos var list $tokens[3] --json 2>$null | ConvertFrom-Json).PSObject.Properties.Name |
                     Where-Object { $_ -like "$wordToComplete*" } |
                     ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
             }

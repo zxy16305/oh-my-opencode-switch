@@ -10,7 +10,6 @@ import { registerInitCommand } from '../src/commands/init.js';
 
 import { registerProfileCommands } from '../src/commands/profile/index.js';
 import { registerTemplateCommands } from '../src/commands/template/index.js';
-import { registerVarCommands } from '../src/commands/var/index.js';
 import { registerRenderCommand } from '../src/commands/render.js';
 import { registerCurrentCommand } from '../src/commands/current.js';
 import { registerValidateCommand } from '../src/commands/validate.js';
@@ -35,7 +34,6 @@ program
 
 registerProfileCommands(program);
 registerTemplateCommands(program);
-registerVarCommands(program);
 registerRenderCommand(program);
 registerCurrentCommand(program);
 registerValidateCommand(program);

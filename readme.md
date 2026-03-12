@@ -77,23 +77,6 @@ oos template create my-profile --from-current
 oos template show my-profile
 ```
 
-### 变量管理
-
-变量用于模板中的占位符替换，变量名必须为 `UPPER_SNAKE_CASE` 格式。
-
-```bash
-# 设置变量
-oos var set my-template API_KEY secret123
-oos var set my-template CONFIG '{"host":"localhost","port":3000}' --json
-
-# 获取变量值
-oos var get my-template API_KEY
-
-# 列出所有变量
-oos var list my-template
-oos var ls my-template
-```
-
 ### 渲染模板
 
 ```bash
@@ -130,13 +113,6 @@ oos validate
   }
 }
 ```
-
-### 变量值类型
-
-- **字符串**: `oos var set profile NAME value`
-- **数字**: `oos var set profile PORT 3000`
-- **布尔值**: `oos var set profile DEBUG true`
-- **对象/数组**: `oos var set profile CONFIG '{"key":"value"}' --json`
 
 ## 目录结构
 

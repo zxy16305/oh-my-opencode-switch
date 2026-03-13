@@ -77,7 +77,7 @@ function showApplyConfirm(screen, callback) {
     },
   });
 
-  const message = blessed.box({
+  blessed.box({
     parent: confirmBox,
     top: 1,
     left: 'center',

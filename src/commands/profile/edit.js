@@ -140,23 +140,17 @@ export async function editAction(profileName, _options) {
   let originalVariables = {};
   let currentView = 'variables';
 
-  if (isTemplate) {
-    const variablesPath = getVariablesPath(targetProfile);
-    if (await exists(variablesPath)) {
-      const loadedVars = await readJson(variablesPath);
-      originalVariables = { ...loadedVars };
-      variables = Object.entries(loadedVars).map(([name, value]) => ({
-        name,
-        value: String(value),
-      }));
-      variableList.setVariables(variables);
-    } else {
-      variableList.setVariables([]);
-    }
+  const variablesPath = getVariablesPath(targetProfile);
+  if (await exists(variablesPath)) {
+    const loadedVars = await readJson(variablesPath);
+    originalVariables = { ...loadedVars };
+    variables = Object.entries(loadedVars).map(([name, value]) => ({
+      name,
+      value: String(value),
+    }));
+    variableList.setVariables(variables);
   } else {
-    variableList.setVariables([
-      { name: '(Legacy profile)', value: 'Use template mode for variable editing' },
-    ]);
+    variableList.setVariables([]);
   }
 
   function showVariableList() {

@@ -124,8 +124,9 @@ oos profile switch NAME  # Switch profile
 └── .oos/
     ├── profiles.json             # Metadata (activeProfile, profiles map)
     └── profiles/
-        ├── profile-name/
-        │   └── config.json     # Saved profile config
+        └── profile-name/
+            ├── template.json     # Template file with variable placeholders
+            └── variables.json    # Variable definitions
 ```
 
 ### Key Dependencies
@@ -140,9 +141,10 @@ oos profile switch NAME  # Switch profile
 When `oos profile switch NAME` is called:
 
 1. Backs up current OpenCode config
-2. Reads profile config from `.oos/profiles/NAME/config.json`
-3. Writes to `oh-my-opencode.json` (active config)
-4. Updates metadata with `activeProfile` and `lastUsedAt`
+2. Reads template and variables from `.oos/profiles/NAME/`
+3. Renders the template with variables to generate the active config
+4. Writes rendered config to `oh-my-opencode.json` (active config)
+5. Updates metadata with `activeProfile` and `lastUsedAt`
 
 ### First Profile
 

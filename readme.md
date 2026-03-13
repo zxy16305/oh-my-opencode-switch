@@ -34,9 +34,6 @@ oos profile ls
 oos profile create my-profile
 oos profile create my-profile -d "My work profile"
 
-# 创建模板配置（支持变量替换）
-oos profile create my-template --template
-
 # 切换到配置
 oos profile switch my-profile
 oos profile use my-profile
@@ -124,8 +121,6 @@ oos validate
 └── .oos/
     ├── profiles.json             # 元数据
     └── profiles/
-        ├── work/
-        │   └── config.json       # Legacy 配置
         └── my-template/
             ├── template.json     # 模板文件
             └── variables.json    # 变量定义

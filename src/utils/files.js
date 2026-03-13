@@ -129,7 +129,7 @@ export async function writeJson(filePath, data, options = {}) {
   try {
     const content = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
 
-    await writeFile(filePath, content, { encoding: 'utf8' });
+    await writeFile(filePath, content, { encoding: 'utf8', backup: false });
   } catch (error) {
     throw new FileSystemError(`Failed to write file: ${filePath} - ${error.message}`);
   }

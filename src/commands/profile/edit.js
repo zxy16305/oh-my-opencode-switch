@@ -257,6 +257,20 @@ export async function editAction(profileName, _options) {
     screen.render();
   }
 
+  /**
+   * Show appropriate input component for non-model variables
+   * TODO: Will be replaced with actual input components in later tasks
+   * @param {Object} variable - The variable to edit
+   */
+  function showNonModelInput(variable) {
+    // For now, log and stay on variable list (stub implementation)
+    console.log(`Editing non-model variable: ${variable.name} (type: ${typeof variable.value})`);
+
+    // In future tasks, this will open text/JSON input component
+    // For now, just show a message (can be enhanced later)
+    showVariableList();
+  }
+
   async function handleSave() {
     await saveVariables(targetProfile, variables);
 
@@ -285,7 +299,14 @@ export async function editAction(profileName, _options) {
   }
 
   variableList.onEdit((variable) => {
-    showModelSelector(variable);
+    // Detect if this is a model variable using the isModel flag
+    if (variable.isModel) {
+      // For model variables: open existing ModelSelector
+      showModelSelector(variable);
+    } else {
+      // For non-model variables: open appropriate input component
+      showNonModelInput(variable);
+    }
   });
 
   variableList.onPreview(() => {

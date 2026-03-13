@@ -5,9 +5,59 @@ import { VariableList } from '../../tui/components/variable-list.js';
 import { ModelSelector } from '../../tui/components/model-selector.js';
 import { PreviewPanel, showSuccessMessage } from '../../tui/components/preview-panel.js';
 import { readJson, writeJson, exists } from '../../utils/files.js';
-import { getVariablesPath, hasTemplate } from '../../utils/paths.js';
+import { getVariablesPath, hasTemplate, getTemplatePath } from '../../utils/paths.js';
 import { preloadModels } from '../../tui/model-aggregator.js';
 import blessed from 'blessed';
+
+/**
+ * Detect which variables in a template correspond to model fields
+ * Model variables are those used in:
+ * - agents.*.model fields
+ * - categories.*.model fields
+ *
+ * @param {Object} template - The template.json content
+ * @returns {Set<string>} Set of variable names that are model variables
+ */
+function detectModelVariables(template) {
+  const modelVariables = new Set();
+  const variablePattern = /\{\{\s*([A-Z_][A-Z0-9_]*)\s*\}\}/g;
+
+  /**
+   * Recursively traverse an object and find variables used in model fields
+   */
+  function traverse(obj, path = []) {
+    if (!obj || typeof obj !== 'object') {
+      return;
+    }
+
+    for (const [key, value] of Object.entries(obj)) {
+      const currentPath = [...path, key];
+
+      // Check if this field is a model field
+      const isModelField =
+        currentPath.length >= 2 &&
+        currentPath[currentPath.length - 1] === 'model' &&
+        (currentPath[0] === 'agents' || currentPath[0] === 'categories');
+
+      if (isModelField && typeof value === 'string') {
+        // Extract variables from this model field value
+        let match;
+        variablePattern.lastIndex = 0;
+        while ((match = variablePattern.exec(value)) !== null) {
+          modelVariables.add(match[1]);
+        }
+      }
+
+      // Recurse into nested objects/arrays
+      if (typeof value === 'object') {
+        traverse(value, currentPath);
+      }
+    }
+  }
+
+  traverse(template);
+  return modelVariables;
+}
 
 function showApplyConfirm(screen, callback) {
   const confirmBox = blessed.box({
@@ -102,6 +152,16 @@ export async function editAction(profileName, _options) {
 
   const isTemplate = await hasTemplate(targetProfile);
 
+  // Detect model variables from template
+  let modelVariables = new Set();
+  if (isTemplate) {
+    const templatePath = getTemplatePath(targetProfile);
+    if (await exists(templatePath)) {
+      const template = await readJson(templatePath);
+      modelVariables = detectModelVariables(template);
+    }
+  }
+
   const screen = createScreen({
     title: `OOS Profile Editor - ${targetProfile}`,
   });
@@ -147,6 +207,7 @@ export async function editAction(profileName, _options) {
     variables = Object.entries(loadedVars).map(([name, value]) => ({
       name,
       value: String(value),
+      isModel: modelVariables.has(name),
     }));
     variableList.setVariables(variables);
   } else {

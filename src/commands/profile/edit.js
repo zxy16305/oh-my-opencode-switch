@@ -4,6 +4,7 @@ import { createScreen, createHelpBar } from '../../tui/index.js';
 import { VariableList } from '../../tui/components/variable-list.js';
 import { ModelSelector } from '../../tui/components/model-selector.js';
 import { TextInput } from '../../tui/components/text-input.js';
+import { JsonInput } from '../../tui/components/json-input.js';
 import { PreviewPanel, showSuccessMessage } from '../../tui/components/preview-panel.js';
 import { readJson, writeJson, exists } from '../../utils/files.js';
 import { getVariablesPath, hasTemplate, getTemplatePath } from '../../utils/paths.js';
@@ -200,6 +201,14 @@ export async function editAction(profileName, _options) {
   });
   textInput.hide();
 
+  const jsonInput = new JsonInput(screen, {
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%-1',
+  });
+  jsonInput.hide();
+
   const helpBar = createHelpBar(screen, [
     { key: '→/Space', action: 'Edit variable' },
     { key: 'Enter', action: 'Preview changes' },
@@ -228,12 +237,29 @@ export async function editAction(profileName, _options) {
     previewPanel.hide();
     modelSelector.hide();
     textInput.hide();
+    jsonInput.hide();
     variableList.show();
     variableList.focus();
     helpBar.updateShortcuts([
       { key: '→/Space', action: 'Edit variable' },
       { key: 'Enter', action: 'Preview changes' },
       { key: 'Esc', action: 'Exit' },
+    ]);
+    screen.render();
+  }
+
+  function showJsonInput(variable) {
+    currentView = 'json-input';
+    previewPanel.hide();
+    variableList.hide();
+    modelSelector.hide();
+    textInput.hide();
+    jsonInput.setVariable(variable.name, variable.value);
+    jsonInput.show();
+    jsonInput.focus();
+    helpBar.updateShortcuts([
+      { key: 'Ctrl+S', action: 'Confirm' },
+      { key: 'Esc', action: 'Cancel' },
     ]);
     screen.render();
   }
@@ -288,9 +314,16 @@ export async function editAction(profileName, _options) {
    * @param {Object} variable - The variable to edit
    */
   function showNonModelInput(variable) {
-    // For simple non-model variables (string/number/boolean/null), use TextInput
-    // For object/array variables, we'll add JSON input in a later task
-    showTextInput(variable);
+    // For complex non-model variables (object/array), use JsonInput
+    if (
+      Array.isArray(variable.value) ||
+      (typeof variable.value === 'object' && variable.value !== null)
+    ) {
+      showJsonInput(variable);
+    } else {
+      // For simple non-model variables (string/number/boolean/null), use TextInput
+      showTextInput(variable);
+    }
   }
 
   async function handleSave() {
@@ -364,6 +397,22 @@ export async function editAction(profileName, _options) {
   });
 
   textInput.onCancel(() => {
+    showVariableList();
+  });
+
+  jsonInput.onConfirm((newValue) => {
+    const selectedVar = variableList.getSelected();
+    if (selectedVar) {
+      const idx = variables.findIndex((v) => v.name === selectedVar.name);
+      if (idx !== -1) {
+        variables[idx].value = newValue;
+        variableList.setVariables(variables);
+      }
+    }
+    showVariableList();
+  });
+
+  jsonInput.onCancel(() => {
     showVariableList();
   });
 

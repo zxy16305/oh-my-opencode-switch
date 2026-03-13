@@ -58,6 +58,45 @@ oos profile show my-profile
 oos profile open my-profile
 ```
 
+### 编辑配置变量
+
+```bash
+# 交互式编辑配置变量
+oos profile edit my-profile
+
+# 编辑当前活跃配置
+oos profile edit
+```
+
+编辑界面支持两种类型的变量：
+
+- **模型变量**: 值为模型名称（如 `claude-3-sonnet`），使用模型选择器编辑
+- **非模型变量**: 普通文本或结构化数据
+
+对于非模型变量，根据值类型自动选择编辑方式：
+
+- **简单值**（字符串、数字、布尔值）：使用单行文本输入，按 `Enter` 确认
+- **复杂值**（对象、数组）：使用多行 JSON 编辑器，支持语法高亮和验证
+
+JSON 编辑器快捷键：
+
+- `Ctrl+S` / `Cmd+S` - 保存修改
+- `Escape` - 取消编辑
+
+示例：编辑包含嵌套对象的变量
+
+```bash
+oos profile edit my-profile
+# 选择变量 "API_CONFIG"
+# 在 JSON 编辑器中输入：
+# {
+#   "endpoint": "https://api.example.com",
+#   "timeout": 30,
+#   "retries": 3
+# }
+# 按 Ctrl+S 保存
+```
+
 ### 模板管理
 
 模板功能允许您创建带有变量占位符的配置文件，通过变量替换实现快速环境切换。

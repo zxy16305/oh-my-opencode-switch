@@ -5,7 +5,6 @@ import {
   MissingVariableError,
   CircularReferenceError,
   TemplateSyntaxError,
-  VariableValidationError,
 } from '../../../src/utils/errors.js';
 
 describe('TemplateEngine', () => {
@@ -173,38 +172,32 @@ describe('TemplateEngine', () => {
         assert.equal(result, 'Model: claude-3-sonnet');
       });
 
-      it('should use first valid element from model array', () => {
+      it('should render array as JSON in non-quoted context', () => {
         const template = 'Model: {{model}}';
         const variables = { model: ['claude-3-sonnet', 'gpt-4', 'other'] };
         const result = templateEngine.render(template, variables);
-        assert.equal(result, 'Model: claude-3-sonnet');
+        assert.equal(result, 'Model: ["claude-3-sonnet","gpt-4","other"]');
       });
 
-      it('should skip invalid elements and use next valid', () => {
-        const template = 'Model: {{model}}';
-        const variables = { model: ['', '   ', 'claude-3-opus', 'gpt-4'] };
+      it('should render array as JSON array in quoted JSON context', () => {
+        const template = '{"model": "{{model}}"}';
+        const variables = { model: ['claude-3-sonnet', 'gpt-4'] };
         const result = templateEngine.render(template, variables);
-        assert.equal(result, 'Model: claude-3-opus');
+        assert.equal(result, '{"model": ["claude-3-sonnet","gpt-4"]}');
       });
 
-      it('should skip non-string elements', () => {
-        const template = 'Model: {{model}}';
-        const variables = { model: [123, null, true, 'claude-3-haiku'] };
+      it('should handle object values in quoted JSON context', () => {
+        const template = '{"config": "{{config}}"}';
+        const variables = { config: { key: 'value', nested: { foo: 1 } } };
         const result = templateEngine.render(template, variables);
-        assert.equal(result, 'Model: claude-3-haiku');
+        assert.equal(result, '{"config": {"key":"value","nested":{"foo":1}}}');
       });
 
-      it('should throw VariableValidationError when no valid model found', () => {
-        const template = 'Model: {{model}}';
-        const variables = { model: ['', '   ', 123, null, true] };
-        assert.throws(() => templateEngine.render(template, variables), VariableValidationError);
-      });
-
-      it('should trim whitespace from valid model', () => {
-        const template = 'Model: {{model}}';
-        const variables = { model: ['   claude-3-5-sonnet   '] };
+      it('should handle empty array in quoted JSON context', () => {
+        const template = '{"items": "{{items}}"}';
+        const variables = { items: [] };
         const result = templateEngine.render(template, variables);
-        assert.equal(result, 'Model: claude-3-5-sonnet');
+        assert.equal(result, '{"items": []}');
       });
     });
 

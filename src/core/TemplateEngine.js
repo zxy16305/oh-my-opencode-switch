@@ -3,7 +3,6 @@ import {
   MissingVariableError,
   CircularReferenceError,
   TemplateSyntaxError,
-  VariableValidationError,
 } from '../utils/errors.js';
 
 /**
@@ -52,8 +51,18 @@ export class TemplateEngine {
     // Prepare variables for Handlebars (stringify objects/arrays)
     const processedVariables = this._processVariables(variables);
 
+    // Pre-process template: replace "quoted" placeholders with JSON for arrays/objects
+    let processedTemplate = template;
+    for (const [key, value] of Object.entries(variables)) {
+      if (Array.isArray(value) || (value !== null && typeof value === 'object')) {
+        const quotedPattern = new RegExp(`"\\{\\{\\s*${key}\\s*\\}\\}"`, 'g');
+        const jsonValue = JSON.stringify(value);
+        processedTemplate = processedTemplate.replace(quotedPattern, jsonValue);
+      }
+    }
+
     // Compile and render the template (disable HTML escaping for JSON configs)
-    const compiledTemplate = Handlebars.compile(template, { noEscape: true });
+    const compiledTemplate = Handlebars.compile(processedTemplate, { noEscape: true });
     return compiledTemplate(processedVariables);
   }
 
@@ -179,20 +188,6 @@ export class TemplateEngine {
     const resolving = new Set();
 
     const resolveValue = (key, value, path) => {
-      // Special handling for all model variables (priority mode)
-      if ((key === 'model' || key.startsWith('MODEL_')) && Array.isArray(value)) {
-        for (const element of value) {
-          const resolvedElement = resolveValue('', element, [...path, '']);
-          if (typeof resolvedElement === 'string') {
-            const trimmed = resolvedElement.trim();
-            if (trimmed.length > 0) {
-              return trimmed;
-            }
-          }
-        }
-        throw new VariableValidationError(key, 'No valid model found in array');
-      }
-
       if (typeof value === 'string') {
         const stringVars = this._extractVariables(value);
         let result = value;

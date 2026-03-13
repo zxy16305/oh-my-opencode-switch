@@ -218,6 +218,7 @@ export async function editAction(profileName, _options) {
   let variables = [];
   let originalVariables = {};
   let currentView = 'variables';
+  let justReturnedFromSubview = false; // 防止子页面ESC触发全局退出的时序保护
 
   const variablesPath = getVariablesPath(targetProfile);
   if (await exists(variablesPath)) {
@@ -382,10 +383,12 @@ export async function editAction(profileName, _options) {
         variableList.setVariables(variables);
       }
     }
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
   modelSelector.onCancel(() => {
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
@@ -398,10 +401,12 @@ export async function editAction(profileName, _options) {
         variableList.setVariables(variables);
       }
     }
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
   textInput.onCancel(() => {
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
@@ -414,10 +419,12 @@ export async function editAction(profileName, _options) {
         variableList.setVariables(variables);
       }
     }
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
   jsonInput.onCancel(() => {
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
@@ -426,14 +433,20 @@ export async function editAction(profileName, _options) {
   });
 
   previewPanel.onCancel(() => {
+    justReturnedFromSubview = true;
     showVariableList();
   });
 
   screen.key(['escape', 'q', 'C-c'], () => {
+    if (justReturnedFromSubview) {
+      justReturnedFromSubview = false;
+      return false;
+    }
     if (currentView === 'variables') {
       screen.destroy();
       process.exit(0);
     }
+    return false;
   });
 
   variableList.focus();

@@ -84,7 +84,6 @@ program.exitOverride();
 
 async function main() {
   try {
-    await checkLegacyProfiles();
     await program.parseAsync();
   } catch (error) {
     if (

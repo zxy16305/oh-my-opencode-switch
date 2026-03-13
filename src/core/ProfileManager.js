@@ -14,24 +14,6 @@ import { ProfileError, ConfigError, MissingVariableError } from '../utils/errors
 import { ConfigManager } from './ConfigManager.js';
 import { TemplateEngine } from './TemplateEngine.js';
 
-/**
- * Get path to legacy config.json for a profile
- * @param {string} profileName - Profile name
- * @returns {string} Path to config.json
- */
-function getLegacyConfigPath(profileName) {
-  return path.join(getProfileDirPath(profileName), 'config.json');
-}
-
-/**
- * Check if profile has legacy config.json
- * @param {string} profileName - Profile name
- * @returns {Promise<boolean>} True if legacy config exists
- */
-async function hasLegacyConfig(profileName) {
-  return exists(getLegacyConfigPath(profileName));
-}
-
 const DEFAULT_CONFIG_TEMPLATE = {
   $schema:
     'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
@@ -113,12 +95,6 @@ export class ProfileManager {
       throw new ProfileError(`Profile "${name}" not found`);
     }
 
-    if (await hasLegacyConfig(name)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
-    }
-
     return {
       ...profile,
       isActive: profile.name === metadata.activeProfile,
@@ -181,12 +157,6 @@ export class ProfileManager {
       throw new ProfileError(`Profile "${name}" not found`);
     }
 
-    if (await hasLegacyConfig(name)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
-    }
-
     const profileDir = getProfileDirPath(name);
     await remove(profileDir);
 
@@ -207,12 +177,6 @@ export class ProfileManager {
 
     if (!metadata.profiles[sourceName]) {
       throw new ProfileError(`Source profile "${sourceName}" not found`);
-    }
-
-    if (await hasLegacyConfig(sourceName)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
     }
 
     const nameValidation = validateProfileName(targetName);
@@ -257,12 +221,6 @@ export class ProfileManager {
 
     if (!metadata.profiles[oldName]) {
       throw new ProfileError(`Profile "${oldName}" not found`);
-    }
-
-    if (await hasLegacyConfig(oldName)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
     }
 
     const nameValidation = validateProfileName(newName);
@@ -332,12 +290,6 @@ export class ProfileManager {
    */
   async exportProfile(name, options = {}) {
     const { outputPath } = options;
-
-    if (await hasLegacyConfig(name)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
-    }
 
     // Read template and variables
     const templatePath = getTemplatePath(name);
@@ -452,12 +404,6 @@ export class ProfileManager {
 
     if (!metadata.profiles[name]) {
       throw new ProfileError(`Profile "${name}" not found`);
-    }
-
-    if (await hasLegacyConfig(name)) {
-      throw new ProfileError(
-        'config.json profile mode is no longer supported. Create a new template profile with `oos profile create` or migrate your existing config.json to template format manually.'
-      );
     }
 
     await this.configManager.backupConfig();

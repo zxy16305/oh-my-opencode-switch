@@ -438,6 +438,8 @@ export async function editAction(profileName, _options) {
 export function registerEditCommand(program) {
   program
     .command('edit [name]')
-    .description('Edit profile variables with interactive TUI')
+    .description(
+      'Edit profile variables with interactive TUI. Supports editing both model and non-model variables. Simple values use single-line text input; complex objects/arrays use multi-line JSON input with syntax validation.'
+    )
     .action(editAction);
 }

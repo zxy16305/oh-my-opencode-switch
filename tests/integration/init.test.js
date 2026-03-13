@@ -12,6 +12,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const cliPath = path.join(__dirname, '../../bin/oos.js');
 
+const originalHomedir = os.homedir;
+let testHomeDir;
+
 import {
   getOosDir,
   getProfilesMetadataPath,
@@ -29,6 +32,11 @@ describe('init command integration tests', () => {
   let variablesPath;
 
   beforeEach(async () => {
+    // Use temporary directory for testing to avoid affecting user's real config
+    testHomeDir = path.join(os.tmpdir(), 'oos-integration-test-init-' + Date.now());
+    await fs.mkdir(testHomeDir, { recursive: true });
+    os.homedir = () => testHomeDir;
+    
     oosDir = getOosDir();
     profilesMetadataPath = getProfilesMetadataPath();
     profileDir = getProfileDirPath(profileName);
@@ -41,8 +49,11 @@ describe('init command integration tests', () => {
   });
 
   afterEach(async () => {
+    // Restore original homedir
+    os.homedir = originalHomedir;
+    
     try {
-      await fs.rm(oosDir, { recursive: true, force: true });
+      await fs.rm(testHomeDir, { recursive: true, force: true });
     } catch {}
   });
 

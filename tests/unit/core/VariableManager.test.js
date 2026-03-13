@@ -395,4 +395,78 @@ describe('VariableManager', () => {
       }
     });
   });
+
+  describe('Model variable migration', () => {
+    it('should convert string model value to array on initialization', async () => {
+      const oldVariables = {
+        model: 'claude-3-sonnet',
+        API_KEY: 'secret123',
+      };
+      await fs.writeFile(variablesPath, JSON.stringify(oldVariables));
+
+      await variableManager.init();
+
+      assert.deepEqual(variableManager.variables.model, ['claude-3-sonnet']);
+      assert.equal(variableManager.variables.API_KEY, 'secret123');
+    });
+
+    it('should save migrated array model back to file', async () => {
+      const oldVariables = { model: 'gpt-4' };
+      await fs.writeFile(variablesPath, JSON.stringify(oldVariables));
+
+      await variableManager.init();
+
+      const fileContent = await fs.readFile(variablesPath, 'utf8');
+      const savedVariables = JSON.parse(fileContent);
+      assert.deepEqual(savedVariables.model, ['gpt-4']);
+    });
+
+    it('should leave existing array model unchanged', async () => {
+      const originalVariables = {
+        model: ['claude-3-sonnet', 'gpt-4'],
+        OTHER_VAR: 'value',
+      };
+      await fs.writeFile(variablesPath, JSON.stringify(originalVariables));
+
+      await variableManager.init();
+
+      assert.deepEqual(variableManager.variables.model, ['claude-3-sonnet', 'gpt-4']);
+      assert.equal(variableManager.variables.OTHER_VAR, 'value');
+    });
+
+    it('should deduplicate array model values during migration', async () => {
+      const oldVariables = { model: ['claude-3-sonnet', 'claude-3-sonnet', 'gpt-4'] };
+      await fs.writeFile(variablesPath, JSON.stringify(oldVariables));
+
+      await variableManager.init();
+
+      assert.deepEqual(variableManager.variables.model, ['claude-3-sonnet', 'gpt-4']);
+    });
+
+    it('should preserve other variables during migration', async () => {
+      const oldVariables = {
+        model: 'claude-3-sonnet',
+        API_KEY: 'test-key',
+        DEBUG_MODE: true,
+        NESTED: { key: 'value' },
+      };
+      await fs.writeFile(variablesPath, JSON.stringify(oldVariables));
+
+      await variableManager.init();
+
+      assert.deepEqual(variableManager.variables.model, ['claude-3-sonnet']);
+      assert.equal(variableManager.variables.API_KEY, 'test-key');
+      assert.equal(variableManager.variables.DEBUG_MODE, true);
+      assert.deepEqual(variableManager.variables.NESTED, { key: 'value' });
+    });
+
+    it('should do nothing if no model variable exists', async () => {
+      const oldVariables = { API_KEY: 'test-key' };
+      await fs.writeFile(variablesPath, JSON.stringify(oldVariables));
+
+      await variableManager.init();
+
+      assert.deepEqual(variableManager.variables, oldVariables);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 import { getVariablesPath, getProfileDirPath } from '../utils/paths.js';
 import { readJson, writeJson, exists, ensureDir } from '../utils/files.js';
-import { validateVariableName } from '../utils/validators.js';
+import { validateVariableName, validateModelValue } from '../utils/validators.js';
 import { VariableValidationError, FileSystemError } from '../utils/errors.js';
 
 /**
@@ -31,6 +31,31 @@ export class VariableManager {
     if (await exists(variablesPath)) {
       try {
         this.variables = await readJson(variablesPath);
+
+        // Migration: Convert string model value to array format
+        if (this.variables.model !== undefined) {
+          const oldModel = this.variables.model;
+          let migrated = false;
+
+          // Convert string to single-element array
+          if (typeof oldModel === 'string') {
+            this.variables.model = [oldModel];
+            migrated = true;
+          }
+
+          // Validate the model value
+          const validation = validateModelValue(this.variables.model);
+          if (validation.success) {
+            // Use validated data (which may have deduplication)
+            this.variables.model = validation.data;
+
+            // Save if migration occurred
+            if (migrated) {
+              await this._save();
+            }
+          }
+          // If validation fails, keep the original value (follow existing pattern)
+        }
       } catch (error) {
         // If file is corrupt or unreadable, start fresh
         this.variables = {};

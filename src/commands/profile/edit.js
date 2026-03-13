@@ -182,6 +182,7 @@ export async function editAction(profileName, _options) {
     left: 0,
     width: '100%',
     height: '100%-1',
+    multi: true,
   });
   modelSelector.hide();
 
@@ -274,7 +275,11 @@ export async function editAction(profileName, _options) {
     modelSelector.loadModels(variable.value);
     modelSelector.focus();
     helpBar.updateShortcuts([
-      { key: '←/Enter', action: 'Select model' },
+      { key: 'Tab', action: 'Switch panels' },
+      { key: 'a', action: 'Add model' },
+      { key: 'd', action: 'Delete model' },
+      { key: 'k/j', action: 'Move up/down' },
+      { key: 'Enter', action: 'Confirm selection' },
       { key: 'Esc', action: 'Cancel' },
     ]);
     screen.render();

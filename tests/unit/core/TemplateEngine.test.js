@@ -5,6 +5,7 @@ import {
   MissingVariableError,
   CircularReferenceError,
   TemplateSyntaxError,
+  VariableValidationError,
 } from '../../../src/utils/errors.js';
 
 describe('TemplateEngine', () => {
@@ -161,6 +162,49 @@ describe('TemplateEngine', () => {
         assert.ok(result.includes('true'));
         assert.ok(result.includes('null'));
         assert.ok(result.includes('"key":"value"'));
+      });
+    });
+
+    describe('model variable handling', () => {
+      it('should handle single string model value', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: 'claude-3-sonnet' };
+        const result = templateEngine.render(template, variables);
+        assert.equal(result, 'Model: claude-3-sonnet');
+      });
+
+      it('should use first valid element from model array', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: ['claude-3-sonnet', 'gpt-4', 'other'] };
+        const result = templateEngine.render(template, variables);
+        assert.equal(result, 'Model: claude-3-sonnet');
+      });
+
+      it('should skip invalid elements and use next valid', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: ['', '   ', 'claude-3-opus', 'gpt-4'] };
+        const result = templateEngine.render(template, variables);
+        assert.equal(result, 'Model: claude-3-opus');
+      });
+
+      it('should skip non-string elements', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: [123, null, true, 'claude-3-haiku'] };
+        const result = templateEngine.render(template, variables);
+        assert.equal(result, 'Model: claude-3-haiku');
+      });
+
+      it('should throw VariableValidationError when no valid model found', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: ['', '   ', 123, null, true] };
+        assert.throws(() => templateEngine.render(template, variables), VariableValidationError);
+      });
+
+      it('should trim whitespace from valid model', () => {
+        const template = 'Model: {{model}}';
+        const variables = { model: ['   claude-3-5-sonnet   '] };
+        const result = templateEngine.render(template, variables);
+        assert.equal(result, 'Model: claude-3-5-sonnet');
       });
     });
 

@@ -3,6 +3,7 @@ import {
   MissingVariableError,
   CircularReferenceError,
   TemplateSyntaxError,
+  VariableValidationError,
 } from '../utils/errors.js';
 
 /**
@@ -14,7 +15,7 @@ export class TemplateEngine {
     // Compile regex to detect Handlebars logic constructs
     this.logicPattern = /\{\{[#/]\s*(if|each|unless|else|with)\s*[^}]*\}\}/g;
     // Pattern to find all variable references in template
-    this.variablePattern = /\{\{\s*([A-Z_][A-Z0-9_]*)\s*\}\}/g;
+    this.variablePattern = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
     // Track visited variables for circular reference detection
     this._visitedVariables = null;
   }
@@ -177,7 +178,21 @@ export class TemplateEngine {
     const processed = {};
     const resolving = new Set();
 
-    const resolveValue = (value, path) => {
+    const resolveValue = (key, value, path) => {
+      // Special handling for all model variables (priority mode)
+      if ((key === 'model' || key.startsWith('MODEL_')) && Array.isArray(value)) {
+        for (const element of value) {
+          const resolvedElement = resolveValue('', element, [...path, '']);
+          if (typeof resolvedElement === 'string') {
+            const trimmed = resolvedElement.trim();
+            if (trimmed.length > 0) {
+              return trimmed;
+            }
+          }
+        }
+        throw new VariableValidationError(key, 'No valid model found in array');
+      }
+
       if (typeof value === 'string') {
         const stringVars = this._extractVariables(value);
         let result = value;
@@ -187,7 +202,7 @@ export class TemplateEngine {
           }
           if (varName in variables) {
             resolving.add(varName);
-            const resolvedVar = resolveValue(variables[varName], [...path, varName]);
+            const resolvedVar = resolveValue(varName, variables[varName], [...path, varName]);
             resolving.delete(varName);
             const replacement =
               typeof resolvedVar === 'string' ? resolvedVar : JSON.stringify(resolvedVar);
@@ -196,12 +211,12 @@ export class TemplateEngine {
         }
         return result;
       }
-      return this._processValue(value);
+      return this._processValue(key, value);
     };
 
     for (const [key, value] of Object.entries(variables)) {
       resolving.add(key);
-      processed[key] = resolveValue(value, [key]);
+      processed[key] = resolveValue(key, value, [key]);
       resolving.delete(key);
     }
     return processed;
@@ -209,11 +224,12 @@ export class TemplateEngine {
 
   /**
    * Process a single value for Handlebars
+   * @param {string} key - Variable name
    * @param {any} value - Value to process
    * @returns {string|number|boolean|null} Processed value
    * @private
    */
-  _processValue(value) {
+  _processValue(key, value) {
     if (value === null) {
       return 'null';
     }

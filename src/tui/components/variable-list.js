@@ -88,7 +88,19 @@ export class VariableList {
    */
   setVariables(variables) {
     this.variables = variables || [];
-    const items = this.variables.map((v) => `{bold}${v.name}{/bold}: ${v.value || '(empty)'}`);
+    const items = this.variables.map((v) => {
+      let displayValue;
+      if (v.value === null) {
+        displayValue = 'null';
+      } else if (typeof v.value === 'object') {
+        displayValue = JSON.stringify(v.value);
+      } else if (typeof v.value === 'string') {
+        displayValue = v.value || '(empty)';
+      } else {
+        displayValue = String(v.value);
+      }
+      return `{bold}${v.name}{/bold}: ${displayValue}`;
+    });
     this.list.setItems(items);
     this.screen.render();
   }

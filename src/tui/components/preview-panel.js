@@ -117,7 +117,16 @@ export class PreviewPanel {
       const isModified = modifiedNames.includes(name);
 
       // Format the value
-      const formattedValue = typeof value === 'string' ? `"${value}"` : value;
+      let formattedValue;
+      if (value === null) {
+        formattedValue = 'null';
+      } else if (typeof value === 'string') {
+        formattedValue = `"${value}"`;
+      } else if (typeof value === 'object') {
+        formattedValue = JSON.stringify(value);
+      } else {
+        formattedValue = value;
+      }
 
       // Add modification indicator
       if (isModified) {

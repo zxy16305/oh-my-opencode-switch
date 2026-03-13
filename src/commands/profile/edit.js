@@ -206,7 +206,7 @@ export async function editAction(profileName, _options) {
     originalVariables = { ...loadedVars };
     variables = Object.entries(loadedVars).map(([name, value]) => ({
       name,
-      value: String(value),
+      value,
       isModel: modelVariables.has(name),
     }));
     variableList.setVariables(variables);

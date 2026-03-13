@@ -45,15 +45,6 @@ export const getSourceConfigPath = () => {
 };
 
 /**
- * Get profile-specific config file path
- * @param {string} profileName - Name of the profile
- * @returns {string} Path to the profile's config.json
- */
-export const getProfileConfigPath = (profileName) => {
-  return path.join(getProfilesDir(), profileName, 'config.json');
-};
-
-/**
  * Get profile-specific directory path
  * @param {string} profileName - Name of the profile
  * @returns {string} Path to the profile's directory

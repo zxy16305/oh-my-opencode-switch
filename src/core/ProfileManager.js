@@ -2,7 +2,6 @@ import path from 'path';
 import {
   getProfilesDir,
   getProfilesMetadataPath,
-  getProfileConfigPath,
   getProfileDirPath,
   getOosDir,
   getTemplatePath,
@@ -104,7 +103,7 @@ export class ProfileManager {
 
   async createProfile(name, options = {}) {
     await this.init();
-    const { description = '', template = false } = options;
+    const { description = '' } = options;
 
     const nameValidation = validateProfileName(name);
     if (!nameValidation.success) {
@@ -130,12 +129,8 @@ export class ProfileManager {
     const profileDir = getProfileDirPath(name);
     await ensureDir(profileDir);
 
-    if (template) {
-      await writeJson(getTemplatePath(name), config);
-      await writeJson(getVariablesPath(name), {});
-    } else {
-      await writeJson(getProfileConfigPath(name), config);
-    }
+    await writeJson(getTemplatePath(name), config);
+    await writeJson(getVariablesPath(name), {});
 
     const now = new Date().toISOString();
     metadata.profiles[name] = {
@@ -151,7 +146,7 @@ export class ProfileManager {
     }
 
     await this.saveMetadata(metadata);
-    return { ...metadata.profiles[name], template };
+    return { ...metadata.profiles[name] };
   }
 
   async deleteProfile(name) {
@@ -193,26 +188,18 @@ export class ProfileManager {
       throw new ProfileError(`Target profile "${targetName}" already exists`);
     }
 
-    const sourceMode = await this.detectProfileMode(sourceName);
     const targetDir = getProfileDirPath(targetName);
-
     await ensureDir(targetDir);
 
-    if (sourceMode === 'template') {
-      const sourceTemplatePath = getTemplatePath(sourceName);
-      const sourceVariablesPath = getVariablesPath(sourceName);
-      const targetTemplatePath = getTemplatePath(targetName);
-      const targetVariablesPath = getVariablesPath(targetName);
+    const sourceTemplatePath = getTemplatePath(sourceName);
+    const sourceVariablesPath = getVariablesPath(sourceName);
+    const targetTemplatePath = getTemplatePath(targetName);
+    const targetVariablesPath = getVariablesPath(targetName);
 
-      await copyFile(sourceTemplatePath, targetTemplatePath);
+    await copyFile(sourceTemplatePath, targetTemplatePath);
 
-      if (await exists(sourceVariablesPath)) {
-        await copyFile(sourceVariablesPath, targetVariablesPath);
-      }
-    } else {
-      const sourcePath = getProfileConfigPath(sourceName);
-      const targetPath = getProfileConfigPath(targetName);
-      await copyFile(sourcePath, targetPath);
+    if (await exists(sourceVariablesPath)) {
+      await copyFile(sourceVariablesPath, targetVariablesPath);
     }
 
     const now = new Date().toISOString();
@@ -247,29 +234,19 @@ export class ProfileManager {
 
     const oldDir = getProfileDirPath(oldName);
     const newDir = getProfileDirPath(newName);
-    const oldConfig = getProfileConfigPath(oldName);
-    const newConfig = getProfileConfigPath(newName);
-
-    const profileMode = await this.detectProfileMode(oldName);
 
     await ensureDir(path.dirname(newDir));
 
-    if (profileMode === 'template') {
-      const oldTemplatePath = getTemplatePath(oldName);
-      const newTemplatePath = getTemplatePath(newName);
-      const oldVariablesPath = getVariablesPath(oldName);
-      const newVariablesPath = getVariablesPath(newName);
+    const oldTemplatePath = getTemplatePath(oldName);
+    const newTemplatePath = getTemplatePath(newName);
+    const oldVariablesPath = getVariablesPath(oldName);
+    const newVariablesPath = getVariablesPath(newName);
 
-      await ensureDir(newDir);
-      await copyFile(oldTemplatePath, newTemplatePath);
+    await ensureDir(newDir);
+    await copyFile(oldTemplatePath, newTemplatePath);
 
-      if (await exists(oldVariablesPath)) {
-        await copyFile(oldVariablesPath, newVariablesPath);
-      }
-    } else if (await exists(oldConfig)) {
-      const config = await readJson(oldConfig);
-      await ensureDir(newDir);
-      await writeJson(newConfig, config);
+    if (await exists(oldVariablesPath)) {
+      await copyFile(oldVariablesPath, newVariablesPath);
     }
 
     const profile = metadata.profiles[oldName];
@@ -304,12 +281,8 @@ export class ProfileManager {
 
   /**
    * Export a profile configuration to a JSON export file.
-   * Location resolution:
-   * - If a basePath is provided, reads from {basePath}/profiles/{name}/config.json
-   * - Falls back to the default path {profilesDir}/{name}/config.json
-   * Export structure: { version: 1, exportedAt, profile, config }
-   * Export destination: outputPath if provided, otherwise {basePath}/exports/{name}.export.json
-   *                     when basePath not provided, defaults to {getOosDir()}/exports/...
+   * Export structure: { version: 1, exportedAt, profile, template, variables }
+   * Export destination: outputPath if provided, otherwise {getOosDir()}/exports/...
    * @param {string} name - profile name
    * @param {Object} options - optional parameters
    * @param {string} options.outputPath - explicit export path
@@ -318,49 +291,24 @@ export class ProfileManager {
   async exportProfile(name, options = {}) {
     const { outputPath } = options;
 
-    // Locate profile config
-    let config = null;
-    // Try basePath first if provided
-    if (this.basePath) {
-      const customPath = path.join(this.basePath, 'profiles', name, 'config.json');
-      if (await exists(customPath)) {
-        config = await readJson(customPath);
-      }
-    }
-
-    // Fallback to default path if not found yet
-    if (config == null) {
-      const defaultPath = getProfileConfigPath(name);
-      if (await exists(defaultPath)) {
-        config = await readJson(defaultPath);
-      }
-    }
-
-    if (config == null) {
+    // Read template and variables
+    const templatePath = getTemplatePath(name);
+    if (!(await exists(templatePath))) {
       throw new ProfileError(`Profile "${name}" not found`);
     }
+
+    const template = await readJson(templatePath);
+    const varsPath = getVariablesPath(name);
+    const hasVars = await exists(varsPath);
+    const variables = hasVars ? await readJson(varsPath) : {};
 
     const exportObj = {
       version: 1,
       exportedAt: new Date().toISOString(),
       profile: name,
-      config,
+      template,
+      variables,
     };
-
-    // If the profile is a template, include the template and variables in the export
-    if (await hasTemplate(name)) {
-      try {
-        const template = await readJson(getTemplatePath(name));
-        const varsPath = getVariablesPath(name);
-        const hasVars = await exists(varsPath);
-        const variables = hasVars ? await readJson(varsPath) : {};
-        exportObj.template = template;
-        exportObj.variables = variables;
-      } catch (err) {
-        // Do not fail export because of template read issues; keep legacy export intact
-        // Errors here are non-fatal to preserve backward compatibility
-      }
-    }
 
     let exportPath;
     if (outputPath) {
@@ -379,106 +327,15 @@ export class ProfileManager {
 
   /**
    * Import a profile from a JSON export file.
-   * Expected export format: { version: 1, profile: <name>, config: <object> }
+   * Expected export format: { version: 1, profile: <name>, template: <object>, variables: <object> }
    * - Do not switch active profile during import
    * - Reset metadata: createdAt, isDefault = false
-   * - Create profile directory and write config.json
+   * - Create profile directory and write template.json and variables.json
    * @param {string} importPath - Path to the export JSON file
    * @param {Object} [options] - Optional params (currently unused)
    * @returns {Promise<Object>} Imported profile metadata entry
    */
   async importProfile(importPath, options = {}) {
-    if (this.basePath) {
-      // Step 1: Read and parse import file
-      let payload;
-      try {
-        payload = await readJson(importPath);
-      } catch (error) {
-        if (error && error.name === 'FileSystemError') {
-          const msg = (error.message || '').toLowerCase();
-          if (msg.includes('file not found')) {
-            throw error;
-          }
-          if (msg.includes('invalid json')) {
-            throw new ProfileError('Invalid export JSON');
-          }
-          throw error;
-        }
-        throw new ProfileError(`Invalid export: ${error?.message ?? ''}`);
-      }
-
-      // Step 2: Validate presence of version
-      if (!payload || typeof payload.version === 'undefined') {
-        throw new ProfileError('Export is missing version');
-      }
-
-      // Step 3: Validate profile name
-      const profileName = payload.profile;
-      const nameValidation = validateProfileName(profileName);
-      if (!nameValidation.success) {
-        throw new ProfileError(nameValidation.error);
-      }
-
-      // Step 4: Validate config presence
-      const config = payload.config;
-      if (config === undefined) {
-        throw new ProfileError('Export is missing config');
-      }
-
-      // Step 5: Create destination profile directory
-      const profileDir = path.join(this.basePath, 'profiles', profileName);
-      await ensureDir(profileDir);
-      const destConfigPath = path.join(profileDir, 'config.json');
-      await writeJson(destConfigPath, config);
-
-      // If the export contains template data, persist template and variables as well
-      if (payload.template !== undefined) {
-        const destTemplatePath = path.join(profileDir, 'template.json');
-        const destVariablesPath = path.join(profileDir, 'variables.json');
-        await writeJson(destTemplatePath, payload.template);
-        await writeJson(destVariablesPath, payload.variables || {});
-      }
-
-      const metadataPath = path.join(this.basePath, 'profiles.json');
-      let metadata = { version: 1, activeProfile: null, profiles: {} };
-      if (await exists(metadataPath)) {
-        try {
-          const existing = await readJson(metadataPath);
-          const result = validateProfilesMetadata(existing);
-          if (!result.success) {
-            throw new ProfileError(`Invalid metadata: ${result.error}`);
-          }
-          metadata = result.data;
-        } catch (e) {
-          if (e instanceof ProfileError) throw e;
-          throw new ProfileError(`Failed to read metadata: ${e.message}`);
-        }
-      }
-
-      if (metadata.profiles[profileName]) {
-        throw new ProfileError(`Profile "${profileName}" already exists`);
-      }
-
-      const now = new Date().toISOString();
-      metadata.profiles[profileName] = {
-        name: profileName,
-        description: '',
-        createdAt: now,
-        updatedAt: now,
-        isDefault: false,
-      };
-
-      // Persist metadata to basePath
-      const metaValidated = validateProfilesMetadata(metadata);
-      if (!metaValidated.success) {
-        throw new ProfileError(`Invalid metadata: ${metaValidated.error}`);
-      }
-      await writeJson(metadataPath, metadata);
-
-      return metadata.profiles[profileName];
-    }
-
-    // Fallback to global path handling (existing behavior)
     await this.init();
     // Step 1: Read and parse import file
     let payload;
@@ -508,23 +365,17 @@ export class ProfileManager {
       throw new ProfileError(nameValidation.error);
     }
 
-    const config = payload.config;
-    if (config === undefined) {
-      throw new ProfileError('Export is missing config');
+    const template = payload.template;
+    if (template === undefined) {
+      throw new ProfileError('Export is missing template');
     }
 
     const profileDir = getProfileDirPath(profileName);
     await ensureDir(profileDir);
-    const destConfigPath = getProfileConfigPath(profileName);
-    await writeJson(destConfigPath, config);
-
-    // Support template exports when importing from global exports
-    if (payload.template !== undefined) {
-      const destTemplatePath = getTemplatePath(profileName);
-      const destVariablesPath = getVariablesPath(profileName);
-      await writeJson(destTemplatePath, payload.template);
-      await writeJson(destVariablesPath, payload.variables || {});
-    }
+    const destTemplatePath = getTemplatePath(profileName);
+    const destVariablesPath = getVariablesPath(profileName);
+    await writeJson(destTemplatePath, template);
+    await writeJson(destVariablesPath, payload.variables || {});
 
     const metadata = await this.getMetadata();
     if (metadata.profiles[profileName]) {
@@ -543,21 +394,7 @@ export class ProfileManager {
   }
 
   /**
-   * Detect the mode of a profile (legacy or template)
-   * @param {string} name - Profile name
-   * @returns {Promise<'legacy'|'template'>} Profile mode
-   */
-  async detectProfileMode(name) {
-    await this.init();
-
-    if (await hasTemplate(name)) {
-      return 'template';
-    }
-    return 'legacy';
-  }
-
-  /**
-   * Switch to a profile (supports both legacy and template modes)
+   * Switch to a profile (template mode)
    * @param {string} name - Profile name
    * @returns {Promise<Object>} Switched profile metadata
    */
@@ -569,36 +406,15 @@ export class ProfileManager {
       throw new ProfileError(`Profile "${name}" not found`);
     }
 
-    const mode = await this.detectProfileMode(name);
-
     await this.configManager.backupConfig();
 
-    if (mode === 'template') {
-      await this._switchTemplateProfile(name);
-    } else {
-      await this._switchLegacyProfile(name);
-    }
+    await this._switchTemplateProfile(name);
 
     metadata.activeProfile = name;
     metadata.profiles[name].lastUsedAt = new Date().toISOString();
     await this.saveMetadata(metadata);
 
     return metadata.profiles[name];
-  }
-
-  /**
-   * Switch to a legacy profile (copy config.json)
-   * @param {string} name - Profile name
-   * @private
-   */
-  async _switchLegacyProfile(name) {
-    const profileConfigPath = getProfileConfigPath(name);
-    if (!(await exists(profileConfigPath))) {
-      throw new ProfileError(`Profile config file missing: ${name}`);
-    }
-
-    const profileConfig = await readJson(profileConfigPath);
-    await this.configManager.writeConfig(profileConfig);
   }
 
   /**

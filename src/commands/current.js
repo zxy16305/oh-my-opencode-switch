@@ -11,10 +11,6 @@ export async function currentAction(_options) {
   }
 }
 
-
 export function registerCurrentCommand(program) {
-  program
-    .command('current')
-    .description('Show current profile')
-    .action(currentAction);
+  program.command('current').description('Show current profile').action(currentAction);
 }

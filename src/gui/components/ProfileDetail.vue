@@ -1,5 +1,5 @@
 <template>
-  <div class="profile-detail" :class="{ 'empty': !profile }">
+  <div class="profile-detail" :class="{ empty: !profile }">
     <!-- Empty State -->
     <div v-if="!profile" class="empty-state">
       <div class="empty-icon">
@@ -134,11 +134,7 @@
           <span>Rename</span>
         </button>
 
-        <button
-          class="btn btn-secondary"
-          @click="handleCopyConfig"
-          title="Copy configuration"
-        >
+        <button class="btn btn-secondary" @click="handleCopyConfig" title="Copy configuration">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="18"
@@ -349,8 +345,13 @@ function handleCopyConfig() {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .default-badge {

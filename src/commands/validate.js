@@ -48,8 +48,5 @@ export async function validateAction(_options) {
 }
 
 export function registerValidateCommand(program) {
-  program
-    .command('validate')
-    .description('Validate current configuration')
-    .action(validateAction);
+  program.command('validate').description('Validate current configuration').action(validateAction);
 }

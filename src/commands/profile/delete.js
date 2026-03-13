@@ -9,29 +9,26 @@ async function confirmDelete(name) {
   });
 
   return new Promise((resolve) => {
-    rl.question(
-      `Are you sure you want to delete profile "${name}"? [y/N] `,
-      (answer) => {
-        rl.close();
-        resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
-      }
-    );
+    rl.question(`Are you sure you want to delete profile "${name}"? [y/N] `, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+    });
   });
 }
 
 export async function deleteAction(name, options) {
   const manager = new ProfileManager();
-  
+
   // Check if profile exists and if it's active
   const profile = await manager.getProfile(name);
-  
+
   // If profile is active, require -f flag
   if (profile.isActive && !options.force) {
     logger.warn('Warning: You are deleting the currently active profile.');
     logger.info('Use -f to confirm deletion.');
     process.exit(1);
   }
-  
+
   // If not active and not forced, ask for confirmation
   if (!profile.isActive && !options.force) {
     const confirmed = await confirmDelete(name);

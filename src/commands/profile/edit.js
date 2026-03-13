@@ -3,6 +3,7 @@ import { ProfileError } from '../../utils/errors.js';
 import { createScreen, createHelpBar } from '../../tui/index.js';
 import { VariableList } from '../../tui/components/variable-list.js';
 import { ModelSelector } from '../../tui/components/model-selector.js';
+import { TextInput } from '../../tui/components/text-input.js';
 import { PreviewPanel, showSuccessMessage } from '../../tui/components/preview-panel.js';
 import { readJson, writeJson, exists } from '../../utils/files.js';
 import { getVariablesPath, hasTemplate, getTemplatePath } from '../../utils/paths.js';
@@ -191,6 +192,14 @@ export async function editAction(profileName, _options) {
   });
   previewPanel.hide();
 
+  const textInput = new TextInput(screen, {
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%-1',
+  });
+  textInput.hide();
+
   const helpBar = createHelpBar(screen, [
     { key: '→/Space', action: 'Edit variable' },
     { key: 'Enter', action: 'Preview changes' },
@@ -218,6 +227,7 @@ export async function editAction(profileName, _options) {
     currentView = 'variables';
     previewPanel.hide();
     modelSelector.hide();
+    textInput.hide();
     variableList.show();
     variableList.focus();
     helpBar.updateShortcuts([
@@ -232,12 +242,28 @@ export async function editAction(profileName, _options) {
     currentView = 'models';
     previewPanel.hide();
     variableList.hide();
+    textInput.hide();
     modelSelector.setVariable(variable.name, variable.value);
     modelSelector.show();
     modelSelector.loadModels(variable.value);
     modelSelector.focus();
     helpBar.updateShortcuts([
       { key: '←/Enter', action: 'Select model' },
+      { key: 'Esc', action: 'Cancel' },
+    ]);
+    screen.render();
+  }
+
+  function showTextInput(variable) {
+    currentView = 'text-input';
+    previewPanel.hide();
+    variableList.hide();
+    modelSelector.hide();
+    textInput.setVariable(variable.name, variable.value);
+    textInput.show();
+    textInput.focus();
+    helpBar.updateShortcuts([
+      { key: 'Enter', action: 'Confirm' },
       { key: 'Esc', action: 'Cancel' },
     ]);
     screen.render();
@@ -259,16 +285,12 @@ export async function editAction(profileName, _options) {
 
   /**
    * Show appropriate input component for non-model variables
-   * TODO: Will be replaced with actual input components in later tasks
    * @param {Object} variable - The variable to edit
    */
   function showNonModelInput(variable) {
-    // For now, log and stay on variable list (stub implementation)
-    console.log(`Editing non-model variable: ${variable.name} (type: ${typeof variable.value})`);
-
-    // In future tasks, this will open text/JSON input component
-    // For now, just show a message (can be enhanced later)
-    showVariableList();
+    // For simple non-model variables (string/number/boolean/null), use TextInput
+    // For object/array variables, we'll add JSON input in a later task
+    showTextInput(variable);
   }
 
   async function handleSave() {
@@ -326,6 +348,22 @@ export async function editAction(profileName, _options) {
   });
 
   modelSelector.onCancel(() => {
+    showVariableList();
+  });
+
+  textInput.onConfirm((newValue) => {
+    const selectedVar = variableList.getSelected();
+    if (selectedVar) {
+      const idx = variables.findIndex((v) => v.name === selectedVar.name);
+      if (idx !== -1) {
+        variables[idx].value = newValue;
+        variableList.setVariables(variables);
+      }
+    }
+    showVariableList();
+  });
+
+  textInput.onCancel(() => {
     showVariableList();
   });
 

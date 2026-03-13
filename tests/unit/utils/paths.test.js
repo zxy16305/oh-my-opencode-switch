@@ -9,7 +9,6 @@ import {
   getProfilesDir,
   getProfilesMetadataPath,
   getSourceConfigPath,
-  getProfileConfigPath,
   getProfileDirPath,
   getTemplatePath,
   getVariablesPath,
@@ -47,15 +46,6 @@ describe('Paths utilities', () => {
   describe('getSourceConfigPath', () => {
     it('should return source config path', () => {
       assert.equal(getSourceConfigPath(), path.join(baseDir, 'oh-my-opencode.json'));
-    });
-  });
-
-  describe('getProfileConfigPath', () => {
-    it('should return profile config path', () => {
-      assert.equal(
-        getProfileConfigPath('my-profile'),
-        path.join(baseDir, '.oos', 'profiles', 'my-profile', 'config.json')
-      );
     });
   });
 

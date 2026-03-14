@@ -1,5 +1,7 @@
 # oos (oh-my-opencode switch)
 
+> ⚠️ 个人自用项目，随缘更新维护
+
 OpenCode 配置文件管理工具，用于快速切换和管理 oh-my-opencode 配置。
 
 ## 安装

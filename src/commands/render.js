@@ -23,7 +23,7 @@ export async function renderAction(profileName, options = {}) {
   if (!templateExists) {
     throw new ProfileError(
       `Profile '${profileName}' does not have a template. ` +
-        `Use 'oos template create ${profileName}' to create one.`
+        `Templates are created automatically when you create a profile with 'oos profile create'.`
     );
   }
 

@@ -1,6 +1,6 @@
 # oos (oh-my-opencode switch)
 
-配置文件管理工具，用于快速切换 oh-my-opencode 配置。
+OpenCode 配置文件管理工具，用于快速切换和管理 oh-my-opencode 配置。
 
 ## 安装
 
@@ -11,11 +11,14 @@ npm install
 npm link
 ```
 
-## 使用
+**要求**: Node.js >= 16.0.0
 
-### 基本命令
+## 快速开始
 
 ```bash
+# 初始化（首次使用）
+oos init
+
 # 显示帮助
 oos --help
 
@@ -23,7 +26,9 @@ oos --help
 oos --version
 ```
 
-### 配置管理
+## 命令
+
+### 配置管理 (profile)
 
 ```bash
 # 列出所有配置
@@ -56,6 +61,13 @@ oos profile show my-profile
 
 # 打开配置目录（在文件资源管理器中）
 oos profile open my-profile
+
+# 导入配置
+oos profile import ./my-profile.json
+
+# 导出配置
+oos profile export my-profile
+oos profile export my-profile -o ./exported.json
 ```
 
 ### 编辑配置变量
@@ -70,7 +82,7 @@ oos profile edit
 
 编辑界面支持两种类型的变量：
 
-- **模型变量**: 值为模型名称（如 `claude-3-sonnet`），使用模型选择器编辑
+- **模型变量**: 值为模型名称（如 `doubao-seed-2-0-pro`），使用模型选择器编辑
 - **非模型变量**: 普通文本或结构化数据
 
 对于非模型变量，根据值类型自动选择编辑方式：
@@ -83,21 +95,7 @@ JSON 编辑器快捷键：
 - `Ctrl+S` / `Cmd+S` - 保存修改
 - `Escape` - 取消编辑
 
-示例：编辑包含嵌套对象的变量
-
-```bash
-oos profile edit my-profile
-# 选择变量 "API_CONFIG"
-# 在 JSON 编辑器中输入：
-# {
-#   "endpoint": "https://api.example.com",
-#   "timeout": 30,
-#   "retries": 3
-# }
-# 按 Ctrl+S 保存
-```
-
-### 模板管理
+### 模板管理 (template)
 
 模板功能允许您创建带有变量占位符的配置文件，通过变量替换实现快速环境切换。
 
@@ -113,14 +111,14 @@ oos template create my-profile --from-current
 oos template show my-profile
 ```
 
-### 渲染模板
+### 渲染模板 (render)
 
 ```bash
 # 渲染模板并输出到控制台
-oos render my-template
+oos render my-profile
 
 # 渲染模板并保存到文件
-oos render my-template --output rendered-config.json
+oos render my-profile --output rendered-config.json
 ```
 
 ### 其他命令
@@ -131,6 +129,64 @@ oos current
 
 # 验证当前配置
 oos validate
+
+# 列出可用模型
+oos models
+```
+
+### Shell 补全
+
+```bash
+# 生成补全脚本
+oos completion bash      # Bash
+oos completion zsh       # Zsh
+oos completion fish      # Fish
+oos completion powershell # PowerShell
+
+# 自动安装补全（检测当前 shell）
+oos setup-completion
+
+# 指定 shell 安装补全
+oos setup-completion bash
+oos setup-completion zsh
+oos setup-completion fish
+oos setup-completion powershell
+```
+
+#### 补全安装示例
+
+**Bash:**
+
+```bash
+eval "$(oos completion bash)"
+# 或自动安装
+oos setup-completion bash
+```
+
+**Zsh:**
+
+```bash
+eval "$(oos completion zsh)"
+# 或自动安装
+oos setup-completion zsh
+```
+
+**Fish:**
+
+```bash
+oos completion fish > ~/.config/fish/completions/oos.fish
+# 或自动安装
+oos setup-completion fish
+```
+
+**PowerShell:**
+
+```powershell
+oos completion powershell > ~/.oos-completion.ps1
+# 添加到 $PROFILE
+. ~/.oos-completion.ps1
+# 或自动安装
+oos setup-completion powershell
 ```
 
 ## 模板语法
@@ -139,13 +195,13 @@ oos validate
 
 ```json
 {
-  "api": {
-    "key": "{{API_KEY}}",
-    "endpoint": "{{API_ENDPOINT}}"
-  },
-  "database": {
-    "host": "{{DB_HOST}}",
-    "port": {{DB_PORT}}
+  "agents": {
+    "Sisyphus": {
+      "model": "{{MODEL_ORCHESTRATOR}}",
+      "ultrawork": {
+        "model": "{{MODEL_ULTRAWORK}}"
+      }
+    }
   }
 }
 ```
@@ -160,9 +216,36 @@ oos validate
 └── .oos/
     ├── profiles.json             # 元数据
     └── profiles/
-        └── my-template/
+        └── my-profile/
             ├── template.json     # 模板文件
             └── variables.json    # 变量定义
+```
+
+## 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 链接到全局
+npm link
+
+# 运行测试
+npm test
+
+# 单元测试
+npm run test:unit
+
+# 集成测试
+npm run test:integration
+
+# 代码检查
+npm run lint
+npm run lint:fix
+
+# 格式化
+npm run format
+npm run format:check
 ```
 
 ## License

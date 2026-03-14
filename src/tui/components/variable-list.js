@@ -80,6 +80,13 @@ export class VariableList {
         }
       }
     });
+
+    // Handle escape key - exit the editor
+    this.list.key(['escape', 'q'], () => {
+      if (this.exitCallback) {
+        this.exitCallback();
+      }
+    });
   }
 
   /**
@@ -127,6 +134,10 @@ export class VariableList {
    */
   onPreview(callback) {
     this.previewCallback = callback;
+  }
+
+  onExit(callback) {
+    this.exitCallback = callback;
   }
 
   /**

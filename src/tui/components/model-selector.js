@@ -152,8 +152,7 @@ export class ModelSelector {
         left: 0,
         width: '100%',
         height: 3,
-        content:
-          ' {bold}a: Add | d: Delete | k: Up | j: Down | Enter: Confirm | Esc: Cancel{/bold}',
+        content: ' {bold}a: Add | d: Delete | ←→: Switch | Enter: Confirm | Esc: Cancel{/bold}',
         tags: true,
         border: {
           type: 'line',
@@ -163,14 +162,6 @@ export class ModelSelector {
             fg: 'cyan',
           },
         },
-      });
-
-      this.availableList.key(['tab'], () => {
-        this.focusSelectedList();
-      });
-
-      this.selectedList.key(['tab'], () => {
-        this.focusAvailableList();
       });
 
       this.availableList.key(['a', 'A'], () => {
@@ -189,7 +180,26 @@ export class ModelSelector {
         this.moveSelectedModelDown();
       });
 
-      this.screen.key(['enter', 'left'], () => {
+      this.availableList.key(['right'], () => {
+        this.focusSelectedList();
+      });
+
+      this.availableList.key(['left'], () => {
+        if (this.selectedCallback && this.selectedModels.length > 0) {
+          const result = this.selectedModels.map((m) => m.fullId);
+          this.selectedCallback(result);
+        }
+      });
+
+      this.selectedList.key(['left'], () => {
+        this.focusAvailableList();
+      });
+
+      this.selectedList.key(['right'], () => {
+        // No action - already at rightmost position
+      });
+
+      this.screen.key(['enter'], () => {
         if (this.selectedCallback && this.selectedModels.length > 0) {
           const result = this.selectedModels.map((m) => m.fullId);
           this.selectedCallback(result);
@@ -203,11 +213,15 @@ export class ModelSelector {
       });
 
       this.focusedList = this.availableList;
+      this.availableList.style.border.fg = 'cyan';
+      this.selectedList.style.border.fg = 'gray';
     }
   }
 
   focusAvailableList() {
     if (this.multi) {
+      this.availableList.style.border.fg = 'cyan';
+      this.selectedList.style.border.fg = 'gray';
       this.availableList.focus();
       this.focusedList = this.availableList;
       this.screen.render();
@@ -216,6 +230,8 @@ export class ModelSelector {
 
   focusSelectedList() {
     if (this.multi) {
+      this.selectedList.style.border.fg = 'cyan';
+      this.availableList.style.border.fg = 'gray';
       this.selectedList.focus();
       this.focusedList = this.selectedList;
       this.screen.render();

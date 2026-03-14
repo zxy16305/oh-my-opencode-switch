@@ -124,7 +124,7 @@ export class ModelSelector {
         width: '50%',
         height: '100%-9',
         keys: true,
-        vi: true,
+        vi: false,
         mouse: true,
         tags: true,
         style: {
@@ -181,11 +181,11 @@ export class ModelSelector {
         this.deleteSelectedModel();
       });
 
-      this.selectedList.key(['k', 'K', 'up'], () => {
+      this.selectedList.key(['k', 'K'], () => {
         this.moveSelectedModelUp();
       });
 
-      this.selectedList.key(['j', 'J', 'down'], () => {
+      this.selectedList.key(['j', 'J'], () => {
         this.moveSelectedModelDown();
       });
 

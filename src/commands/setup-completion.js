@@ -11,10 +11,18 @@ import {
 
 async function detectShell() {
   const shell = process.env.SHELL || process.env.ComSpec || '';
+
+  // Check SHELL environment variable first (works on Windows with Git Bash, WSL, etc.)
   if (shell.includes('zsh')) return 'zsh';
   if (shell.includes('fish')) return 'fish';
-  if (shell.includes('powershell') || shell.includes('pwsh') || process.platform === 'win32')
+  if (shell.includes('bash')) return 'bash';
+  if (shell.includes('powershell') || shell.includes('pwsh')) return 'powershell';
+
+  // Fallback to platform detection only if SHELL is not set or doesn't contain known shells
+  if (process.platform === 'win32') {
     return 'powershell';
+  }
+
   return 'bash';
 }
 
@@ -58,6 +66,25 @@ async function setupBash() {
     await fs.mkdir(completionDir, { recursive: true });
     await fs.writeFile(completionFile, generateBashCompletion());
     logger.success(`Bash completion installed to ${completionFile}`);
+
+    const bashrcContent = await fs.readFile(targetFile, 'utf8').catch(() => '');
+
+    const unixPath = completionFile
+      .split(path.sep)
+      .map((part, index) => {
+        if (index === 0 && part.match(/^[A-Za-z]:$/)) {
+          return `/${part[0].toLowerCase()}`;
+        }
+        return part;
+      })
+      .join('/');
+    const sourceLine = `\n# oos completion\n[ -f "${unixPath}" ] && source "${unixPath}"\n`;
+
+    if (!bashrcContent.includes('oos completion') && !bashrcContent.includes(completionFile)) {
+      await fs.appendFile(targetFile, sourceLine);
+      logger.success(`Added completion source to ${targetFile}`);
+    }
+
     logger.info('Restart your shell or run: source ~/.bashrc');
     return true;
   } catch (error) {
@@ -117,9 +144,21 @@ async function setupPowerShell() {
   try {
     await fs.writeFile(completionFile, generatePowerShellCompletion());
     logger.success(`PowerShell completion installed to ${completionFile}`);
-    logger.info(`Add to your $PROFILE:`);
-    logger.info(`  . ${completionFile}`);
-    logger.info(`Or run: Add-Content $PROFILE '. ${completionFile}'`);
+
+    const profileDir = path.join(home, 'Documents', 'WindowsPowerShell');
+    const profilePath = path.join(profileDir, 'Microsoft.PowerShell_profile.ps1');
+
+    await fs.mkdir(profileDir, { recursive: true });
+
+    const profileContent = await fs.readFile(profilePath, 'utf8').catch(() => '');
+    const sourceLine = `\n# oos completion\n. "${completionFile}"\n`;
+
+    if (!profileContent.includes('oos completion') && !profileContent.includes(completionFile)) {
+      await fs.appendFile(profilePath, sourceLine);
+      logger.success(`Added completion source to ${profilePath}`);
+    }
+
+    logger.info('Restart your shell or run: . $PROFILE');
     return true;
   } catch (error) {
     logger.error(`Failed to install PowerShell completion: ${error.message}`);

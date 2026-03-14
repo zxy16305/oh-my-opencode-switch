@@ -25,7 +25,7 @@ _oos_completion() {
     2)
       case "\${words[1]}" in
         profile)
-          COMPREPLY=($(compgen -W "list ls create switch use delete rm rename mv copy cp show" -- "\${cur}"))
+          COMPREPLY=($(compgen -W "list ls create switch use delete rm rename mv copy cp show edit open import export" -- "\${cur}"))
           ;;
         template)
           COMPREPLY=($(compgen -W "list ls create show" -- "\${cur}"))
@@ -36,7 +36,7 @@ _oos_completion() {
       case "\${words[1]}" in
         profile)
           case "\${words[2]}" in
-            switch|use|delete|rm|show|copy|cp|rename|mv)
+            switch|use|delete|rm|show|copy|cp|rename|mv|edit|open|export)
               COMPREPLY=($(compgen -W "$(_oos_get_profiles)" -- "\${cur}"))
               ;;
           esac
@@ -95,7 +95,9 @@ _oos() {
         'current[Show current config]' \\
         'validate[Validate config]' \\
         'init[Initialize OpenCode]' \\
-        'completion[Generate shell completion]'
+        'completion[Generate shell completion]' \\
+        'setup-completion[Install shell completion]' \\
+        'models[List available models]'
       ;;
     args)
       case $words[2] in
@@ -103,16 +105,32 @@ _oos() {
           case $words[3] in
             list|ls|create)
               ;;
-            switch|use|delete|rm|show)
-              _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
+            switch|use|delete|rm|show|edit|open|export)
+              _values 'profiles' $(_oos_get_profiles_with_desc)
               ;;
             copy|cp|rename|mv)
               if [[ $CURRENT -eq 4 ]]; then
-                _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
+                _values 'profiles' $(_oos_get_profiles_with_desc)
               fi
               ;;
             *)
-              _values 'subcommands' list ls create switch use delete rm rename mv copy cp show
+              _values 'subcommands' \\
+                'list[List all profiles]' \\
+                'ls[List all profiles]' \\
+                'create[Create new profile]' \\
+                'switch[Switch to profile]' \\
+                'use[Switch to profile]' \\
+                'delete[Delete profile]' \\
+                'rm[Delete profile]' \\
+                'copy[Copy profile]' \\
+                'cp[Copy profile]' \\
+                'rename[Rename profile]' \\
+                'mv[Rename profile]' \\
+                'show[Show profile details]' \\
+                'edit[Edit profile variables]' \\
+                'open[Open profile directory]' \\
+                'import[Import profile]' \\
+                'export[Export profile]'
               ;;
           esac
           ;;
@@ -121,19 +139,47 @@ _oos() {
             list|ls|create)
               ;;
             show)
-              _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
+              _values 'profiles' $(_oos_get_profiles_with_desc)
               ;;
             *)
-              _values 'subcommands' list ls create show
+              _values 'subcommands' \\
+                'list[List templates]' \\
+                'ls[List templates]' \\
+                'create[Create template]' \\
+                'show[Show template]'
               ;;
           esac
           ;;
         render)
-          _values 'profiles' $(oos profile list --json 2>/dev/null | node -e "const d=require('fs').readFileSync(0,'utf8');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(' '))}catch{}")
+          _values 'profiles' $(_oos_get_profiles_with_desc)
+          ;;
+        completion)
+          _values 'shells' bash zsh fish powershell
+          ;;
+        setup-completion)
+          _values 'shells' bash zsh fish powershell
           ;;
       esac
       ;;
   esac
+}
+
+_oos_get_profiles_with_desc() {
+  local json output
+  json=$(oos profile list --json 2>/dev/null)
+  if [[ -n "$json" ]]; then
+    echo "$json" | node -e "
+      const d = require('fs').readFileSync(0, 'utf8');
+      try {
+        const j = JSON.parse(d);
+        j.forEach(p => {
+          const desc = p.description || '';
+          const active = p.isActive ? ' (active)' : '';
+          console.log(p.name + '[' + desc + active + ']');
+        });
+      } catch {}
+    "
+  fi
 }
 
 _oos
@@ -152,6 +198,8 @@ complete -c oos -n __fish_use_subcommand -a current -d 'Show current config'
 complete -c oos -n __fish_use_subcommand -a validate -d 'Validate config'
 complete -c oos -n __fish_use_subcommand -a init -d 'Initialize OpenCode'
 complete -c oos -n __fish_use_subcommand -a completion -d 'Generate shell completion'
+complete -c oos -n __fish_use_subcommand -a setup-completion -d 'Install shell completion'
+complete -c oos -n __fish_use_subcommand -a models -d 'List available models'
 
 # Profile subcommands
 complete -c oos -n '__fish_seen_subcommand_from profile' -a list -d 'List profiles'
@@ -166,10 +214,14 @@ complete -c oos -n '__fish_seen_subcommand_from profile' -a cp -d 'Copy profile'
 complete -c oos -n '__fish_seen_subcommand_from profile' -a rename -d 'Rename profile'
 complete -c oos -n '__fish_seen_subcommand_from profile' -a mv -d 'Rename profile'
 complete -c oos -n '__fish_seen_subcommand_from profile' -a show -d 'Show profile'
+complete -c oos -n '__fish_seen_subcommand_from profile' -a edit -d 'Edit profile variables'
+complete -c oos -n '__fish_seen_subcommand_from profile' -a open -d 'Open profile directory'
+complete -c oos -n '__fish_seen_subcommand_from profile' -a import -d 'Import profile'
+complete -c oos -n '__fish_seen_subcommand_from profile' -a export -d 'Export profile'
 
-# Dynamic profile completion
-complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from switch use delete rm show' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
-complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from copy cp rename mv' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
+# Dynamic profile completion with descriptions
+complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from switch use delete rm show edit open export' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";const a=p.isActive?\" (active)\":\"\";console.log(p.name+\"\\t\"+d+a)})}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from copy cp rename mv' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";const a=p.isActive?\" (active)\":\"\";console.log(p.name+\"\\t\"+d+a)})}catch{}")'
 
 # Template subcommands
 complete -c oos -n '__fish_seen_subcommand_from template' -a list -d 'List templates'
@@ -177,15 +229,22 @@ complete -c oos -n '__fish_seen_subcommand_from template' -a ls -d 'List templat
 complete -c oos -n '__fish_seen_subcommand_from template' -a create -d 'Create template'
 complete -c oos -n '__fish_seen_subcommand_from template' -a show -d 'Show template'
 
-complete -c oos -n '__fish_seen_subcommand_from template; and __fish_seen_subcommand_from show' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from template; and __fish_seen_subcommand_from show' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";console.log(p.name+\"\\t\"+d)})}catch{}")'
 
 # Render
-complete -c oos -n '__fish_seen_subcommand_from render' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\'fs\').readFileSync(0,\'utf8\');try{const j=JSON.parse(d);console.log(j.map(p=>p.name).join(\' \'))}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from render' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";console.log(p.name+\"\\t\"+d)})}catch{}")'
 
 # Completion subcommands
 complete -c oos -n '__fish_seen_subcommand_from completion' -a bash -d 'Bash completion'
 complete -c oos -n '__fish_seen_subcommand_from completion' -a zsh -d 'Zsh completion'
 complete -c oos -n '__fish_seen_subcommand_from completion' -a fish -d 'Fish completion'
+complete -c oos -n '__fish_seen_subcommand_from completion' -a powershell -d 'PowerShell completion'
+
+# Setup-completion subcommands
+complete -c oos -n '__fish_seen_subcommand_from setup-completion' -a bash -d 'Bash'
+complete -c oos -n '__fish_seen_subcommand_from setup-completion' -a zsh -d 'Zsh'
+complete -c oos -n '__fish_seen_subcommand_from setup-completion' -a fish -d 'Fish'
+complete -c oos -n '__fish_seen_subcommand_from setup-completion' -a powershell -d 'PowerShell'
 `;
 }
 
@@ -199,50 +258,108 @@ Register-ArgumentCompleter -Native -CommandName 'oos' -ScriptBlock {
     $commandElements = $commandAst.CommandElements
     $tokens = @($commandElements | ForEach-Object { $_.Extent.Text })
 
-    if ($tokens.Count -eq 1) {
-        @('profile', 'template', 'render', 'current', 'validate', 'init', 'completion') |
-            Where-Object { $_ -like "$wordToComplete*" } |
-            ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+    $actualTokens = @($tokens | Where-Object { $_ -ne '' })
+    $tokenCount = $actualTokens.Count
+
+    $topLevelCommands = @('profile', 'template', 'render', 'current', 'validate', 'init', 'completion', 'setup-completion', 'models')
+    $profileSubcommands = @('list', 'ls', 'create', 'switch', 'use', 'delete', 'rm', 'copy', 'cp', 'rename', 'mv', 'show', 'edit', 'open', 'import', 'export')
+    $profileNameSubcommands = @('switch', 'use', 'delete', 'rm', 'show', 'copy', 'cp', 'rename', 'mv', 'edit', 'open', 'export')
+
+    if ($tokenCount -eq 1) {
+        $topLevelCommands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
         return
     }
 
-    switch ($tokens[1]) {
-        'profile' {
-            if ($tokens.Count -eq 2) {
-                @('list', 'ls', 'create', 'switch', 'use', 'delete', 'rm', 'copy', 'cp', 'rename', 'mv', 'show') |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
-            }
-            elseif ($tokens[2] -in @('switch', 'use', 'delete', 'rm', 'show', 'copy', 'cp', 'rename', 'mv')) {
-                (oos profile list --json 2>$null | ConvertFrom-Json).name |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+    $command = $actualTokens[1]
+
+    if ($command -notin $topLevelCommands) {
+        $topLevelCommands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        return
+    }
+
+    if ($tokenCount -eq 2) {
+        switch ($command) {
+            'profile' { $profileSubcommands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) } }
+            'template' { @('list', 'ls', 'create', 'show') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) } }
+            'completion' { @('bash', 'zsh', 'fish', 'powershell') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) } }
+            'setup-completion' { @('bash', 'zsh', 'fish', 'powershell') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) } }
+            'render' {
+                $outputEncoding = [System.Text.Encoding]::UTF8
+                [Console]::OutputEncoding = $outputEncoding
+                $json = oos profile list --json 2>$null
+                if ($json) {
+                    try {
+                        $profiles = $json | ConvertFrom-Json
+                        $profiles | Where-Object { $_.name -like "$wordToComplete*" } | ForEach-Object {
+                            $desc = $_.description
+                            if ($_.isActive) { $desc = "$desc (active)" }
+                            [CompletionResult]::new($_.name, $_.name, 'ParameterValue', $desc)
+                        }
+                    } catch {}
+                }
             }
         }
-        'template' {
-            if ($tokens.Count -eq 2) {
-                @('list', 'ls', 'create', 'show') |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+        return
+    }
+
+    # tokenCount >= 3
+    $subcommand = $actualTokens[2]
+
+    switch ($command) {
+        'profile' {
+            # Partial subcommand - complete it
+            if ($subcommand -notin $profileSubcommands) {
+                $profileSubcommands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+                return
             }
-            elseif ($tokens[2] -eq 'show') {
-                (oos profile list --json 2>$null | ConvertFrom-Json).name |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+            # Complete profile names for specific subcommands
+            if ($subcommand -in $profileNameSubcommands) {
+                $outputEncoding = [System.Text.Encoding]::UTF8
+                [Console]::OutputEncoding = $outputEncoding
+                $json = oos profile list --json 2>$null
+                if ($json) {
+                    try {
+                        $profiles = $json | ConvertFrom-Json
+                        $profiles | Where-Object { $_.name -like "$wordToComplete*" } | ForEach-Object {
+                            $desc = $_.description
+                            if ($_.isActive) { $desc = "$desc (active)" }
+                            [CompletionResult]::new($_.name, $_.name, 'ParameterValue', $desc)
+                        }
+                    } catch {}
+                }
+            }
+            # For other subcommands (list, ls, create, import) - no completion needed
+        }
+        'template' {
+            if ($subcommand -notin @('list', 'ls', 'create', 'show')) {
+                @('list', 'ls', 'create', 'show') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+                return
+            }
+            if ($subcommand -eq 'show') {
+                $outputEncoding = [System.Text.Encoding]::UTF8
+                [Console]::OutputEncoding = $outputEncoding
+                $json = oos profile list --json 2>$null
+                if ($json) {
+                    try {
+                        $profiles = $json | ConvertFrom-Json
+                        $profiles | Where-Object { $_.name -like "$wordToComplete*" } | ForEach-Object {
+                            [CompletionResult]::new($_.name, $_.name, 'ParameterValue', $_.description)
+                        }
+                    } catch {}
+                }
             }
         }
         'render' {
-            if ($tokens.Count -eq 2) {
-                (oos profile list --json 2>$null | ConvertFrom-Json).name |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
-            }
-        }
-        'completion' {
-            if ($tokens.Count -eq 2) {
-                @('bash', 'zsh', 'fish', 'powershell') |
-                    Where-Object { $_ -like "$wordToComplete*" } |
-                    ForEach-Object { [CompletionResult]::new($_, $_, 'ParameterValue', $_) }
+            $outputEncoding = [System.Text.Encoding]::UTF8
+            [Console]::OutputEncoding = $outputEncoding
+            $json = oos profile list --json 2>$null
+            if ($json) {
+                try {
+                    $profiles = $json | ConvertFrom-Json
+                    $profiles | Where-Object { $_.name -like "$wordToComplete*" } | ForEach-Object {
+                        [CompletionResult]::new($_.name, $_.name, 'ParameterValue', $_.description)
+                    }
+                } catch {}
             }
         }
     }

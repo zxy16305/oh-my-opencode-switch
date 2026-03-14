@@ -21,6 +21,10 @@ npm link
 # 初始化（首次使用）
 oos init
 
+# 交互式编辑当前配置变量（TUI界面）
+oos profile edit
+# 流程：上下箭头选择变量 → Enter进入编辑 → Ctrl+S保存 → Esc退出，修改即时生效
+
 # 显示帮助
 oos --help
 
@@ -97,31 +101,7 @@ JSON 编辑器快捷键：
 - `Ctrl+S` / `Cmd+S` - 保存修改
 - `Escape` - 取消编辑
 
-### 模板管理 (template)
 
-模板功能允许您创建带有变量占位符的配置文件，通过变量替换实现快速环境切换。
-
-```bash
-# 列出所有带模板的配置
-oos template list
-oos template ls
-
-# 为现有配置创建模板
-oos template create my-profile --from-current
-
-# 显示配置的模板内容
-oos template show my-profile
-```
-
-### 渲染模板 (render)
-
-```bash
-# 渲染模板并输出到控制台
-oos render my-profile
-
-# 渲染模板并保存到文件
-oos render my-profile --output rendered-config.json
-```
 
 ### 其他命令
 
@@ -191,22 +171,7 @@ oos completion powershell > ~/.oos-completion.ps1
 oos setup-completion powershell
 ```
 
-## 模板语法
 
-模板使用 `{{VARIABLE_NAME}}` 占位符语法：
-
-```json
-{
-  "agents": {
-    "Sisyphus": {
-      "model": "{{MODEL_ORCHESTRATOR}}",
-      "ultrawork": {
-        "model": "{{MODEL_ULTRAWORK}}"
-      }
-    }
-  }
-}
-```
 
 ## 目录结构
 
@@ -219,8 +184,7 @@ oos setup-completion powershell
     ├── profiles.json             # 元数据
     └── profiles/
         └── my-profile/
-            ├── template.json     # 模板文件
-            └── variables.json    # 变量定义
+            └── config.json       # 配置文件
 ```
 
 ## 开发

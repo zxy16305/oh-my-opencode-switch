@@ -6,7 +6,6 @@ import {
   getOosDir,
   getTemplatePath,
   getVariablesPath,
-  hasTemplate,
 } from '../utils/paths.js';
 import { readJson, writeJson, exists, ensureDir, copyFile, remove } from '../utils/files.js';
 import { validateProfileName, validateProfilesMetadata } from '../utils/validators.js';
@@ -336,7 +335,7 @@ export class ProfileManager {
    * @param {Object} [options] - Optional params (currently unused)
    * @returns {Promise<Object>} Imported profile metadata entry
    */
-  async importProfile(importPath, options = {}) {
+  async importProfile(importPath, _options = {}) {
     await this.init();
     // Step 1: Read and parse import file
     let payload;

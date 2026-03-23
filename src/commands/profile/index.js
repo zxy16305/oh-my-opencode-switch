@@ -9,6 +9,7 @@ import { registerRenameCommand } from './rename.js';
 import { registerShowCommand } from './show.js';
 import { registerOpenCommand } from './open.js';
 import { registerEditCommand } from './edit.js';
+import { register as registerUpdateTemplateCommand } from './updateTemplate.js';
 
 export function registerProfileCommands(program) {
   const profile = program.command('profile').description('Manage configuration profiles');
@@ -16,6 +17,7 @@ export function registerProfileCommands(program) {
   registerListCommand(profile);
   registerCreateCommand(profile);
   registerSwitchCommand(profile);
+  registerUpdateTemplateCommand(profile);
   registerCopyCommand(profile);
   registerDeleteCommand(profile);
   registerRenameCommand(profile);

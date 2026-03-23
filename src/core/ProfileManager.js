@@ -13,6 +13,7 @@ import { validateProfileName, validateProfilesMetadata } from '../utils/validato
 import { ProfileError, ConfigError, MissingVariableError } from '../utils/errors.js';
 import { ConfigManager } from './ConfigManager.js';
 import { TemplateEngine } from './TemplateEngine.js';
+import { DEFAULT_TEMPLATE_JSON } from '../commands/init.js';
 
 const DEFAULT_CONFIG_TEMPLATE = {
   $schema:
@@ -524,6 +525,66 @@ export class ProfileManager {
     };
 
     return walk(clone);
+  }
+
+  /**
+   * Update templates for all profiles that share the same template name.
+   * @param {string} sourceProfileName - Source profile name to copy template from
+   * @param {Object} options - Optional parameters
+   * @param {boolean} options.useDefault - Use DEFAULT_TEMPLATE_JSON instead of source profile
+   * @returns {Promise<Object>} Result with updated, failed, and skipped arrays
+   */
+  async updateTemplates(sourceProfileName, options = {}) {
+    const { useDefault = false } = options;
+
+    await this.init();
+
+    let sourceTemplate;
+    if (useDefault) {
+      sourceTemplate = DEFAULT_TEMPLATE_JSON;
+    } else {
+      if (!sourceProfileName) {
+        throw new ProfileError('Source profile name is required when not using default template');
+      }
+      const sourcePath = getTemplatePath(sourceProfileName);
+      if (!(await exists(sourcePath))) {
+        throw new ProfileError(`Source profile "${sourceProfileName}" not found`);
+      }
+      sourceTemplate = await readJson(sourcePath);
+    }
+
+    const oosVersionTag = sourceTemplate.oosVersionTag;
+    if (!oosVersionTag) {
+      throw new ProfileError('Source template has no oosVersionTag');
+    }
+    const templateName = oosVersionTag.split(':')[0];
+
+    const profiles = await this.listProfiles();
+    const matches = [];
+    for (const profile of profiles) {
+      const templatePath = getTemplatePath(profile.name);
+      if (!(await exists(templatePath))) continue;
+      const template = await readJson(templatePath);
+      if (template.oosVersionTag && template.oosVersionTag.startsWith(`${templateName}:`)) {
+        matches.push(profile.name);
+      }
+    }
+
+    const updated = [];
+    const failed = [];
+    for (const profileName of matches) {
+      try {
+        const templatePath = getTemplatePath(profileName);
+        const backupPath = `${templatePath}.bak`;
+        await copyFile(templatePath, backupPath);
+        await writeJson(templatePath, sourceTemplate);
+        updated.push(profileName);
+      } catch (error) {
+        failed.push({ name: profileName, error: error.message });
+      }
+    }
+
+    return { updated, failed, skipped: [] };
   }
 }
 

@@ -18,9 +18,10 @@ const DEFAULT_CONFIG_TEMPLATE = {
   categories: {},
 };
 
-const DEFAULT_TEMPLATE_JSON = {
+export const DEFAULT_TEMPLATE_JSON = {
   $schema:
     'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
+  oosVersionTag: 'default:1.0',
 
   agents: {
     Sisyphus: {

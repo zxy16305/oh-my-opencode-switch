@@ -29,7 +29,7 @@ export async function readJson(filePath) {
       throw new FileSystemError(`File not found: ${filePath}`);
     }
     if (error instanceof SyntaxError) {
-      throw new FileSystemError(`Invalid JSON in file: ${filePath}`);
+      throw new FileSystemError(`Invalid JSON in file: ${filePath} - ${error.message}`);
     }
     throw new FileSystemError(`Failed to read file: ${filePath} - ${error.message}`);
   }
@@ -117,7 +117,7 @@ export async function readJsonWithComments(filePath) {
       throw new FileSystemError(`File not found: ${filePath}`);
     }
     if (error instanceof SyntaxError) {
-      throw new FileSystemError(`Invalid JSON in file: ${filePath}`);
+      throw new FileSystemError(`Invalid JSON in file: ${filePath} - ${error.message}`);
     }
     throw new FileSystemError(`Failed to read file: ${filePath} - ${error.message}`);
   }

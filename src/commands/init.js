@@ -29,9 +29,6 @@ const DEFAULT_TEMPLATE_JSON = {
         model: '{{MODEL_ULTRAWORK}}',
       },
     },
-    'Sisyphus-Junior': {
-      model: '{{MODEL_LIGHT}}',
-    },
     'orchestrator-sisyphus': {
       model: '{{MODEL_ORCHESTRATOR}}',
     },
@@ -99,10 +96,10 @@ const DEFAULT_TEMPLATE_JSON = {
       model: '{{MODEL_ORACLE}}',
     },
     'unspecified-low': {
-      model: '{{MODEL_LIGHT}}',
+      model: '{{MODEL_ORACLE}}',
     },
     'unspecified-high': {
-      model: '{{MODEL_PLANNER}}',
+      model: '{{MODEL_ORACLE}}',
     },
   },
 

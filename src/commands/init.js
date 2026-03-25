@@ -21,7 +21,7 @@ const DEFAULT_CONFIG_TEMPLATE = {
 export const DEFAULT_TEMPLATE_JSON = {
   $schema:
     'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
-  oosVersionTag: 'default:1.0',
+  oosVersionTag: 'default:1.1',
 
   agents: {
     Sisyphus: {
@@ -97,10 +97,10 @@ export const DEFAULT_TEMPLATE_JSON = {
       model: '{{MODEL_ORACLE}}',
     },
     'unspecified-low': {
-      model: '{{MODEL_ORACLE}}',
+      model: '{{MODEL_ORCHESTRATOR}}',
     },
     'unspecified-high': {
-      model: '{{MODEL_ORACLE}}',
+      model: '{{MODEL_ULTRAWORK}}',
     },
   },
 

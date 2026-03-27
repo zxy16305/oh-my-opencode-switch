@@ -16,11 +16,13 @@ export class ModelSelector {
     this.models = [];
     this.modelIndexMap = [];
     this.selectedModels = [];
+    this.unavailableModels = []; // Track models that are not in the available list
     this.selectedCallback = null;
     this.cancelCallback = null;
     this.currentVariable = null;
     this.oldValue = null;
     this.focusedList = null;
+    this.warningBox = null; // Warning display for unavailable models
 
     this.createComponents();
   }
@@ -164,6 +166,22 @@ export class ModelSelector {
         },
       });
 
+      // Warning box for unavailable models (hidden by default)
+      this.warningBox = blessed.box({
+        parent: this.screen,
+        top: 3,
+        left: '50%',
+        width: '50%',
+        height: 3,
+        content: '',
+        tags: true,
+        hidden: true,
+        style: {
+          fg: 'yellow',
+          bg: 'black',
+        },
+      });
+
       this.availableList.key(['a', 'A'], () => {
         this.addSelectedModel();
       });
@@ -254,12 +272,32 @@ export class ModelSelector {
   }
 
   deleteSelectedModel() {
-    if (!this.multi || this.selectedModels.length <= 1) return;
+    if (!this.multi) return;
 
-    const selected = this.selectedList.selected;
-    if (selected === undefined || selected >= this.selectedModels.length) return;
+    const selectedIndex = this.selectedList.selected;
+    if (selectedIndex === undefined || selectedIndex >= this.selectedModels.length) return;
 
-    this.selectedModels.splice(selected, 1);
+    const modelToDelete = this.selectedModels[selectedIndex];
+    const isDeletingUnavailable = modelToDelete.isUnavailable;
+
+    if (isDeletingUnavailable) {
+      this.selectedModels.splice(selectedIndex, 1);
+      this.unavailableModels = this.unavailableModels.filter(
+        (m) => m.fullId !== modelToDelete.fullId
+      );
+      this.updateSelectedList();
+      this.updateWarningDisplay();
+      this.screen.render();
+      return;
+    }
+
+    const availableModelsCount = this.selectedModels.filter((m) => !m.isUnavailable).length;
+    const minimumAvailableModelsRequired = 1;
+    const canDeleteAvailableModel = availableModelsCount > minimumAvailableModelsRequired;
+
+    if (!canDeleteAvailableModel) return;
+
+    this.selectedModels.splice(selectedIndex, 1);
     this.updateSelectedList();
     this.screen.render();
   }
@@ -298,10 +336,28 @@ export class ModelSelector {
     if (!this.multi) return;
 
     const items = this.selectedModels.map((model, index) => {
+      if (model.isUnavailable) {
+        return `${index + 1}. {red-fg}${model.fullId}{/red-fg} {yellow-fg}[UNAVAILABLE]{/yellow-fg}`;
+      }
       return `${index + 1}. ${model.fullId}`;
     });
 
     this.selectedList.setItems(items);
+  }
+
+  updateWarningDisplay() {
+    if (!this.multi) return;
+
+    if (this.unavailableModels.length > 0) {
+      const unavailableIds = this.unavailableModels.map((m) => m.fullId).join(', ');
+      this.warningBox.setContent(
+        ` {yellow-fg}⚠ Warning:{/yellow-fg} {red-fg}${unavailableIds}{/red-fg} not in model list`
+      );
+      this.warningBox.show();
+    } else {
+      this.warningBox.hide();
+    }
+    this.screen.render();
   }
 
   /**
@@ -374,25 +430,50 @@ export class ModelSelector {
         this.availableList.setItems(items);
 
         this.selectedModels = [];
+        this.unavailableModels = [];
+
         if (Array.isArray(currentValue) && currentValue.length > 0) {
           for (const modelId of currentValue) {
             const model = this.models.find((m) => m.fullId === modelId);
             if (model) {
               this.selectedModels.push(model);
+            } else {
+              this.unavailableModels.push({
+                fullId: modelId,
+                provider: 'unavailable',
+                source: 'unavailable',
+                isUnavailable: true,
+              });
+              this.selectedModels.push({
+                fullId: modelId,
+                provider: 'unavailable',
+                source: 'unavailable',
+                isUnavailable: true,
+              });
             }
           }
         } else if (typeof currentValue === 'string' && currentValue.trim()) {
           const model = this.models.find((m) => m.fullId === currentValue);
           if (model) {
             this.selectedModels.push(model);
+          } else {
+            this.unavailableModels.push({
+              fullId: currentValue,
+              provider: 'unavailable',
+              source: 'unavailable',
+              isUnavailable: true,
+            });
+            this.selectedModels.push({
+              fullId: currentValue,
+              provider: 'unavailable',
+              source: 'unavailable',
+              isUnavailable: true,
+            });
           }
         }
 
-        if (this.selectedModels.length === 0 && this.models.length > 0) {
-          this.selectedModels.push(this.models[0]);
-        }
-
         this.updateSelectedList();
+        this.updateWarningDisplay();
       }
 
       this.screen.render();
@@ -477,13 +558,13 @@ export class ModelSelector {
       this.availableList.show();
       this.selectedList.show();
       this.helpBar.show();
+      if (this.unavailableModels.length > 0) {
+        this.warningBox.show();
+      }
     }
     this.screen.render();
   }
 
-  /**
-   * Hide the component
-   */
   hide() {
     this.titleBox.hide();
     if (!this.multi) {
@@ -492,13 +573,11 @@ export class ModelSelector {
       this.availableList.hide();
       this.selectedList.hide();
       this.helpBar.hide();
+      this.warningBox.hide();
     }
     this.screen.render();
   }
 
-  /**
-   * Destroy the component
-   */
   destroy() {
     this.titleBox.destroy();
     if (!this.multi) {
@@ -507,6 +586,7 @@ export class ModelSelector {
       this.availableList.destroy();
       this.selectedList.destroy();
       this.helpBar.destroy();
+      this.warningBox.destroy();
     }
   }
 }

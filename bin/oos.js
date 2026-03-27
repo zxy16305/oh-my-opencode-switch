@@ -16,6 +16,7 @@ import { registerValidateCommand } from '../src/commands/validate.js';
 import { registerModelsCommand } from '../src/commands/models.js';
 import { registerCompletionCommand } from '../src/commands/completion.js';
 import { registerSetupCompletionCommand } from '../src/commands/setup-completion.js';
+import { registerUpgradeCommand } from '../src/commands/upgrade.js';
 import { logger } from '../src/utils/logger.js';
 import { OosError } from '../src/utils/errors.js';
 import { getProfilesDir } from '../src/utils/paths.js';
@@ -77,6 +78,7 @@ registerModelsCommand(program);
 registerInitCommand(program);
 registerCompletionCommand(program);
 registerSetupCompletionCommand(program);
+registerUpgradeCommand(program);
 
 program.exitOverride();
 

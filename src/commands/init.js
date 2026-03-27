@@ -140,9 +140,9 @@ export const DEFAULT_TEMPLATE_JSON = {
 
   background_task: {
     providerConcurrency: {
-      baidu: 2,
-      fangzhou: 2,
-      ali: 2,
+      baidu: 5,
+      fangzhou: 5,
+      ali: 5,
       openai: 1,
     },
   },

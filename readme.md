@@ -101,8 +101,6 @@ JSON 编辑器快捷键：
 - `Ctrl+S` / `Cmd+S` - 保存修改
 - `Escape` - 取消编辑
 
-
-
 ### 其他命令
 
 ```bash
@@ -171,7 +169,49 @@ oos completion powershell > ~/.oos-completion.ps1
 oos setup-completion powershell
 ```
 
+### 代理服务器 (proxy)
 
+```bash
+# 初始化代理配置文件
+oos proxy init
+oos proxy init --force  # 覆盖已有配置
+
+# 启动代理服务器
+oos proxy start
+oos proxy start -p 3001           # 指定端口
+oos proxy start -c ./config.json  # 指定配置文件
+
+# 停止代理服务器
+oos proxy stop
+
+# 查看代理服务器状态
+oos proxy status
+
+# 安装为 Windows 服务（需管理员权限）
+oos proxy install
+oos proxy install -p 3000  # 指定服务端口
+
+# 卸载 Windows 服务（需管理员权限）
+oos proxy uninstall
+```
+
+**示例用法**：
+
+```bash
+# 1. 初始化配置
+oos proxy init
+
+# 2. 编辑配置文件 (~/.config/opencode/.oos/proxy-config.json)
+# 添加路由和上游服务器配置
+
+# 3. 启动代理
+oos proxy start
+
+# 4. 在 OpenCode 中使用虚拟模型
+# 配置 oh-my-opencode.json 中的 model 为路由名称（如 lb-qwen-plus）
+```
+
+详细说明见 [docs/proxy.md](docs/proxy.md)。
 
 ## 目录结构
 

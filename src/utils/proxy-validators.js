@@ -1,0 +1,70 @@
+import { z } from 'zod';
+
+export const upstreamSchema = z.object({
+  id: z.string().min(1, 'Upstream ID is required').optional(),
+  provider: z.string().min(1, 'Provider name is required'),
+  model: z.string().min(1, 'Model name is required'),
+  baseURL: z.string().url('Base URL must be a valid URL').optional(),
+  apiKey: z.string().optional().nullable(),
+  weight: z.number().positive().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export const routeSchema = z.object({
+  strategy: z.enum(['round-robin', 'random', 'weighted', 'sticky']).default('round-robin'),
+  upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export const routesSchema = z.record(z.string(), routeSchema);
+
+export const proxyConfigSchema = z.object({
+  version: z.literal(1).optional(),
+  port: z.number().int().positive().default(3000),
+  routes: routesSchema.default({}),
+});
+
+export function validateProxyConfig(config) {
+  try {
+    const data = proxyConfigSchema.parse(config);
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', '),
+      };
+    }
+    return { success: false, error: error.message };
+  }
+}
+
+export function validateRoutes(routes) {
+  try {
+    const data = routesSchema.parse(routes);
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: error.errors.map((e) => e.message).join(', '),
+      };
+    }
+    return { success: false, error: error.message };
+  }
+}
+
+export function validateUpstream(upstream) {
+  try {
+    const data = upstreamSchema.parse(upstream);
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: error.errors.map((e) => e.message).join(', '),
+      };
+    }
+    return { success: false, error: error.message };
+  }
+}

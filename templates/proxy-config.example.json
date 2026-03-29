@@ -1,0 +1,19 @@
+{
+  "port": 3000,
+  "routes": {
+    "lb-qwen-plus": {
+      "strategy": "sticky",
+      "upstreams": [
+        { "provider": "ali", "model": "qwen-plus" },
+        { "provider": "ali", "model": "qwen-plus" }
+      ]
+    },
+    "lb-mixed": {
+      "strategy": "round-robin",
+      "upstreams": [
+        { "provider": "ali", "model": "glm-4.7" },
+        { "provider": "baidu", "model": "qianfan-code-latest" }
+      ]
+    }
+  }
+}

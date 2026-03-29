@@ -46,10 +46,12 @@ export async function installService(options = {}) {
   const port = parseInt(options.port, 10) || config?.port || 3000;
 
   try {
-    const { default: Service } = await import('node-windows').then(
-      (m) => m.default || m.Service || m
-    );
-    const ServiceClass = Service.Service || Service;
+    const nw = await import('node-windows');
+    const ServiceClass = nw.Service || nw.default?.Service;
+
+    if (!ServiceClass) {
+      throw new Error('Failed to load node-windows Service class');
+    }
 
     const svc = new ServiceClass({
       name: SERVICE_NAME,
@@ -95,10 +97,12 @@ export async function uninstallService() {
   }
 
   try {
-    const { default: Service } = await import('node-windows').then(
-      (m) => m.default || m.Service || m
-    );
-    const ServiceClass = Service.Service || Service;
+    const nw = await import('node-windows');
+    const ServiceClass = nw.Service || nw.default?.Service;
+
+    if (!ServiceClass) {
+      throw new Error('Failed to load node-windows Service class');
+    }
 
     const svc = new ServiceClass({
       name: SERVICE_NAME,

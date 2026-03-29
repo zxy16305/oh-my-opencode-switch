@@ -354,6 +354,18 @@ describe('Router – selectUpstreamSticky()', () => {
       `Expected >= 2 different upstreams, got ${uniqueUpstreams.size}: ${upstreamIds.join(',')}`
     );
   });
+
+  test('different models with same sessionId route independently', () => {
+    const upstreams = [makeUpstream({ id: 'a' }), makeUpstream({ id: 'b' })];
+
+    const result1 = selectUpstreamSticky(upstreams, 'route-1', 'session-xyz', 'gpt-4');
+    const result2 = selectUpstreamSticky(upstreams, 'route-1', 'session-xyz', 'gpt-3.5-turbo');
+
+    assert.ok(['a', 'b'].includes(result1.id));
+    assert.ok(['a', 'b'].includes(result2.id));
+
+    assert.equal(getSessionMapSize(), 2, 'Should have 2 independent session entries');
+  });
 });
 
 describe('Router – failoverStickySession()', () => {

@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { ConfigError } from '../utils/errors.js';
 
 const DEFAULT_PROXY_PORT = 3000;
+const PROVIDER_ID = 'opencode-proxy';
 
 /**
  * Register proxy provider in opencode.json
@@ -163,12 +164,12 @@ export async function registerAction(options = {}) {
 
   // 5. Add proxy provider to opencode config
   opencodeConfig.provider = opencodeConfig.provider || {};
-  opencodeConfig.provider.proxy = proxyProvider;
+  opencodeConfig.provider[PROVIDER_ID] = proxyProvider;
 
   // 6. Write back to opencode.json
   try {
     await writeJson(opencodePath, opencodeConfig);
-    logger.success('Proxy provider registered in opencode.json');
+    logger.success(`Proxy provider "${PROVIDER_ID}" registered in opencode.json`);
     logger.info(`Registered ${registeredModels.length} model(s):`);
     logger.list(registeredModels);
 
@@ -204,8 +205,8 @@ export async function unregisterAction() {
   }
 
   // 3. Check if proxy provider exists
-  if (!opencodeConfig.provider?.proxy) {
-    logger.warn('No proxy provider found in opencode.json');
+  if (!opencodeConfig.provider?.[PROVIDER_ID]) {
+    logger.warn('No opencode-proxy provider found in opencode.json');
     return;
   }
 
@@ -219,7 +220,7 @@ export async function unregisterAction() {
   }
 
   // 5. Remove proxy provider
-  delete opencodeConfig.provider.proxy;
+  delete opencodeConfig.provider[PROVIDER_ID];
 
   // Clean up empty provider object
   if (Object.keys(opencodeConfig.provider).length === 0) {
@@ -229,7 +230,7 @@ export async function unregisterAction() {
   // 6. Write back to opencode.json
   try {
     await writeJson(opencodePath, opencodeConfig);
-    logger.success('Proxy provider removed from opencode.json');
+    logger.success(`Proxy provider "${PROVIDER_ID}" removed from opencode.json`);
   } catch (error) {
     logger.error(`Failed to write opencode.json: ${error.message}`);
     process.exit(1);

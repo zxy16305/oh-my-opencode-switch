@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { writeFile } from 'atomically';
+import JSON5 from 'json5';
 import { FileSystemError } from './errors.js';
 
 export async function exists(filePath) {
@@ -20,10 +21,14 @@ export async function ensureDir(dirPath) {
   }
 }
 
+/**
+ * Read JSON file with relaxed parsing (JSON5)
+ * Supports: comments, trailing commas, single quotes, unquoted keys, etc.
+ */
 export async function readJson(filePath) {
   try {
     const content = await fs.readFile(filePath, 'utf8');
-    return JSON.parse(content);
+    return JSON5.parse(content);
   } catch (error) {
     if (error.code === 'ENOENT') {
       throw new FileSystemError(`File not found: ${filePath}`);
@@ -36,91 +41,10 @@ export async function readJson(filePath) {
 }
 
 /**
- * Strip JSON comments from content while preserving strings
- * Handles single-line comments (// ...) and multi-line comments
- */
-function stripJsonComments(content) {
-  let result = '';
-  let inString = false;
-  let stringChar = '';
-  let i = 0;
-
-  while (i < content.length) {
-    const char = content[i];
-    const nextChar = content[i + 1];
-
-    // Handle string boundaries
-    if (!inString && (char === '"' || char === "'")) {
-      inString = true;
-      stringChar = char;
-      result += char;
-      i++;
-      continue;
-    }
-
-    if (inString) {
-      // Handle escape sequences
-      if (char === '\\') {
-        result += char + (nextChar || '');
-        i += 2;
-        continue;
-      }
-      // Check for end of string
-      if (char === stringChar) {
-        inString = false;
-        stringChar = '';
-      }
-      result += char;
-      i++;
-      continue;
-    }
-
-    // Handle single-line comments
-    if (char === '/' && nextChar === '/') {
-      // Skip until end of line
-      while (i < content.length && content[i] !== '\n') {
-        i++;
-      }
-      continue;
-    }
-
-    // Handle multi-line comments
-    if (char === '/' && nextChar === '*') {
-      i += 2; // Skip /*
-      while (i < content.length - 1) {
-        if (content[i] === '*' && content[i + 1] === '/') {
-          i += 2; // Skip */
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-
-    result += char;
-    i++;
-  }
-
-  return result;
-}
-
-/**
- * Read JSON file with comment support (JSONC)
+ * @deprecated Use readJson instead - now supports comments and trailing commas
  */
 export async function readJsonWithComments(filePath) {
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    const stripped = stripJsonComments(content);
-    return JSON.parse(stripped);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw new FileSystemError(`File not found: ${filePath}`);
-    }
-    if (error instanceof SyntaxError) {
-      throw new FileSystemError(`Invalid JSON in file: ${filePath} - ${error.message}`);
-    }
-    throw new FileSystemError(`Failed to read file: ${filePath} - ${error.message}`);
-  }
+  return readJson(filePath);
 }
 
 export async function writeJson(filePath, data, options = {}) {

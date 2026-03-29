@@ -8,8 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DAEMON_SCRIPT_PATH = path.join(__dirname, '..', '..', 'bin', 'oos-proxy-daemon.js');
 
 const SERVICE_NAME = 'OOS Proxy';
-const SERVICE_ID = 'oosproxy.exe';
-const SERVICE_DESCRIPTION = 'OOS Proxy Server - Load balancing proxy for OpenCode';
+const SERVICE_ID = 'oosproxy';
 
 export class AdminRequiredError extends OosError {
   constructor(message = 'Administrator privileges required. Please run as administrator.') {
@@ -35,6 +34,15 @@ async function checkAdminPrivileges() {
   }
 }
 
+async function getNodePath() {
+  const { execSync } = await import('child_process');
+  try {
+    return execSync('where node', { encoding: 'utf8' }).trim().split('\n')[0];
+  } catch {
+    return 'node';
+  }
+}
+
 export async function installService(options = {}) {
   const isAdmin = await checkAdminPrivileges();
   if (!isAdmin) {
@@ -43,50 +51,21 @@ export async function installService(options = {}) {
 
   const configManager = new ProxyConfigManager();
   const config = await configManager.readConfig();
-
   const port = parseInt(options.port, 10) || config?.port || 3000;
+  const nodePath = await getNodePath();
+
+  const { execSync } = await import('child_process');
 
   try {
-    const nw = await import('node-windows');
-    const ServiceClass = nw.Service || nw.default?.Service;
+    const binPath = `"${nodePath}" "${DAEMON_SCRIPT_PATH}"`;
+    const cmd = `sc create "${SERVICE_ID}" binPath= "${binPath}" DisplayName= "${SERVICE_NAME}" start= auto`;
 
-    if (!ServiceClass) {
-      throw new Error('Failed to load node-windows Service class');
-    }
-
-    const svc = new ServiceClass({
-      name: SERVICE_NAME,
-      description: SERVICE_DESCRIPTION,
-      script: DAEMON_SCRIPT_PATH,
-      env: [{ name: 'PORT', value: String(port) }],
-    });
-
-    return new Promise((resolve, reject) => {
-      svc.on('install', () => {
-        logger.success(`Windows service "${SERVICE_NAME}" installed successfully.`);
-        logger.info(`Service will run on port ${port}.`);
-        logger.info('Start via: oos proxy start or Windows Services');
-        resolve();
-      });
-
-      svc.on('error', (err) => {
-        logger.error(`Failed to install service: ${err.message}`);
-        reject(err);
-      });
-
-      svc.on('invalidinstallation', () => {
-        const err = new Error('Invalid installation detected');
-        logger.error('Invalid installation detected. Service may not be properly configured.');
-        reject(err);
-      });
-
-      svc.install();
-    });
+    execSync(cmd, { encoding: 'utf8' });
+    logger.success(`Windows service "${SERVICE_NAME}" installed.`);
+    logger.info(`Port: ${port} (from config)`);
+    logger.info('Start: oos proxy start');
   } catch (error) {
-    if (error.code === 'ERR_MODULE_NOT_FOUND' || error.code === 'MODULE_NOT_FOUND') {
-      logger.error('node-windows package not found. Please run: npm install node-windows');
-      process.exit(1);
-    }
+    logger.error(`Failed to install service: ${error.message}`);
     throw error;
   }
 }
@@ -97,37 +76,19 @@ export async function uninstallService() {
     throw new AdminRequiredError();
   }
 
+  const { execSync } = await import('child_process');
+
   try {
-    const nw = await import('node-windows');
-    const ServiceClass = nw.Service || nw.default?.Service;
+    execSync(`sc stop "${SERVICE_ID}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch {
+    // service may not be running
+  }
 
-    if (!ServiceClass) {
-      throw new Error('Failed to load node-windows Service class');
-    }
-
-    const svc = new ServiceClass({
-      name: SERVICE_NAME,
-      script: DAEMON_SCRIPT_PATH,
-    });
-
-    return new Promise((resolve, reject) => {
-      svc.on('uninstall', () => {
-        logger.success(`Windows service "${SERVICE_NAME}" uninstalled successfully.`);
-        resolve();
-      });
-
-      svc.on('error', (err) => {
-        logger.error(`Failed to uninstall service: ${err.message}`);
-        reject(err);
-      });
-
-      svc.uninstall();
-    });
+  try {
+    execSync(`sc delete "${SERVICE_ID}"`, { encoding: 'utf8' });
+    logger.success(`Windows service "${SERVICE_NAME}" uninstalled.`);
   } catch (error) {
-    if (error.code === 'ERR_MODULE_NOT_FOUND' || error.code === 'MODULE_NOT_FOUND') {
-      logger.error('node-windows package not found. Please run: npm install node-windows');
-      process.exit(1);
-    }
+    logger.error(`Failed to uninstall service: ${error.message}`);
     throw error;
   }
 }
@@ -154,7 +115,7 @@ export async function restartService() {
 
     logger.info('Starting service...');
     execSync(`net start "${SERVICE_ID}"`, { encoding: 'utf8' });
-    logger.success(`Windows service "${SERVICE_NAME}" started successfully.`);
+    logger.success(`Windows service "${SERVICE_NAME}" started.`);
   } catch (error) {
     const stderr = error.stderr?.toString() || '';
     const stdout = error.stdout?.toString() || '';
@@ -178,14 +139,14 @@ export async function restartService() {
 export function registerProxyServiceCommands(program) {
   const proxy = program.commands.find((cmd) => cmd.name() === 'proxy');
   if (!proxy) {
-    logger.error('Proxy command not found. Make sure proxy commands are registered first.');
+    logger.error('Proxy command not found.');
     return;
   }
 
   proxy
     .command('install')
     .description('Install OOS Proxy as a Windows service')
-    .option('-p, --port <port>', 'Port for the proxy service (overrides config file)')
+    .option('-p, --port <port>', 'Port (overrides config file)')
     .action(async (options) => {
       try {
         await installService(options);

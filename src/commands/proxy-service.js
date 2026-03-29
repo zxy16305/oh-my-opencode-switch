@@ -131,6 +131,36 @@ export async function uninstallService() {
   }
 }
 
+export async function restartService() {
+  const isAdmin = await checkAdminPrivileges();
+  if (!isAdmin) {
+    throw new AdminRequiredError();
+  }
+
+  const { execSync } = await import('child_process');
+  const serviceName = 'OOS Proxy';
+
+  try {
+    const status = execSync(`sc query "${serviceName}"`, { encoding: 'utf8' });
+
+    if (status.includes('RUNNING')) {
+      logger.info('Stopping service...');
+      execSync(`net stop "${serviceName}"`, { encoding: 'utf8' });
+      logger.success('Service stopped.');
+    }
+
+    logger.info('Starting service...');
+    execSync(`net start "${serviceName}"`, { encoding: 'utf8' });
+    logger.success(`Windows service "${serviceName}" started successfully.`);
+  } catch (error) {
+    if (error.message.includes('does not exist') || error.message.includes('not found')) {
+      logger.error(`Service "${serviceName}" is not installed. Run "oos proxy install" first.`);
+      process.exit(1);
+    }
+    throw error;
+  }
+}
+
 export function registerProxyServiceCommands(program) {
   const proxy = program.commands.find((cmd) => cmd.name() === 'proxy');
   if (!proxy) {
@@ -160,6 +190,21 @@ export function registerProxyServiceCommands(program) {
     .action(async () => {
       try {
         await uninstallService();
+      } catch (error) {
+        if (error instanceof OosError) {
+          logger.error(error.message);
+          process.exit(error.exitCode || 1);
+        }
+        throw error;
+      }
+    });
+
+  proxy
+    .command('restart')
+    .description('Restart the OOS Proxy Windows service')
+    .action(async () => {
+      try {
+        await restartService();
       } catch (error) {
         if (error instanceof OosError) {
           logger.error(error.message);

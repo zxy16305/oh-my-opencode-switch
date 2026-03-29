@@ -343,30 +343,18 @@ export async function statsAction(options = {}) {
     if (json) {
       console.log(JSON.stringify(stats, null, 2));
     } else {
-      logger.table(
-        stats.map((s) => [
-          s.provider,
-          s.model,
-          s.requests,
-          s.success,
-          s.failure,
-          s.successRate,
-          s.avgDuration,
-          s.p95,
-          s.p99,
-        ]),
-        [
-          'Provider',
-          'Model',
-          'Requests',
-          'Success',
-          'Failure',
-          'Success Rate',
-          'Avg Duration',
-          'P95',
-          'P99',
-        ]
-      );
+      const tableData = stats.map((s) => ({
+        Provider: s.provider,
+        Model: s.model,
+        Requests: s.requests,
+        Success: s.success,
+        Failure: s.failure,
+        'Success Rate': s.successRate,
+        'Avg Duration': s.avgDuration,
+        P95: s.p95,
+        P99: s.p99,
+      }));
+      console.table(tableData);
     }
   } catch (error) {
     logger.error(error.message);

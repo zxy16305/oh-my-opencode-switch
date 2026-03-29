@@ -171,6 +171,42 @@ oos setup-completion powershell
 
 ### 代理服务器 (proxy)
 
+轻量级负载均衡代理，用于多模型负载均衡、故障转移和会话粘滞。
+
+**核心概念**：
+
+- **虚拟模型**：配置一个路由名称（如 `lb-qwen`），自动分发到多个后端模型
+- **路由策略**：`sticky`（会话粘滞）、`round-robin`（轮询）、`weighted`（加权）、`random`（随机）
+- **故障转移**：自动检测失败并切换到备用上游
+- **熔断保护**：防止级联故障
+
+**配置示例** (`~/.config/opencode/.oos/proxy-config.json`)：
+
+```json
+{
+  "port": 3000,
+  "routes": {
+    "lb-mixed": {
+      "strategy": "sticky",
+      "upstreams": [
+        { "provider": "ali", "model": "glm-4.7" },
+        { "provider": "baidu", "model": "qianfan-code-latest" }
+      ]
+    }
+  }
+}
+```
+
+然后在 OpenCode 配置中使用虚拟模型名：
+
+```json
+{
+  "model": "lb-mixed"
+}
+```
+
+**命令**：
+
 ```bash
 # 初始化代理配置文件
 oos proxy init
@@ -214,25 +250,6 @@ oos proxy uninstall
 │ 0       │ 'baidu'    │ 'glm-4' │ 145      │ 144     │ 1       │ '99.31%'     │ 1881         │ 3358  │ 4756  │
 │ 1       │ 'ali'      │ 'glm-4' │ 112      │ 112     │ 0       │ '100.00%'    │ 1997         │ 6701  │ 6920  │
 └─────────┴────────────┴─────────┴──────────┴─────────┴─────────┴──────────────┴──────────────┴───────┴───────┘
-```
-
-**示例用法**：
-
-```bash
-# 1. 初始化配置
-oos proxy init
-
-# 2. 编辑配置文件 (~/.config/opencode/.oos/proxy-config.json)
-# 添加路由和上游服务器配置
-
-# 3. 启动代理
-oos proxy start
-
-# 4. 在 OpenCode 中使用虚拟模型
-# 配置 oh-my-opencode.json 中的 model 为路由名称（如 lb-qwen-plus）
-
-# 5. 查看运行统计
-oos proxy stats --last 24h
 ```
 
 详细说明见 [docs/proxy.md](docs/proxy.md)。

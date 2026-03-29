@@ -1,5 +1,12 @@
 {
   "port": 3000,
+  "auth": {
+    "enabled": false,
+    "keys": [
+      { "key": "sk-your-api-key-1", "name": "dev-key", "enabled": true },
+      { "key": "sk-your-api-key-2", "name": "prod-key", "enabled": false }
+    ]
+  },
   "routes": {
     "lb-qwen-plus": {
       "strategy": "sticky",

@@ -18,10 +18,24 @@ export const routeSchema = z.object({
 
 export const routesSchema = z.record(z.string(), routeSchema);
 
+// 单个 API Key 的 schema
+export const authKeySchema = z.object({
+  key: z.string().min(1, 'API key is required'),
+  name: z.string().min(1, 'Key name is required'),
+  enabled: z.boolean().default(true),
+});
+
+// auth 配置块的 schema
+export const authSchema = z.object({
+  enabled: z.boolean().default(false),
+  keys: z.array(authKeySchema).default([]),
+});
+
 export const proxyConfigSchema = z.object({
   version: z.literal(1).optional(),
   port: z.number().int().positive().default(3000),
   routes: routesSchema.default({}),
+  auth: authSchema.optional(),
 });
 
 export function validateProxyConfig(config) {

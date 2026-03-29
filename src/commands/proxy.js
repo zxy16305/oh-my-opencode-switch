@@ -8,6 +8,7 @@ import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
 import { logAccess, readLogs, getLogPath, clearLogs } from '../utils/access-log.js';
+import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { parseTimeRange, generateStats } from '../utils/stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -77,6 +78,9 @@ export async function startAction(options = {}) {
 
   circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
 
+  // Get auth config for request authentication
+  const auth = config.auth;
+
   // Create request handler
   const requestHandler = async (req, res) => {
     let body = '';
@@ -86,6 +90,16 @@ export async function startAction(options = {}) {
 
     req.on('end', async () => {
       try {
+        // Authentication check
+        const apiKey = extractApiKey(req);
+        const authResult = authenticate(apiKey, auth);
+        if (!authResult.valid) {
+          const { statusCode, body } = createAuthErrorResponse(authResult.error);
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(body));
+          return;
+        }
+
         // Parse request body to get model
         let requestBody;
         try {

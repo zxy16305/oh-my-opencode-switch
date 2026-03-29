@@ -11,6 +11,10 @@ export function getDefaultProxyConfig() {
   return {
     port: 3000,
     routes: {},
+    auth: {
+      enabled: false,
+      keys: [],
+    },
   };
 }
 

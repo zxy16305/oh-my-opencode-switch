@@ -13,16 +13,18 @@ const DEFAULT_PROXY_PORT = 3000;
  * @param {number} [options.port] - Proxy server port (default: 3000)
  */
 export async function registerAction(options = {}) {
-  const port = parseInt(options.port, 10) || DEFAULT_PROXY_PORT;
   const configManager = new ProxyConfigManager();
 
-  // 1. Read proxy config to get routes
+  // 1. Read proxy config to get routes and port
   const proxyConfig = await configManager.readConfig();
   if (!proxyConfig || !proxyConfig.routes || Object.keys(proxyConfig.routes).length === 0) {
     logger.error('No routes found in proxy-config.json');
     logger.info('Run "oos proxy init" to create a proxy configuration first.');
     process.exit(1);
   }
+
+  // Port priority: CLI --port > config.port > DEFAULT_PROXY_PORT
+  const port = parseInt(options.port, 10) || proxyConfig.port || DEFAULT_PROXY_PORT;
 
   // 2. Read opencode config
   const opencodePath = getOpencodeConfigPath();
@@ -250,7 +252,7 @@ export function registerProxyRegisterCommands(program) {
   proxy
     .command('register')
     .description('Register proxy provider in opencode.json')
-    .option('-p, --port <port>', 'Proxy server port', String(DEFAULT_PROXY_PORT))
+    .option('-p, --port <port>', 'Proxy server port (overrides config file)')
     .action(registerAction);
 
   proxy

@@ -63,11 +63,79 @@ export class RouterError extends Error {
 const roundRobinCounters = new Map();
 
 /**
+ * Route → Upstream → SessionCount 映射
+ * Key: routeKey, Value: Map<upstreamId, sessionCount>
+ * @type {Map<string, Map<string, number>>}
+ */
+const upstreamSessionCounts = new Map();
+
+/**
  * Session → upstream mapping for sticky sessions
  * Key: sessionId, Value: { upstreamId: string, routeKey: string, timestamp: number }
  * @type {Map<string, { upstreamId: string, routeKey: string, timestamp: number }>}
  */
 const sessionUpstreamMap = new Map();
+
+/**
+ * 获取或创建 routeKey 的计数映射
+ * @param {string} routeKey
+ * @returns {Map<string, number>}
+ */
+function getOrCreateCountMap(routeKey) {
+  if (!upstreamSessionCounts.has(routeKey)) {
+    upstreamSessionCounts.set(routeKey, new Map());
+  }
+  return upstreamSessionCounts.get(routeKey);
+}
+
+/**
+ * 选择负载最低的 upstream
+ * @param {Upstream[]} upstreams
+ * @param {string} routeKey
+ * @returns {Upstream}
+ */
+function selectLeastLoadedUpstream(upstreams, routeKey) {
+  const countMap = getOrCreateCountMap(routeKey);
+
+  let minCount = Infinity;
+  for (const upstream of upstreams) {
+    const count = countMap.get(upstream.id) ?? 0;
+    if (count < minCount) {
+      minCount = count;
+    }
+  }
+
+  for (const upstream of upstreams) {
+    if ((countMap.get(upstream.id) ?? 0) === minCount) {
+      return upstream;
+    }
+  }
+
+  return upstreams[0];
+}
+
+/**
+ * 增加 session 计数
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ */
+function incrementSessionCount(routeKey, upstreamId) {
+  const countMap = getOrCreateCountMap(routeKey);
+  countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
+}
+
+/**
+ * 减少 session 计数
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ */
+function decrementSessionCount(routeKey, upstreamId) {
+  const countMap = getOrCreateCountMap(routeKey);
+  const current = countMap.get(upstreamId) ?? 0;
+  if (current > 0) {
+    countMap.set(upstreamId, current - 1);
+  }
+}
 
 /** Default TTL for session mappings (30 minutes) */
 const SESSION_MAP_TTL_MS = 30 * 60 * 1000;
@@ -247,6 +315,7 @@ function startSessionCleanup(intervalMs = 60_000) {
     const now = Date.now();
     for (const [sessionId, entry] of sessionUpstreamMap) {
       if (now - entry.timestamp > SESSION_MAP_TTL_MS) {
+        decrementSessionCount(entry.routeKey, entry.upstreamId);
         sessionUpstreamMap.delete(sessionId);
       }
     }
@@ -297,12 +366,8 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId) {
     }
   }
 
-  const targetIndex = hashSessionToBackend(sessionId, upstreams.length);
-  let selected = upstreams[targetIndex];
-
-  if (!selected) {
-    selected = upstreams[0];
-  }
+  const selected = selectLeastLoadedUpstream(upstreams, routeKey);
+  incrementSessionCount(routeKey, selected.id);
 
   sessionUpstreamMap.set(sessionId, {
     upstreamId: selected.id,
@@ -328,17 +393,10 @@ export function failoverStickySession(sessionId, failedUpstreamId, upstreams, ro
   const available = upstreams.filter((u) => u.id !== failedUpstreamId);
   if (available.length === 0) return null;
 
-  let next;
-  const entry = sessionUpstreamMap.get(sessionId);
-  if (entry) {
-    const failedIndex = upstreams.findIndex((u) => u.id === failedUpstreamId);
-    if (failedIndex !== -1) {
-      next = available[failedIndex % available.length];
-    }
-  }
-  if (!next) {
-    next = available[hashSessionToBackend(sessionId, available.length)];
-  }
+  decrementSessionCount(routeKey, failedUpstreamId);
+
+  const next = selectLeastLoadedUpstream(available, routeKey);
+  incrementSessionCount(routeKey, next.id);
 
   sessionUpstreamMap.set(sessionId, {
     upstreamId: next.id,
@@ -457,6 +515,7 @@ export function validateRoutesConfig(config) {
 export function resetRoundRobinCounters() {
   roundRobinCounters.clear();
   sessionUpstreamMap.clear();
+  upstreamSessionCounts.clear();
   stopSessionCleanup();
 }
 
@@ -466,4 +525,12 @@ export function resetRoundRobinCounters() {
  */
 export function getSessionMapSize() {
   return sessionUpstreamMap.size;
+}
+
+/**
+ * Get current upstream session counts (useful for testing/monitoring)
+ * @returns {Map<string, Map<string, number>>}
+ */
+export function getUpstreamSessionCounts() {
+  return upstreamSessionCounts;
 }

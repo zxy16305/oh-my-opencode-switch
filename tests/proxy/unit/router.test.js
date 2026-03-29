@@ -20,6 +20,7 @@ import {
   failoverStickySession,
   resetRoundRobinCounters,
   getSessionMapSize,
+  getUpstreamSessionCounts,
   RouterError,
   upstreamSchema,
   routeSchema,
@@ -331,6 +332,28 @@ describe('Router – selectUpstreamSticky()', () => {
       (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
     );
   });
+
+  test('distributes new sessions to least loaded upstream', () => {
+    const upstreams = [
+      makeUpstream({ id: 'a' }),
+      makeUpstream({ id: 'b' }),
+      makeUpstream({ id: 'c' }),
+    ];
+
+    const session1 = selectUpstreamSticky(upstreams, 'route-1', 'sess-1');
+    assert.ok(['a', 'b', 'c'].includes(session1.id));
+
+    const session2 = selectUpstreamSticky(upstreams, 'route-1', 'sess-2');
+    const session3 = selectUpstreamSticky(upstreams, 'route-1', 'sess-3');
+
+    const upstreamIds = [session1.id, session2.id, session3.id];
+    const uniqueUpstreams = new Set(upstreamIds);
+
+    assert.ok(
+      uniqueUpstreams.size >= 2,
+      `Expected >= 2 different upstreams, got ${uniqueUpstreams.size}: ${upstreamIds.join(',')}`
+    );
+  });
 });
 
 describe('Router – failoverStickySession()', () => {
@@ -379,6 +402,37 @@ describe('Router – failoverStickySession()', () => {
 
     // Map size should be the same (replaced, not added)
     assert.equal(getSessionMapSize(), sizeBefore);
+  });
+
+  test('updates session counts correctly on failover', () => {
+    const upstreams = [
+      makeUpstream({ id: 'fa1' }),
+      makeUpstream({ id: 'fa2' }),
+      makeUpstream({ id: 'fa3' }),
+    ];
+
+    selectUpstreamSticky(upstreams, 'route-fo', 'sess-fo');
+
+    const countsBefore = getUpstreamSessionCounts();
+    const routeCountsBefore = countsBefore.get('route-fo');
+
+    const next = failoverStickySession('sess-fo', 'fa1', upstreams, 'route-fo');
+    assert.ok(next);
+    assert.notEqual(next.id, 'fa1');
+
+    const countsAfter = getUpstreamSessionCounts();
+    const routeCountsAfter = countsAfter.get('route-fo');
+
+    const fa1Before = routeCountsBefore?.get('fa1') ?? 0;
+    const fa1After = routeCountsAfter?.get('fa1') ?? 0;
+    assert.ok(fa1After <= fa1Before, `fa1 count should decrease: ${fa1Before} -> ${fa1After}`);
+
+    const nextBefore = routeCountsBefore?.get(next.id) ?? 0;
+    const nextAfter = routeCountsAfter?.get(next.id) ?? 0;
+    assert.ok(
+      nextAfter >= nextBefore,
+      `next upstream count should increase: ${nextBefore} -> ${nextAfter}`
+    );
   });
 });
 

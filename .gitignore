@@ -35,4 +35,12 @@ yarn-error.log*
 *.temp
 .cache/
 .sisyphus/
+.opencode/
+
+# Windows device name artifacts
+nul
 null
+
+# Test artifacts
+test-*.json
+test-*.js

@@ -8,6 +8,7 @@ import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
 import { logAccess, readLogs, getLogPath, clearLogs } from '../utils/access-log.js';
+import { parseTimeRange, generateStats } from '../utils/stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -322,6 +323,57 @@ export async function logsAction(options = {}) {
   console.log(`\nShowing last ${logs.length} entries.`);
 }
 
+export async function statsAction(options = {}) {
+  const { last, json } = options;
+
+  if (!last) {
+    logger.error('--last option is required (e.g., 1h, 24h, 7d, 30d)');
+    process.exit(1);
+  }
+
+  try {
+    const { startTime, endTime } = parseTimeRange(last);
+    const stats = await generateStats({ startTime, endTime });
+
+    if (stats.length === 0) {
+      logger.warn(`No statistics found for time range: ${last}`);
+      return;
+    }
+
+    if (json) {
+      console.log(JSON.stringify(stats, null, 2));
+    } else {
+      logger.table(
+        stats.map((s) => [
+          s.provider,
+          s.model,
+          s.requests,
+          s.success,
+          s.failure,
+          s.successRate,
+          s.avgDuration,
+          s.p95,
+          s.p99,
+        ]),
+        [
+          'Provider',
+          'Model',
+          'Requests',
+          'Success',
+          'Failure',
+          'Success Rate',
+          'Avg Duration',
+          'P95',
+          'P99',
+        ]
+      );
+    }
+  } catch (error) {
+    logger.error(error.message);
+    process.exit(1);
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function initAction(options = {}) {
@@ -370,6 +422,13 @@ export function registerProxyCommands(program) {
     .option('-n, --lines <number>', 'Number of lines to show', '50')
     .option('-c, --clear', 'Clear the log file')
     .action(logsAction);
+
+  proxy
+    .command('stats')
+    .description('Show proxy access statistics')
+    .requiredOption('-l, --last <duration>', 'Time range (e.g., 1h, 24h, 7d, 30d)')
+    .option('--json', 'Output as JSON')
+    .action(statsAction);
 
   proxy
     .command('init')

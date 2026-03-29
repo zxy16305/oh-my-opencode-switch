@@ -29,6 +29,7 @@ function formatLogEntry(entry) {
     `model=${entry.model}`,
     `virtualModel=${entry.virtualModel}`,
     `status=${entry.status}`,
+    entry.ttfb ? `ttfb=${entry.ttfb}ms` : '',
     entry.duration ? `duration=${entry.duration}ms` : '',
     entry.error ? `error=${entry.error}` : '',
   ];

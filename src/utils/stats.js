@@ -27,7 +27,7 @@ export function parseTimeRange(last) {
 }
 
 const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+duration=(\d+)ms)?/;
+  /^\[([^\]]+)\]\s+session=(\S+)\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
 
 export function parseLogLine(line) {
   const match = LOG_LINE_PATTERN.exec(line);
@@ -35,7 +35,7 @@ export function parseLogLine(line) {
     return null;
   }
 
-  const [, timestamp, sessionId, provider, model, virtualModel, status, duration] = match;
+  const [, timestamp, sessionId, provider, model, virtualModel, status, ttfb, duration] = match;
 
   return {
     timestamp: new Date(timestamp),
@@ -44,6 +44,7 @@ export function parseLogLine(line) {
     model,
     virtualModel,
     status: parseInt(status, 10),
+    ttfb: ttfb ? parseInt(ttfb, 10) : 0,
     duration: duration ? parseInt(duration, 10) : 0,
   };
 }
@@ -250,11 +251,13 @@ export async function generateStats(options = {}) {
           success: 0,
           failure: 0,
           durations: [],
+          ttfbs: [],
         });
       }
 
       const group = groups.get(key);
       group.requests++;
+      group.ttfbs.push(entry.ttfb);
       group.durations.push(entry.duration);
 
       if (entry.status >= 200 && entry.status < 400) {
@@ -278,6 +281,9 @@ export async function generateStats(options = {}) {
     const sorted = [...group.durations].sort((a, b) => a - b);
     const totalDuration = sorted.reduce((sum, d) => sum + d, 0);
 
+    const ttfbSorted = [...group.ttfbs].sort((a, b) => a - b);
+    const ttfbTotal = ttfbSorted.reduce((sum, t) => sum + t, 0);
+
     results.push({
       provider: group.provider,
       model: group.model,
@@ -286,6 +292,9 @@ export async function generateStats(options = {}) {
       failure: group.failure,
       successRate:
         group.requests > 0 ? ((group.success / group.requests) * 100).toFixed(2) + '%' : '0.00%',
+      avgTtfb: group.requests > 0 ? Math.round(ttfbTotal / group.requests) : 0,
+      ttfbP95: Math.round(calculatePercentile(ttfbSorted, 95)),
+      ttfbP99: Math.round(calculatePercentile(ttfbSorted, 99)),
       avgDuration: group.requests > 0 ? Math.round(totalDuration / group.requests) : 0,
       p95: Math.round(calculatePercentile(sorted, 95)),
       p99: Math.round(calculatePercentile(sorted, 99)),

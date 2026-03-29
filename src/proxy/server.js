@@ -118,6 +118,12 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
     clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(clientRes);
 
+    proxyRes.on('end', () => {
+      if (options.onStreamEnd) {
+        options.onStreamEnd();
+      }
+    });
+
     proxyRes.on('error', (err) => {
       console.error('[proxy] upstream response stream error:', err.message);
       if (options.onError) {

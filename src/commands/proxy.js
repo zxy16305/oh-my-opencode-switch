@@ -148,12 +148,15 @@ export async function startAction(options = {}) {
 
         const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
         const startTime = Date.now();
+        let ttfb = null;
+        let proxyResStatusCode = null;
 
         forwardRequest(req, res, targetUrl, {
           body: forwardBody,
           headers: extraHeaders,
           onProxyRes: (proxyRes) => {
-            const duration = Date.now() - startTime;
+            ttfb = Date.now() - startTime;
+            proxyResStatusCode = proxyRes.statusCode;
             proxyRes.headers['x-used-provider'] = upstream.id;
             if (sessionId) {
               proxyRes.headers['x-session-id'] = sessionId;
@@ -163,13 +166,16 @@ export async function startAction(options = {}) {
             } else {
               circuitBreaker.recordSuccess(upstream.id);
             }
-
+          },
+          onStreamEnd: () => {
+            const duration = Date.now() - startTime;
             logAccess({
               sessionId: sessionId || null,
               provider: upstream.provider,
               model: upstream.model,
               virtualModel: model,
-              status: proxyRes.statusCode,
+              status: proxyResStatusCode,
+              ttfb,
               duration,
               body: requestBody,
             }).catch(() => {});
@@ -350,9 +356,12 @@ export async function statsAction(options = {}) {
         Success: s.success,
         Failure: s.failure,
         'Success Rate': s.successRate,
+        'Avg TTFB': s.avgTtfb,
+        'TTFB P95': s.ttfbP95,
+        'TTFB P99': s.ttfbP99,
         'Avg Duration': s.avgDuration,
-        P95: s.p95,
-        P99: s.p99,
+        'Duration P95': s.p95,
+        'Duration P99': s.p99,
       }));
       console.table(tableData);
     }

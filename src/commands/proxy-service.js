@@ -57,8 +57,7 @@ export async function installService(options = {}) {
   const { execSync } = await import('child_process');
 
   try {
-    // Windows sc binPath requires escaped quotes for paths with spaces
-    const binPath = `\\"${nodePath}\\" \\"${DAEMON_SCRIPT_PATH}\\"`;
+    const binPath = `${nodePath} ${DAEMON_SCRIPT_PATH}`;
     execSync(
       `sc create "${SERVICE_ID}" binPath= "${binPath}" DisplayName= "${SERVICE_NAME}" start= auto`,
       { encoding: 'utf8' }

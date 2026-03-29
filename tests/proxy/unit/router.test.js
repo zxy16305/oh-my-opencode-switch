@@ -477,7 +477,7 @@ describe('Router – getSessionId()', () => {
       socket: { remoteAddress: '10.0.0.1' },
     };
     const id = getSessionId(req);
-    assert.ok(id.startsWith('gen_'), `Expected "gen_" prefix, got "${id}"`);
+    assert.ok(id.startsWith('ip_'), `Expected "ip_" prefix, got "${id}"`);
   });
 
   test('generates ID uses x-forwarded-for if available', () => {
@@ -487,7 +487,7 @@ describe('Router – getSessionId()', () => {
       url: '/api',
     };
     const id = getSessionId(req);
-    assert.ok(id.startsWith('gen_'));
+    assert.ok(id.startsWith('ip_'));
   });
 
   test('handles request with null headers', () => {
@@ -512,7 +512,7 @@ describe('Router – getSessionId()', () => {
     };
     // Should fall through to generation
     const id = getSessionId(req);
-    assert.ok(id.startsWith('gen_'));
+    assert.ok(id.startsWith('ip_'));
   });
 
   test('ignores empty string x-opencode-session header', () => {
@@ -524,7 +524,7 @@ describe('Router – getSessionId()', () => {
     };
     // Empty string is falsy → fall through
     const id = getSessionId(req);
-    assert.ok(id.startsWith('gen_'));
+    assert.ok(id.startsWith('ip_'));
   });
 });
 

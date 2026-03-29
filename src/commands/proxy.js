@@ -103,7 +103,7 @@ export async function startAction(options = {}) {
         }
 
         const route = routes[model];
-        let { upstream, sessionId, routeKey } = routeRequest(model, routes, req);
+        let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
 
         if (!circuitBreaker.isAvailable(upstream.id)) {
           if (sessionId && route.upstreams.length > 1) {

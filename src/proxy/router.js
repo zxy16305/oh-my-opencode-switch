@@ -167,12 +167,29 @@ export function selectUpstreamWeighted(upstreams) {
 }
 
 /**
- * Extract session ID from request headers for sticky routing.
- * Priority: x-opencode-session → x-session-affinity → generated from request hash
+ * Extract session ID from request body and headers for sticky routing.
+ * Priority: body.sessionId → body.conversationId → x-opencode-session → x-session-affinity → client IP hash
  * @param {import('node:http').IncomingMessage} request - HTTP request
+ * @param {object} [body] - Parsed request body (optional)
  * @returns {string} Session ID
  */
-export function getSessionId(request) {
+export function getSessionId(request, body = null) {
+  if (body && typeof body === 'object') {
+    const sessionIdFields = [
+      'sessionId',
+      'session_id',
+      'conversationId',
+      'conversation_id',
+      'threadId',
+      'thread_id',
+    ];
+    for (const field of sessionIdFields) {
+      if (body[field] && typeof body[field] === 'string') {
+        return body[field];
+      }
+    }
+  }
+
   const headers = request.headers ?? {};
 
   const opencodeSession = headers['x-opencode-session'];
@@ -185,13 +202,9 @@ export function getSessionId(request) {
     return sessionAffinity;
   }
 
-  const parts = [
-    request.method ?? 'GET',
-    request.url ?? '/',
-    headers['x-forwarded-for'] ?? request.socket?.remoteAddress ?? 'unknown',
-    Date.now(),
-  ];
-  return `gen_${simpleHash(parts.join('|'))}`;
+  const clientIp =
+    headers['x-forwarded-for']?.split(',')[0]?.trim() ?? request.socket?.remoteAddress ?? 'unknown';
+  return `ip_${simpleHash(clientIp)}`;
 }
 
 /**
@@ -341,10 +354,11 @@ export function failoverStickySession(sessionId, failedUpstreamId, upstreams, ro
  * @param {string} model - Virtual model name from the request
  * @param {RoutesConfig} config - Routes configuration object
  * @param {import('node:http').IncomingMessage} [request] - HTTP request (needed for sticky strategy)
+ * @param {object} [body] - Parsed request body (for session ID extraction)
  * @returns {{ upstream: Upstream, route: Route, routeKey: string, sessionId?: string }} Selected upstream and route info
  * @throws {RouterError} If model is not found in routes
  */
-export function routeRequest(model, config, request) {
+export function routeRequest(model, config, request, body = null) {
   const route = getRouteForModel(model, config);
 
   if (!route) {
@@ -376,7 +390,7 @@ export function routeRequest(model, config, request) {
 
   switch (strategy) {
     case 'sticky':
-      sessionId = request ? getSessionId(request) : `auto_${Date.now()}`;
+      sessionId = request ? getSessionId(request, body) : `auto_${Date.now()}`;
       selectedUpstream = selectUpstreamSticky(upstreams, model, sessionId);
       break;
     case 'round-robin':

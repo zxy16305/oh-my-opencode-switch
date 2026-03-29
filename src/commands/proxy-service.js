@@ -57,10 +57,12 @@ export async function installService(options = {}) {
   const { execSync } = await import('child_process');
 
   try {
-    const binPath = `"${nodePath}" "${DAEMON_SCRIPT_PATH}"`;
-    const cmd = `sc create "${SERVICE_ID}" binPath= "${binPath}" DisplayName= "${SERVICE_NAME}" start= auto`;
-
-    execSync(cmd, { encoding: 'utf8' });
+    // Windows sc binPath requires escaped quotes for paths with spaces
+    const binPath = `\\"${nodePath}\\" \\"${DAEMON_SCRIPT_PATH}\\"`;
+    execSync(
+      `sc create "${SERVICE_ID}" binPath= "${binPath}" DisplayName= "${SERVICE_NAME}" start= auto`,
+      { encoding: 'utf8' }
+    );
     logger.success(`Windows service "${SERVICE_NAME}" installed.`);
     logger.info(`Port: ${port} (from config)`);
     logger.info('Start: oos proxy start');

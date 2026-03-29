@@ -27,7 +27,6 @@ let circuitBreaker = null;
  * @param {string} [options.config] - Path to config file
  */
 export async function startAction(options = {}) {
-  const port = parseInt(options.port, 10) || DEFAULT_PORT;
   const configPath = options.config || getProxyConfigPath();
 
   // Check if server is already running
@@ -36,24 +35,26 @@ export async function startAction(options = {}) {
     return;
   }
 
-  // Check port availability
-  const available = await isPortAvailable(port);
-  if (!available) {
-    logger.error(`Port ${port} is already in use. Please choose a different port.`);
-    process.exit(1);
-  }
-
-  // Load config
+  // Load config first to get port from config file
   const configManager = new ProxyConfigManager();
   let config = await configManager.readConfig();
 
   if (!config) {
-    // Check if config file exists
     if (!(await exists(configPath))) {
       logger.warn(`No proxy configuration found at ${configPath}`);
       logger.info('Run "oos proxy init" or create a proxy-config.json manually.');
     }
     config = { routes: {} };
+  }
+
+  // Port priority: CLI option > config.port > DEFAULT_PORT
+  const port = parseInt(options.port, 10) || config.port || DEFAULT_PORT;
+
+  // Check port availability
+  const available = await isPortAvailable(port);
+  if (!available) {
+    logger.error(`Port ${port} is already in use. Please choose a different port.`);
+    process.exit(1);
   }
 
   // Resolve routes from opencode config (fill baseURL/apiKey if not specified)
@@ -308,7 +309,7 @@ export function registerProxyCommands(program) {
   proxy
     .command('start')
     .description('Start the proxy server')
-    .option('-p, --port <port>', 'Port to listen on', String(DEFAULT_PORT))
+    .option('-p, --port <port>', 'Port to listen on (overrides config file)')
     .option('-c, --config <path>', 'Path to config file')
     .action(startAction);
 

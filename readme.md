@@ -187,12 +187,33 @@ oos proxy stop
 # 查看代理服务器状态
 oos proxy status
 
+# 查看访问日志
+oos proxy logs              # 显示最近 50 条日志
+oos proxy logs -n 100       # 显示最近 100 条日志
+oos proxy logs -c           # 清空日志文件
+
+# 查看访问统计
+oos proxy stats --last 24h  # 统计最近 24 小时
+oos proxy stats --last 7d   # 统计最近 7 天
+oos proxy stats --last 1h --json  # JSON 格式输出
+
 # 安装为 Windows 服务（需管理员权限）
 oos proxy install
 oos proxy install -p 3000  # 指定服务端口
 
 # 卸载 Windows 服务（需管理员权限）
 oos proxy uninstall
+```
+
+**stats 输出示例**：
+
+```
+┌─────────┬────────────┬─────────┬──────────┬─────────┬─────────┬──────────────┬──────────────┬───────┬───────┐
+│ (index) │ Provider   │ Model   │ Requests │ Success │ Failure │ Success Rate │ Avg Duration │ P95   │ P99   │
+├─────────┼────────────┼─────────┼──────────┼─────────┼─────────┼──────────────┼──────────────┼───────┼───────┤
+│ 0       │ 'baidu'    │ 'glm-4' │ 145      │ 144     │ 1       │ '99.31%'     │ 1881         │ 3358  │ 4756  │
+│ 1       │ 'ali'      │ 'glm-4' │ 112      │ 112     │ 0       │ '100.00%'    │ 1997         │ 6701  │ 6920  │
+└─────────┴────────────┴─────────┴──────────┴─────────┴─────────┴──────────────┴──────────────┴───────┴───────┘
 ```
 
 **示例用法**：
@@ -209,6 +230,9 @@ oos proxy start
 
 # 4. 在 OpenCode 中使用虚拟模型
 # 配置 oh-my-opencode.json 中的 model 为路由名称（如 lb-qwen-plus）
+
+# 5. 查看运行统计
+oos proxy stats --last 24h
 ```
 
 详细说明见 [docs/proxy.md](docs/proxy.md)。

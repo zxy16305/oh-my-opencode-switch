@@ -112,7 +112,8 @@ export async function startAction(options = {}) {
               sessionId,
               upstream.id,
               route.upstreams,
-              routeKey
+              routeKey,
+              model
             );
             if (nextUpstream && circuitBreaker.isAvailable(nextUpstream.id)) {
               upstream = nextUpstream;

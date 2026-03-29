@@ -71,7 +71,8 @@ const upstreamSessionCounts = new Map();
 
 /**
  * Session → upstream mapping for sticky sessions
- * Key: sessionId, Value: { upstreamId: string, routeKey: string, timestamp: number }
+ * Key: `${sessionId}:${model}` or `sessionId` (legacy, when model not provided)
+ * Value: { upstreamId: string, routeKey: string, timestamp: number }
  * @type {Map<string, { upstreamId: string, routeKey: string, timestamp: number }>}
  */
 const sessionUpstreamMap = new Map();
@@ -342,9 +343,10 @@ function stopSessionCleanup() {
  * @param {Upstream[]} upstreams - Available upstreams
  * @param {string} routeKey - Route key for mapping scope
  * @param {string} sessionId - Session ID for affinity
+ * @param {string} [model] - Model name for session key (combined with sessionId)
  * @returns {Upstream} Selected upstream
  */
-export function selectUpstreamSticky(upstreams, routeKey, sessionId) {
+export function selectUpstreamSticky(upstreams, routeKey, sessionId, model) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
   }
@@ -355,8 +357,9 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId) {
 
   startSessionCleanup();
 
+  const sessionKey = model ? `${sessionId}:${model}` : sessionId;
   const upstreamIdMap = new Map(upstreams.map((u) => [u.id, u]));
-  const existing = sessionUpstreamMap.get(sessionId);
+  const existing = sessionUpstreamMap.get(sessionKey);
 
   if (existing && existing.routeKey === routeKey) {
     const mapped = upstreamIdMap.get(existing.upstreamId);
@@ -369,7 +372,7 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId) {
   const selected = selectLeastLoadedUpstream(upstreams, routeKey);
   incrementSessionCount(routeKey, selected.id);
 
-  sessionUpstreamMap.set(sessionId, {
+  sessionUpstreamMap.set(sessionKey, {
     upstreamId: selected.id,
     routeKey,
     timestamp: Date.now(),
@@ -385,9 +388,10 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId) {
  * @param {string} failedUpstreamId
  * @param {Upstream[]} upstreams - All available upstreams for the route
  * @param {string} routeKey
+ * @param {string} [model] - Model name for session key (optional, for consistency with selectUpstreamSticky)
  * @returns {Upstream | null} Next available upstream, or null if none
  */
-export function failoverStickySession(sessionId, failedUpstreamId, upstreams, routeKey) {
+export function failoverStickySession(sessionId, failedUpstreamId, upstreams, routeKey, model) {
   if (!upstreams || upstreams.length === 0) return null;
 
   const available = upstreams.filter((u) => u.id !== failedUpstreamId);
@@ -398,7 +402,8 @@ export function failoverStickySession(sessionId, failedUpstreamId, upstreams, ro
   const next = selectLeastLoadedUpstream(available, routeKey);
   incrementSessionCount(routeKey, next.id);
 
-  sessionUpstreamMap.set(sessionId, {
+  const sessionKey = model ? `${sessionId}:${model}` : sessionId;
+  sessionUpstreamMap.set(sessionKey, {
     upstreamId: next.id,
     routeKey,
     timestamp: Date.now(),
@@ -449,7 +454,7 @@ export function routeRequest(model, config, request, body = null) {
   switch (strategy) {
     case 'sticky':
       sessionId = request ? getSessionId(request, body) : `auto_${Date.now()}`;
-      selectedUpstream = selectUpstreamSticky(upstreams, model, sessionId);
+      selectedUpstream = selectUpstreamSticky(upstreams, model, sessionId, model);
       break;
     case 'round-robin':
       selectedUpstream = selectUpstreamRoundRobin(upstreams, model);

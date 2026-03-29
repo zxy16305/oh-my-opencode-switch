@@ -141,7 +141,10 @@ export async function restartService() {
   const serviceName = 'OOS Proxy';
 
   try {
-    const status = execSync(`sc query "${serviceName}"`, { encoding: 'utf8' });
+    const status = execSync(`sc query "${serviceName}"`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
     if (status.includes('RUNNING')) {
       logger.info('Stopping service...');
@@ -153,8 +156,19 @@ export async function restartService() {
     execSync(`net start "${serviceName}"`, { encoding: 'utf8' });
     logger.success(`Windows service "${serviceName}" started successfully.`);
   } catch (error) {
-    if (error.message.includes('does not exist') || error.message.includes('not found')) {
-      logger.error(`Service "${serviceName}" is not installed. Run "oos proxy install" first.`);
+    const stderr = error.stderr?.toString() || '';
+    const stdout = error.stdout?.toString() || '';
+    const message = error.message || '';
+
+    if (
+      stderr.includes('does not exist') ||
+      stderr.includes('not found') ||
+      stdout.includes('does not exist') ||
+      stdout.includes('not found') ||
+      message.includes('Command failed')
+    ) {
+      logger.error(`Service "${serviceName}" is not installed.`);
+      logger.info('Run "oos proxy install" first (requires admin).');
       process.exit(1);
     }
     throw error;

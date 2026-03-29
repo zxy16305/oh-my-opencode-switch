@@ -7,20 +7,12 @@ import { forwardRequest } from '../src/proxy/server.js';
 import { getProxyConfigPath } from '../src/utils/proxy-paths.js';
 import { exists } from '../src/utils/files.js';
 
-const DEFAULT_PORT = parseInt(process.env.PORT, 10) || 3000;
+const DEFAULT_PORT = 3000;
 
 let server = null;
 
 async function startDaemon() {
-  const port = DEFAULT_PORT;
   const configPath = getProxyConfigPath();
-
-  const available = await isPortAvailable(port);
-  if (!available) {
-    console.error(`[daemon] Port ${port} is already in use.`);
-    process.exit(1);
-  }
-
   const configManager = new ProxyConfigManager();
   let config = await configManager.readConfig();
 
@@ -29,6 +21,14 @@ async function startDaemon() {
       console.warn('[daemon] No proxy configuration found.');
     }
     config = { routes: {} };
+  }
+
+  const port = parseInt(process.env.PORT, 10) || config.port || DEFAULT_PORT;
+
+  const available = await isPortAvailable(port);
+  if (!available) {
+    console.error(`[daemon] Port ${port} is already in use.`);
+    process.exit(1);
   }
 
   const validationResult = validateRoutesConfig(config.routes || {});

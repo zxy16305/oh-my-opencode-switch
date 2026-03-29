@@ -2,10 +2,11 @@
 
 import { createServer, shutdownServer, isPortAvailable } from '../src/proxy/server.js';
 import { ProxyConfigManager } from '../src/core/ProxyConfigManager.js';
-import { routeRequest, validateRoutesConfig } from '../src/proxy/router.js';
+import { routeRequest } from '../src/proxy/router.js';
 import { forwardRequest } from '../src/proxy/server.js';
 import { getProxyConfigPath } from '../src/utils/proxy-paths.js';
 import { exists } from '../src/utils/files.js';
+import { logAccess } from '../src/utils/access-log.js';
 
 const DEFAULT_PORT = 3000;
 
@@ -31,13 +32,21 @@ async function startDaemon() {
     process.exit(1);
   }
 
-  const validationResult = validateRoutesConfig(config.routes || {});
-  if (!validationResult.success) {
-    console.error(`[daemon] Invalid routes configuration: ${validationResult.error}`);
-    process.exit(1);
-  }
+  // Resolve routes from opencode config (fill baseURL/apiKey if not specified)
+  const routes = await configManager.resolveRoutes(config.routes || {});
 
-  const routes = validationResult.data;
+  // Validate resolved routes have required fields
+  for (const [routeName, route] of Object.entries(routes)) {
+    for (const upstream of route.upstreams || []) {
+      if (!upstream.baseURL) {
+        console.error(
+          `[daemon] Upstream "${upstream.provider}" in route "${routeName}" missing baseURL. ` +
+            'Add it to proxy-config.json or configure provider in opencode.json'
+        );
+        process.exit(1);
+      }
+    }
+  }
 
   const requestHandler = async (req, res) => {
     let body = '';
@@ -63,14 +72,41 @@ async function startDaemon() {
           return;
         }
 
-        const { upstream } = routeRequest(model, routes);
+        const { upstream, sessionId } = routeRequest(model, routes);
         const targetUrl = `${upstream.baseURL}/chat/completions`;
+        const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
+        const startTime = Date.now();
 
         if (upstream.apiKey) {
           req.headers['authorization'] = `Bearer ${upstream.apiKey}`;
         }
 
-        forwardRequest(req, res, targetUrl);
+        forwardRequest(req, res, targetUrl, {
+          body: forwardBody,
+          onProxyRes: (proxyRes) => {
+            const duration = Date.now() - startTime;
+            logAccess({
+              sessionId: sessionId || null,
+              provider: upstream.provider,
+              model: upstream.model,
+              virtualModel: model,
+              status: proxyRes.statusCode,
+              duration,
+              body: requestBody,
+            }).catch(() => {});
+          },
+          onError: (err) => {
+            logAccess({
+              sessionId: sessionId || null,
+              provider: upstream.provider,
+              model: upstream.model,
+              virtualModel: model,
+              status: 502,
+              error: err.message,
+              body: requestBody,
+            }).catch(() => {});
+          },
+        });
       } catch (error) {
         if (error.code === 'UNKNOWN_MODEL') {
           res.writeHead(404, { 'Content-Type': 'application/json' });

@@ -1,0 +1,80 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+
+const LOG_DIR = path.join(os.homedir(), '.config', 'opencode', '.oos', 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'proxy-access.log');
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+
+let logInitialized = false;
+
+async function ensureLogDir() {
+  if (!logInitialized) {
+    await fs.mkdir(LOG_DIR, { recursive: true });
+    logInitialized = true;
+  }
+}
+
+function formatTimestamp() {
+  return new Date().toISOString();
+}
+
+function formatLogEntry(entry) {
+  const parts = [
+    `[${entry.timestamp}]`,
+    entry.sessionId ? `session=${entry.sessionId}` : 'session=-',
+    `provider=${entry.provider}`,
+    `model=${entry.model}`,
+    `virtualModel=${entry.virtualModel}`,
+    `status=${entry.status}`,
+    entry.duration ? `duration=${entry.duration}ms` : '',
+    entry.error ? `error=${entry.error}` : '',
+  ];
+  return parts.filter(Boolean).join(' ') + '\n';
+}
+
+async function rotateLogIfNeeded() {
+  try {
+    const stats = await fs.stat(LOG_FILE).catch(() => null);
+    if (stats && stats.size > MAX_LOG_SIZE) {
+      const backup = LOG_FILE + '.' + new Date().toISOString().replace(/[:.]/g, '-');
+      await fs.rename(LOG_FILE, backup);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export async function logAccess(entry) {
+  await ensureLogDir();
+  await rotateLogIfNeeded();
+
+  const logLine = formatLogEntry({
+    timestamp: formatTimestamp(),
+    ...entry,
+  });
+
+  await fs.appendFile(LOG_FILE, logLine, 'utf8');
+}
+
+export function getLogPath() {
+  return LOG_FILE;
+}
+
+export async function readLogs(lines = 100) {
+  try {
+    const content = await fs.readFile(LOG_FILE, 'utf8');
+    const allLines = content.trim().split('\n').filter(Boolean);
+    return allLines.slice(-lines);
+  } catch {
+    return [];
+  }
+}
+
+export async function clearLogs() {
+  try {
+    await fs.unlink(LOG_FILE);
+  } catch {
+    // ignore
+  }
+}

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
+import { logAccess, readLogs, getLogPath, clearLogs } from '../utils/access-log.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -145,11 +146,13 @@ export async function startAction(options = {}) {
         }
 
         const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
+        const startTime = Date.now();
 
         forwardRequest(req, res, targetUrl, {
           body: forwardBody,
           headers: extraHeaders,
           onProxyRes: (proxyRes) => {
+            const duration = Date.now() - startTime;
             proxyRes.headers['x-used-provider'] = upstream.id;
             if (sessionId) {
               proxyRes.headers['x-session-id'] = sessionId;
@@ -159,10 +162,29 @@ export async function startAction(options = {}) {
             } else {
               circuitBreaker.recordSuccess(upstream.id);
             }
+
+            logAccess({
+              sessionId: sessionId || null,
+              provider: upstream.provider,
+              model: upstream.model,
+              virtualModel: model,
+              status: proxyRes.statusCode,
+              duration,
+              body: requestBody,
+            }).catch(() => {});
           },
           onError: (err) => {
             circuitBreaker.recordFailure(upstream.id);
             logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
+            logAccess({
+              sessionId: sessionId || null,
+              provider: upstream.provider,
+              model: upstream.model,
+              virtualModel: model,
+              status: 502,
+              error: err.message,
+              body: requestBody,
+            }).catch(() => {});
           },
         });
       } catch (error) {
@@ -275,6 +297,31 @@ export async function statusAction() {
   console.log('');
 }
 
+export async function logsAction(options = {}) {
+  const lines = parseInt(options.lines, 10) || 50;
+  const logPath = getLogPath();
+
+  console.log(`\nProxy Access Logs (${logPath})\n`);
+
+  if (options.clear) {
+    await clearLogs();
+    logger.success('Logs cleared.');
+    return;
+  }
+
+  const logs = await readLogs(lines);
+  if (logs.length === 0) {
+    console.log('No logs found.');
+    return;
+  }
+
+  for (const line of logs) {
+    console.log(line);
+  }
+
+  console.log(`\nShowing last ${logs.length} entries.`);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function initAction(options = {}) {
@@ -316,6 +363,13 @@ export function registerProxyCommands(program) {
   proxy.command('stop').description('Stop the proxy server').action(stopAction);
 
   proxy.command('status').description('Show proxy server status').action(statusAction);
+
+  proxy
+    .command('logs')
+    .description('Show proxy access logs')
+    .option('-n, --lines <number>', 'Number of lines to show', '50')
+    .option('-c, --clear', 'Clear the log file')
+    .action(logsAction);
 
   proxy
     .command('init')

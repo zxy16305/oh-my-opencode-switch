@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DAEMON_SCRIPT_PATH = path.join(__dirname, '..', '..', 'bin', 'oos-proxy-daemon.js');
 
 const SERVICE_NAME = 'OOS Proxy';
+const SERVICE_ID = 'oosproxy.exe';
 const SERVICE_DESCRIPTION = 'OOS Proxy Server - Load balancing proxy for OpenCode';
 
 export class AdminRequiredError extends OosError {
@@ -138,23 +139,22 @@ export async function restartService() {
   }
 
   const { execSync } = await import('child_process');
-  const serviceName = 'OOS Proxy';
 
   try {
-    const status = execSync(`sc query "${serviceName}"`, {
+    const status = execSync(`sc query "${SERVICE_ID}"`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     if (status.includes('RUNNING')) {
       logger.info('Stopping service...');
-      execSync(`net stop "${serviceName}"`, { encoding: 'utf8' });
+      execSync(`net stop "${SERVICE_ID}"`, { encoding: 'utf8' });
       logger.success('Service stopped.');
     }
 
     logger.info('Starting service...');
-    execSync(`net start "${serviceName}"`, { encoding: 'utf8' });
-    logger.success(`Windows service "${serviceName}" started successfully.`);
+    execSync(`net start "${SERVICE_ID}"`, { encoding: 'utf8' });
+    logger.success(`Windows service "${SERVICE_NAME}" started successfully.`);
   } catch (error) {
     const stderr = error.stderr?.toString() || '';
     const stdout = error.stdout?.toString() || '';
@@ -167,7 +167,7 @@ export async function restartService() {
       stdout.includes('not found') ||
       message.includes('Command failed')
     ) {
-      logger.error(`Service "${serviceName}" is not installed.`);
+      logger.error(`Service "${SERVICE_NAME}" is not installed.`);
       logger.info('Run "oos proxy install" first (requires admin).');
       process.exit(1);
     }

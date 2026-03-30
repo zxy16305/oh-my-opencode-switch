@@ -1,6 +1,11 @@
 import { createServer, shutdownServer, isPortAvailable } from '../proxy/server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
-import { routeRequest, failoverStickySession } from '../proxy/router.js';
+import {
+  routeRequest,
+  failoverStickySession,
+  getDynamicWeightState,
+  getUpstreamSessionCounts,
+} from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
 import { logger } from '../utils/logger.js';
@@ -81,6 +86,62 @@ export async function startAction(options = {}) {
   // Get auth config for request authentication
   const auth = config.auth;
 
+  /**
+   * Handle debug endpoint - return runtime state
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @param {object} routes - Resolved routes config
+   */
+  function handleDebug(req, res, routes) {
+    // Security: only allow localhost
+    const clientIp = req.socket.remoteAddress || '';
+    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+      return;
+    }
+
+    const weightState = getDynamicWeightState();
+    const sessionCounts = getUpstreamSessionCounts();
+    const circuitStates = circuitBreaker?.getStates?.() || new Map();
+
+    const response = {
+      timestamp: new Date().toISOString(),
+      routes: {},
+      circuitBreakers: {},
+    };
+
+    for (const [routeName, route] of Object.entries(routes)) {
+      response.routes[routeName] = {
+        strategy: route.strategy,
+        upstreams: (route.upstreams || []).map((upstream) => {
+          const key = `${routeName}:${upstream.id}`;
+          const weightEntry = weightState.get(key);
+          const routeSessions = sessionCounts.get(routeName);
+          const sessionCount = routeSessions?.get(upstream.id) ?? 0;
+
+          return {
+            id: upstream.id,
+            provider: upstream.provider,
+            model: upstream.model,
+            currentWeight: weightEntry?.currentWeight ?? 100,
+            sessionCount,
+          };
+        }),
+      };
+    }
+
+    for (const [providerId, state] of circuitStates) {
+      response.circuitBreakers[providerId] = {
+        state: state.state,
+        failures: state.failures,
+      };
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response, null, 2));
+  }
+
   // Create request handler
   const requestHandler = async (req, res) => {
     let body = '';
@@ -90,6 +151,12 @@ export async function startAction(options = {}) {
 
     req.on('end', async () => {
       try {
+        // Debug endpoint - no auth required, localhost only
+        if (req.url === '/_internal/debug' && req.method === 'GET') {
+          handleDebug(req, res, routes);
+          return;
+        }
+
         // Authentication check
         const apiKey = extractApiKey(req);
         const authResult = authenticate(apiKey, auth);

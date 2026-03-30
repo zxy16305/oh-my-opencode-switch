@@ -154,6 +154,27 @@ export class CircuitBreaker {
   }
 
   /**
+   * Get all current provider states.
+   * Accounts for cooldown expiry for each provider.
+   *
+   * @returns {Map<string, { state: string, failures: number, lastFailure: number }>}
+   *          Map of provider IDs to their current state information (copy)
+   */
+  getStates() {
+    const result = new Map();
+    for (const [providerId, entry] of this.states) {
+      this._checkCooldown(entry);
+      // Create a copy of the entry to prevent external modification
+      result.set(providerId, {
+        state: entry.state,
+        failures: entry.failures,
+        lastFailure: entry.lastFailure,
+      });
+    }
+    return result;
+  }
+
+  /**
    * Get failure count for a provider
    * @param {string} providerId
    * @returns {number}

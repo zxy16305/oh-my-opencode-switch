@@ -632,12 +632,15 @@ export function selectUpstreamSticky(
       existing.timestamp = Date.now();
       existing.requestCount = (existing.requestCount ?? 0) + 1;
 
+      // Increment global request count FIRST (before checking)
+      incrementUpstreamRequestCount(routeKey, existing.upstreamId);
+
       // Every 10 requests, check global request counts for soft rotation
       if (existing.requestCount % 10 === 0) {
         const requestCounts = getUpstreamRequestCounts();
         const routeRequestCounts = requestCounts.get(routeKey);
 
-        // Get current upstream's global request count
+        // Get current upstream's global request count (now includes current request)
         const currentRequestCount = routeRequestCounts?.get(existing.upstreamId) ?? 0;
 
         // Find candidate with fewest requests (excluding current upstream)
@@ -680,6 +683,7 @@ export function selectUpstreamSticky(
 
   const selected = selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig);
   incrementSessionCount(routeKey, selected.id);
+  incrementUpstreamRequestCount(routeKey, selected.id);
 
   sessionUpstreamMap.set(sessionKey, {
     upstreamId: selected.id,
@@ -801,7 +805,10 @@ export function routeRequest(model, config, request, body = null) {
     result.sessionId = sessionId;
   }
 
-  incrementUpstreamRequestCount(model, selectedUpstream.id);
+  // Only increment for non-sticky strategies (sticky already increments in selectUpstreamSticky)
+  if (strategy !== 'sticky') {
+    incrementUpstreamRequestCount(model, selectedUpstream.id);
+  }
 
   return result;
 }

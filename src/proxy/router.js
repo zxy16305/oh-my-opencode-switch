@@ -108,6 +108,14 @@ const sessionUpstreamMap = new Map();
 const dynamicWeightState = new Map();
 
 /**
+ * Upstream request counts
+ * Key: routeKey (virtual model name)
+ * Value: Map<upstreamId, requestCount>
+ * @type {Map<string, Map<string, number>>}
+ */
+const upstreamRequestCounts = new Map();
+
+/**
  * Recovery timers per route
  * Key: routeKey
  * Value: NodeJS.Timeout
@@ -187,6 +195,28 @@ function decrementSessionCount(routeKey, upstreamId) {
   if (current > 0) {
     countMap.set(upstreamId, current - 1);
   }
+}
+
+/**
+ * 获取或创建 routeKey 的上游请求计数映射
+ * @param {string} routeKey
+ * @returns {Map<string, number>}
+ */
+function getOrCreateRequestCountMap(routeKey) {
+  if (!upstreamRequestCounts.has(routeKey)) {
+    upstreamRequestCounts.set(routeKey, new Map());
+  }
+  return upstreamRequestCounts.get(routeKey);
+}
+
+/**
+ * 增加上游请求计数
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ */
+function incrementUpstreamRequestCount(routeKey, upstreamId) {
+  const countMap = getOrCreateRequestCountMap(routeKey);
+  countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
 }
 
 /**
@@ -602,27 +632,35 @@ export function selectUpstreamSticky(
       existing.timestamp = Date.now();
       existing.requestCount = (existing.requestCount ?? 0) + 1;
 
-      // Check if threshold reached for load-aware reassignment
-      if (threshold > 0 && existing.requestCount % threshold === 0) {
-        const countMap = getOrCreateCountMap(routeKey);
-        const currentLoad = countMap.get(existing.upstreamId) ?? 0;
+      // Every 10 requests, check global request counts for soft rotation
+      if (existing.requestCount % 10 === 0) {
+        const requestCounts = getUpstreamRequestCounts();
+        const routeRequestCounts = requestCounts.get(routeKey);
 
-        let minLoad = Infinity;
+        // Get current upstream's global request count
+        const currentRequestCount = routeRequestCounts?.get(existing.upstreamId) ?? 0;
+
+        // Find candidate with fewest requests (excluding current upstream)
+        let minRequestCount = Infinity;
+        let minRequestUpstream = null;
+
         for (const upstream of upstreams) {
-          const load = countMap.get(upstream.id) ?? 0;
-          if (load < minLoad) {
-            minLoad = load;
+          if (upstream.id === existing.upstreamId) continue;
+          const count = routeRequestCounts?.get(upstream.id) ?? 0;
+          if (count < minRequestCount) {
+            minRequestCount = count;
+            minRequestUpstream = upstream;
           }
         }
 
-        if (currentLoad - minLoad >= minGap) {
-          const newUpstream = selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig);
-          if (newUpstream.id !== existing.upstreamId) {
-            decrementSessionCount(routeKey, existing.upstreamId);
-            incrementSessionCount(routeKey, newUpstream.id);
-            existing.upstreamId = newUpstream.id;
-          }
+        // Switch if candidate has fewer requests than current
+        if (minRequestUpstream && minRequestCount < currentRequestCount) {
+          decrementSessionCount(routeKey, existing.upstreamId);
+          incrementSessionCount(routeKey, minRequestUpstream.id);
+          existing.upstreamId = minRequestUpstream.id;
+          existing.requestCount = 1; // Reset count after switch
         }
+        // Otherwise keep accumulating requestCount
       }
 
       // Dynamic weight adjustment based on latency
@@ -763,6 +801,8 @@ export function routeRequest(model, config, request, body = null) {
     result.sessionId = sessionId;
   }
 
+  incrementUpstreamRequestCount(model, selectedUpstream.id);
+
   return result;
 }
 
@@ -805,6 +845,7 @@ export function resetRoundRobinCounters() {
   roundRobinCounters.clear();
   sessionUpstreamMap.clear();
   upstreamSessionCounts.clear();
+  upstreamRequestCounts.clear();
   dynamicWeightState.clear();
   recoveryTimers.forEach((timer) => clearInterval(timer));
   recoveryTimers.clear();
@@ -825,6 +866,14 @@ export function getSessionMapSize() {
  */
 export function getUpstreamSessionCounts() {
   return upstreamSessionCounts;
+}
+
+/**
+ * Get current upstream request counts (useful for testing/monitoring)
+ * @returns {Map<string, Map<string, number>>}
+ */
+export function getUpstreamRequestCounts() {
+  return upstreamRequestCounts;
 }
 
 /**

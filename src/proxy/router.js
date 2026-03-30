@@ -861,6 +861,14 @@ export function getSessionMapSize() {
 }
 
 /**
+ * Get current session → upstream mapping (useful for testing/monitoring)
+ * @returns {Map<string, { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }>}
+ */
+export function getSessionUpstreamMap() {
+  return sessionUpstreamMap;
+}
+
+/**
  * Get current upstream session counts (useful for testing/monitoring)
  * @returns {Map<string, Map<string, number>>}
  */

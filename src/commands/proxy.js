@@ -6,6 +6,7 @@ import {
   getDynamicWeightState,
   getUpstreamSessionCounts,
   getUpstreamRequestCounts,
+  getSessionUpstreamMap,
 } from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
@@ -161,10 +162,21 @@ export async function startAction(options = {}) {
     const requestCounts = getUpstreamRequestCounts();
     const sessionCounts = getUpstreamSessionCounts();
     const weightState = getDynamicWeightState();
+    const sessionMap = getSessionUpstreamMap();
+
+    const sessions = {};
+    for (const [sessionKey, entry] of sessionMap) {
+      sessions[sessionKey] = {
+        upstreamId: entry.upstreamId,
+        requestCount: entry.requestCount ?? 0,
+        lastAccess: new Date(entry.timestamp).toISOString(),
+      };
+    }
 
     const response = {
       timestamp: new Date().toISOString(),
       routes: {},
+      sessions,
     };
 
     for (const [routeName, route] of Object.entries(routes)) {

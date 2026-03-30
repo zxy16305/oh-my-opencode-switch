@@ -27,6 +27,26 @@ export const routeSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   stickyReassignThreshold: z.number().int().positive().optional().default(10),
   stickyReassignMinGap: z.number().int().min(0).optional().default(2),
+  dynamicWeight: z
+    .object({
+      enabled: z.boolean().default(true),
+      initialWeight: z.number().int().positive().default(100),
+      minWeight: z.number().int().positive().default(10),
+      checkInterval: z.number().int().positive().default(10),
+      latencyThreshold: z.number().positive().default(1.5),
+      recoveryInterval: z.number().int().positive().default(300000),
+      recoveryAmount: z.number().int().positive().default(1),
+    })
+    .optional()
+    .default({
+      enabled: true,
+      initialWeight: 100,
+      minWeight: 10,
+      checkInterval: 10,
+      latencyThreshold: 1.5,
+      recoveryInterval: 300000,
+      recoveryAmount: 1,
+    }),
 });
 
 /**
@@ -80,6 +100,22 @@ const upstreamSessionCounts = new Map();
 const sessionUpstreamMap = new Map();
 
 /**
+ * Dynamic weight state per upstream per route
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: { currentWeight: number, lastAdjustment: number, requestCount: number }
+ * @type {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
+ */
+const dynamicWeightState = new Map();
+
+/**
+ * Recovery timers per route
+ * Key: routeKey
+ * Value: NodeJS.Timeout
+ * @type {Map<string, NodeJS.Timeout>}
+ */
+const recoveryTimers = new Map();
+
+/**
  * 获取或创建 routeKey 的计数映射
  * @param {string} routeKey
  * @returns {Map<string, number>}
@@ -92,29 +128,42 @@ function getOrCreateCountMap(routeKey) {
 }
 
 /**
- * 选择负载最低的 upstream
+ * 选择负载最低的 upstream（考虑动态权重）
+ * effectiveWeight = min(staticWeight, dynamicWeight)
+ * score = sessionCount / effectiveWeight（越低越好）
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
+ * @param {object} [dynamicWeightConfig] - Optional dynamic weight config
  * @returns {Upstream}
  */
-function selectLeastLoadedUpstream(upstreams, routeKey) {
+function selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig = null) {
   const countMap = getOrCreateCountMap(routeKey);
 
-  let minCount = Infinity;
+  let bestScore = Infinity;
+  let bestUpstream = upstreams[0];
+
   for (const upstream of upstreams) {
-    const count = countMap.get(upstream.id) ?? 0;
-    if (count < minCount) {
-      minCount = count;
+    const sessionCount = countMap.get(upstream.id) ?? 0;
+    const staticWeight = upstream.weight ?? 1;
+
+    let effectiveWeight = staticWeight;
+
+    // Apply dynamic weight if enabled
+    if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
+      const dynWeight = getDynamicWeight(routeKey, upstream.id, dynamicWeightConfig.initialWeight);
+      effectiveWeight = Math.min(staticWeight, dynWeight);
+    }
+
+    // Score: lower is better (fewer sessions per weight unit)
+    const score = sessionCount / effectiveWeight;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestUpstream = upstream;
     }
   }
 
-  for (const upstream of upstreams) {
-    if ((countMap.get(upstream.id) ?? 0) === minCount) {
-      return upstream;
-    }
-  }
-
-  return upstreams[0];
+  return bestUpstream;
 }
 
 /**
@@ -137,6 +186,177 @@ function decrementSessionCount(routeKey, upstreamId) {
   const current = countMap.get(upstreamId) ?? 0;
   if (current > 0) {
     countMap.set(upstreamId, current - 1);
+  }
+}
+
+/**
+ * Get or initialize dynamic weight for an upstream
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ * @param {number} initialWeight
+ * @returns {number} Current weight
+ */
+function getDynamicWeight(routeKey, upstreamId, initialWeight = 100) {
+  const key = `${routeKey}:${upstreamId}`;
+  const state = dynamicWeightState.get(key);
+  if (!state) {
+    dynamicWeightState.set(key, {
+      currentWeight: initialWeight,
+      lastAdjustment: Date.now(),
+      requestCount: 0,
+    });
+    return initialWeight;
+  }
+  return state.currentWeight;
+}
+
+/**
+ * Set dynamic weight for an upstream
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ * @param {number} weight
+ */
+function setDynamicWeight(routeKey, upstreamId, weight) {
+  const key = `${routeKey}:${upstreamId}`;
+  const state = dynamicWeightState.get(key);
+  if (state) {
+    state.currentWeight = weight;
+    state.lastAdjustment = Date.now();
+  } else {
+    dynamicWeightState.set(key, {
+      currentWeight: weight,
+      lastAdjustment: Date.now(),
+      requestCount: 0,
+    });
+  }
+}
+
+/**
+ * Reset all dynamic weights for a route
+ * @param {string} routeKey
+ * @param {number} initialWeight
+ */
+function resetDynamicWeights(routeKey, initialWeight = 100) {
+  for (const [key, state] of dynamicWeightState) {
+    if (key.startsWith(`${routeKey}:`)) {
+      state.currentWeight = initialWeight;
+      state.lastAdjustment = Date.now();
+    }
+  }
+}
+
+/**
+ * Increment request count for dynamic weight check
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ * @returns {number} Updated request count
+ */
+function incrementDynamicWeightRequestCount(routeKey, upstreamId) {
+  const key = `${routeKey}:${upstreamId}`;
+  const state = dynamicWeightState.get(key);
+  if (state) {
+    state.requestCount++;
+    return state.requestCount;
+  }
+  return 0;
+}
+
+/**
+ * Adjust weights based on latency comparison
+ * Compares each upstream's avgDuration to the fastest upstream
+ * Decreases weight by 1 if latency > fastest * latencyThreshold
+ * @param {string} routeKey
+ * @param {Upstream[]} upstreams
+ * @param {object} config - dynamicWeight config
+ * @param {Map<string, {avgDuration: number}>} latencyData - upstream latency data
+ */
+function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
+  if (!upstreams || upstreams.length <= 1) return;
+
+  const { minWeight, latencyThreshold, initialWeight } = config;
+
+  // Find the fastest upstream's avgDuration
+  let fastestDuration = Infinity;
+  for (const upstream of upstreams) {
+    const data = latencyData.get(upstream.id);
+    if (data && data.avgDuration && data.avgDuration < fastestDuration) {
+      fastestDuration = data.avgDuration;
+    }
+  }
+
+  // If no latency data, skip adjustment
+  if (fastestDuration === Infinity) return;
+
+  // Check each upstream and adjust weight if needed
+  for (const upstream of upstreams) {
+    const data = latencyData.get(upstream.id);
+    if (!data || !data.avgDuration) continue;
+
+    const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+
+    // Skip if already at min weight
+    if (currentWeight <= minWeight) continue;
+
+    // Decrease weight if latency exceeds threshold
+    if (data.avgDuration > fastestDuration * latencyThreshold) {
+      setDynamicWeight(routeKey, upstream.id, Math.max(minWeight, currentWeight - 1));
+    }
+  }
+}
+
+/**
+ * Start periodic weight recovery for a route
+ * @param {string} routeKey
+ * @param {Upstream[]} upstreams
+ * @param {object} config - dynamicWeight config
+ * @returns {NodeJS.Timeout} Timer ID for cleanup
+ */
+function startWeightRecovery(routeKey, upstreams, config) {
+  if (!routeKey || !upstreams || upstreams.length === 0 || !config) {
+    return null;
+  }
+
+  if (!config.enabled || !config.recoveryInterval || config.recoveryInterval <= 0) {
+    return null;
+  }
+
+  stopWeightRecovery(routeKey);
+
+  const { recoveryInterval, recoveryAmount, initialWeight } = config;
+
+  const timer = setInterval(() => {
+    for (const upstream of upstreams) {
+      const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+      if (currentWeight < initialWeight) {
+        setDynamicWeight(
+          routeKey,
+          upstream.id,
+          Math.min(initialWeight, currentWeight + recoveryAmount)
+        );
+      }
+    }
+  }, recoveryInterval);
+
+  // Store timer for cleanup
+  recoveryTimers.set(routeKey, timer);
+
+  // Unref to allow process exit
+  if (timer.unref) {
+    timer.unref();
+  }
+
+  return timer;
+}
+
+/**
+ * Stop weight recovery timer for a route
+ * @param {string} routeKey
+ */
+function stopWeightRecovery(routeKey) {
+  const timer = recoveryTimers.get(routeKey);
+  if (timer) {
+    clearInterval(timer);
+    recoveryTimers.delete(routeKey);
   }
 }
 
@@ -348,6 +568,8 @@ function stopSessionCleanup() {
  * @param {string} [model] - Model name for session key (combined with sessionId)
  * @param {number} [threshold=10] - Request count threshold for load-aware reassignment (0 to disable)
  * @param {number} [minGap=2] - Minimum load difference to trigger reassignment
+ * @param {object} [dynamicWeightConfig] - Dynamic weight configuration
+ * @param {Map<string, {avgDuration: number}>} [latencyData] - Upstream latency data
  * @returns {Upstream} Selected upstream
  */
 export function selectUpstreamSticky(
@@ -356,7 +578,9 @@ export function selectUpstreamSticky(
   sessionId,
   model,
   threshold = 10,
-  minGap = 2
+  minGap = 2,
+  dynamicWeightConfig = null,
+  latencyData = null
 ) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
@@ -383,7 +607,6 @@ export function selectUpstreamSticky(
         const countMap = getOrCreateCountMap(routeKey);
         const currentLoad = countMap.get(existing.upstreamId) ?? 0;
 
-        // Find minimum load among all upstreams
         let minLoad = Infinity;
         for (const upstream of upstreams) {
           const load = countMap.get(upstream.id) ?? 0;
@@ -392,9 +615,8 @@ export function selectUpstreamSticky(
           }
         }
 
-        // Switch if current load is significantly higher than minimum
         if (currentLoad - minLoad >= minGap) {
-          const newUpstream = selectLeastLoadedUpstream(upstreams, routeKey);
+          const newUpstream = selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig);
           if (newUpstream.id !== existing.upstreamId) {
             decrementSessionCount(routeKey, existing.upstreamId);
             incrementSessionCount(routeKey, newUpstream.id);
@@ -403,11 +625,22 @@ export function selectUpstreamSticky(
         }
       }
 
+      // Dynamic weight adjustment based on latency
+      if (
+        dynamicWeightConfig &&
+        dynamicWeightConfig.enabled &&
+        latencyData &&
+        dynamicWeightConfig.checkInterval > 0 &&
+        existing.requestCount % dynamicWeightConfig.checkInterval === 0
+      ) {
+        adjustWeightForLatency(routeKey, upstreams, dynamicWeightConfig, latencyData);
+      }
+
       return upstreamIdMap.get(existing.upstreamId) ?? mapped;
     }
   }
 
-  const selected = selectLeastLoadedUpstream(upstreams, routeKey);
+  const selected = selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig);
   incrementSessionCount(routeKey, selected.id);
 
   sessionUpstreamMap.set(sessionKey, {
@@ -438,7 +671,7 @@ export function failoverStickySession(sessionId, failedUpstreamId, upstreams, ro
 
   decrementSessionCount(routeKey, failedUpstreamId);
 
-  const next = selectLeastLoadedUpstream(available, routeKey);
+  const next = selectLeastLoadedUpstream(available, routeKey, null);
   incrementSessionCount(routeKey, next.id);
 
   const sessionKey = model ? `${sessionId}:${model}` : sessionId;
@@ -488,7 +721,8 @@ export function routeRequest(model, config, request, body = null) {
   }
 
   const validatedRoute = validationResult.data;
-  const { upstreams, strategy, stickyReassignThreshold, stickyReassignMinGap } = validatedRoute;
+  const { upstreams, strategy, stickyReassignThreshold, stickyReassignMinGap, dynamicWeight } =
+    validatedRoute;
   let selectedUpstream;
   let sessionId;
 
@@ -501,7 +735,9 @@ export function routeRequest(model, config, request, body = null) {
         sessionId,
         model,
         stickyReassignThreshold,
-        stickyReassignMinGap
+        stickyReassignMinGap,
+        dynamicWeight,
+        null
       );
       break;
     case 'round-robin':
@@ -569,6 +805,9 @@ export function resetRoundRobinCounters() {
   roundRobinCounters.clear();
   sessionUpstreamMap.clear();
   upstreamSessionCounts.clear();
+  dynamicWeightState.clear();
+  recoveryTimers.forEach((timer) => clearInterval(timer));
+  recoveryTimers.clear();
   stopSessionCleanup();
 }
 
@@ -587,3 +826,27 @@ export function getSessionMapSize() {
 export function getUpstreamSessionCounts() {
   return upstreamSessionCounts;
 }
+
+/**
+ * Get current dynamic weight state (useful for testing/monitoring)
+ * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
+ */
+export function getDynamicWeightState() {
+  return dynamicWeightState;
+}
+
+/**
+ * Get current recovery timers (useful for testing/monitoring)
+ * @returns {Map<string, NodeJS.Timeout>}
+ */
+export function getRecoveryTimers() {
+  return recoveryTimers;
+}
+
+export {
+  getDynamicWeight,
+  setDynamicWeight,
+  adjustWeightForLatency,
+  startWeightRecovery,
+  stopWeightRecovery,
+};

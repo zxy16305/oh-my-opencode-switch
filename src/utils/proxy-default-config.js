@@ -69,6 +69,15 @@ export function getExampleRoute(virtualModel, strategy = 'sticky', upstreams = [
   return {
     strategy,
     upstreams,
+    dynamicWeight: {
+      enabled: true,
+      initialWeight: 100,
+      minWeight: 10,
+      checkInterval: 10,
+      latencyThreshold: 1.5,
+      recoveryInterval: 300000,
+      recoveryAmount: 1,
+    },
   };
 }
 

@@ -14,6 +14,17 @@ export const routeSchema = z.object({
   strategy: z.enum(['round-robin', 'random', 'weighted', 'sticky']).default('round-robin'),
   upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
   metadata: z.record(z.unknown()).optional(),
+  dynamicWeight: z
+    .object({
+      enabled: z.boolean().default(true),
+      initialWeight: z.number().int().positive().default(100),
+      minWeight: z.number().int().positive().default(10),
+      checkInterval: z.number().int().positive().default(10),
+      latencyThreshold: z.number().positive().default(1.5),
+      recoveryInterval: z.number().int().positive().default(300000),
+      recoveryAmount: z.number().int().positive().default(1),
+    })
+    .optional(),
 });
 
 export const routesSchema = z.record(z.string(), routeSchema);

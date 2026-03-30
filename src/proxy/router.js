@@ -25,6 +25,8 @@ export const routeSchema = z.object({
   strategy: z.enum(['round-robin', 'random', 'weighted', 'sticky']).default('round-robin'),
   upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
   metadata: z.record(z.unknown()).optional(),
+  stickyReassignThreshold: z.number().int().positive().optional().default(10),
+  stickyReassignMinGap: z.number().int().min(0).optional().default(2),
 });
 
 /**
@@ -72,8 +74,8 @@ const upstreamSessionCounts = new Map();
 /**
  * Session → upstream mapping for sticky sessions
  * Key: `${sessionId}:${model}` or `sessionId` (legacy, when model not provided)
- * Value: { upstreamId: string, routeKey: string, timestamp: number }
- * @type {Map<string, { upstreamId: string, routeKey: string, timestamp: number }>}
+ * Value: { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }
+ * @type {Map<string, { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }>}
  */
 const sessionUpstreamMap = new Map();
 
@@ -344,9 +346,18 @@ function stopSessionCleanup() {
  * @param {string} routeKey - Route key for mapping scope
  * @param {string} sessionId - Session ID for affinity
  * @param {string} [model] - Model name for session key (combined with sessionId)
+ * @param {number} [threshold=10] - Request count threshold for load-aware reassignment (0 to disable)
+ * @param {number} [minGap=2] - Minimum load difference to trigger reassignment
  * @returns {Upstream} Selected upstream
  */
-export function selectUpstreamSticky(upstreams, routeKey, sessionId, model) {
+export function selectUpstreamSticky(
+  upstreams,
+  routeKey,
+  sessionId,
+  model,
+  threshold = 10,
+  minGap = 2
+) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
   }
@@ -365,7 +376,34 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId, model) {
     const mapped = upstreamIdMap.get(existing.upstreamId);
     if (mapped) {
       existing.timestamp = Date.now();
-      return mapped;
+      existing.requestCount = (existing.requestCount ?? 0) + 1;
+
+      // Check if threshold reached for load-aware reassignment
+      if (threshold > 0 && existing.requestCount % threshold === 0) {
+        const countMap = getOrCreateCountMap(routeKey);
+        const currentLoad = countMap.get(existing.upstreamId) ?? 0;
+
+        // Find minimum load among all upstreams
+        let minLoad = Infinity;
+        for (const upstream of upstreams) {
+          const load = countMap.get(upstream.id) ?? 0;
+          if (load < minLoad) {
+            minLoad = load;
+          }
+        }
+
+        // Switch if current load is significantly higher than minimum
+        if (currentLoad - minLoad >= minGap) {
+          const newUpstream = selectLeastLoadedUpstream(upstreams, routeKey);
+          if (newUpstream.id !== existing.upstreamId) {
+            decrementSessionCount(routeKey, existing.upstreamId);
+            incrementSessionCount(routeKey, newUpstream.id);
+            existing.upstreamId = newUpstream.id;
+          }
+        }
+      }
+
+      return upstreamIdMap.get(existing.upstreamId) ?? mapped;
     }
   }
 
@@ -376,6 +414,7 @@ export function selectUpstreamSticky(upstreams, routeKey, sessionId, model) {
     upstreamId: selected.id,
     routeKey,
     timestamp: Date.now(),
+    requestCount: 1,
   });
 
   return selected;
@@ -407,6 +446,7 @@ export function failoverStickySession(sessionId, failedUpstreamId, upstreams, ro
     upstreamId: next.id,
     routeKey,
     timestamp: Date.now(),
+    requestCount: 1,
   });
 
   return next;
@@ -447,14 +487,22 @@ export function routeRequest(model, config, request, body = null) {
     );
   }
 
-  const { upstreams, strategy } = route;
+  const validatedRoute = validationResult.data;
+  const { upstreams, strategy, stickyReassignThreshold, stickyReassignMinGap } = validatedRoute;
   let selectedUpstream;
   let sessionId;
 
   switch (strategy) {
     case 'sticky':
       sessionId = request ? getSessionId(request, body) : `auto_${Date.now()}`;
-      selectedUpstream = selectUpstreamSticky(upstreams, model, sessionId, model);
+      selectedUpstream = selectUpstreamSticky(
+        upstreams,
+        model,
+        sessionId,
+        model,
+        stickyReassignThreshold,
+        stickyReassignMinGap
+      );
       break;
     case 'round-robin':
       selectedUpstream = selectUpstreamRoundRobin(upstreams, model);

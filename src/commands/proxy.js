@@ -5,6 +5,7 @@ import {
   failoverStickySession,
   getDynamicWeightState,
   getUpstreamSessionCounts,
+  getUpstreamRequestCounts,
 } from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
@@ -142,6 +143,55 @@ export async function startAction(options = {}) {
     res.end(JSON.stringify(response, null, 2));
   }
 
+  /**
+   * Handle stats endpoint - return request statistics
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @param {object} routes - Resolved routes config
+   */
+  function handleStats(req, res, routes) {
+    // Security: only allow localhost
+    const clientIp = req.socket.remoteAddress || '';
+    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+      return;
+    }
+
+    const requestCounts = getUpstreamRequestCounts();
+    const sessionCounts = getUpstreamSessionCounts();
+    const weightState = getDynamicWeightState();
+
+    const response = {
+      timestamp: new Date().toISOString(),
+      routes: {},
+    };
+
+    for (const [routeName, route] of Object.entries(routes)) {
+      response.routes[routeName] = {
+        strategy: route.strategy,
+        upstreams: (route.upstreams || []).map((upstream) => {
+          const key = `${routeName}:${upstream.id}`;
+          const routeRequestCounts = requestCounts.get(routeName);
+          const routeSessions = sessionCounts.get(routeName);
+          const weightEntry = weightState.get(key);
+
+          return {
+            id: upstream.id,
+            provider: upstream.provider,
+            model: upstream.model,
+            requestCount: routeRequestCounts?.get(upstream.id) ?? 0,
+            sessionCount: routeSessions?.get(upstream.id) ?? 0,
+            currentWeight: weightEntry?.currentWeight ?? 100,
+          };
+        }),
+      };
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response, null, 2));
+  }
+
   // Create request handler
   const requestHandler = async (req, res) => {
     let body = '';
@@ -154,6 +204,12 @@ export async function startAction(options = {}) {
         // Debug endpoint - no auth required, localhost only
         if (req.url === '/_internal/debug' && req.method === 'GET') {
           handleDebug(req, res, routes);
+          return;
+        }
+
+        // Stats endpoint - no auth required, localhost only
+        if (req.url === '/_internal/stats' && req.method === 'GET') {
+          handleStats(req, res, routes);
           return;
         }
 

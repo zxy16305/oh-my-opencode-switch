@@ -32,11 +32,12 @@ describe('CLI Import Command', () => {
       version: 1,
       exportedAt: new Date().toISOString(),
       profile: profileName,
-      config: {
+      template: {
         $schema: 'https://example.com/schema.json',
         agents: {},
         categories: {},
       },
+      variables: {},
     };
     await fs.writeFile(validExportFile, JSON.stringify(validExport, null, 2));
 

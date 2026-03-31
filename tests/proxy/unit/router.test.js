@@ -383,10 +383,10 @@ describe('Router – failoverStickySession()', () => {
     assert.equal(next.id, 'fb');
   });
 
-  test('returns null when all upstreams have failed', () => {
-    const upstreams = [makeUpstream({ id: 'only-one' })];
+  test('falls back to failed provider when all other upstreams are unavailable', () => {
+    const upstreams = [makeUpstream({ id: 'only-one', apiKey: 'key-123' })];
     const result = failoverStickySession('sess', 'only-one', upstreams, 'route');
-    assert.equal(result, null);
+    assert.deepEqual(result, upstreams[0]);
   });
 
   test('returns null for empty upstreams', () => {

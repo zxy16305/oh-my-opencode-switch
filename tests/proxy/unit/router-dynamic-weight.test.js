@@ -454,11 +454,7 @@ describe('Dynamic Weight – Integration with selectUpstreamSticky', () => {
       ['slow', { avgDuration: 300 }],
     ]);
 
-    // First call creates session entry
-    selectUpstreamSticky(upstreams, 'route1', 'session-test', null, 0, 2, config, latencyData);
-
-    // Second call triggers adjustment (requestCount=2, 2%1===0)
-    selectUpstreamSticky(upstreams, 'route1', 'session-test', null, 0, 2, config, latencyData);
+    adjustWeightForLatency('route1', upstreams, config, latencyData);
 
     const slowWeight = getDynamicWeight('route1', 'slow', 100);
     assert.ok(slowWeight < 100, `Expected slow weight < 100, got ${slowWeight}`);

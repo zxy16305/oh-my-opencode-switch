@@ -65,10 +65,11 @@ describe('CLI Integration - profile export', () => {
       assert.equal(content.version, 1, 'Export should have version 1');
       assert.ok(content.exportedAt, 'Export should have exportedAt');
       assert.equal(content.profile, profileName, 'Export should have correct profile name');
-      assert.ok(content.config, 'Export should have config object');
+      assert.ok(content.template, 'Export should have template object');
+      assert.ok(content.variables !== undefined, 'Export should have variables');
     });
 
-    it('should export file with correct structure: version, exportedAt, profile, config', async () => {
+    it('should export file with correct structure: version, exportedAt, profile, template, variables', async () => {
       const exportPath = join(exportDir, `${profileName}.export.json`);
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
@@ -83,8 +84,9 @@ describe('CLI Integration - profile export', () => {
       assert.ok(/^\d{4}-\d{2}-\d{2}T/.test(data.exportedAt), 'exportedAt should be ISO date');
       assert.equal(typeof data.profile, 'string', 'profile should be a string');
       assert.equal(data.profile, profileName);
-      assert.equal(typeof data.config, 'object', 'config should be an object');
-      assert.ok(data.config !== null, 'config should not be null');
+      assert.equal(typeof data.template, 'object', 'template should be an object');
+      assert.ok(data.template !== null, 'template should not be null');
+      assert.equal(typeof data.variables, 'object', 'variables should be an object');
     });
   });
 
@@ -162,7 +164,7 @@ describe('CLI Integration - profile export', () => {
   });
 
   describe('file content validation', () => {
-    it('should preserve config object structure in export', async () => {
+    it('should preserve template object structure in export', async () => {
       const exportPath = join(exportDir, `${profileName}.export.json`);
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
@@ -171,8 +173,8 @@ describe('CLI Integration - profile export', () => {
 
       const data = JSON.parse(await fs.readFile(exportPath, 'utf8'));
 
-      assert.ok(data.config, 'Config should exist');
-      assert.equal(typeof data.config, 'object', 'Config should be an object');
+      assert.ok(data.template, 'Template should exist');
+      assert.equal(typeof data.template, 'object', 'Template should be an object');
     });
 
     it('should export valid JSON that can be parsed', async () => {

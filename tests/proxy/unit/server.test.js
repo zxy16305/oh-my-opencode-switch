@@ -15,7 +15,7 @@ import {
   shutdownServer,
 } from '../../../src/proxy/server.js';
 
-let nextPort = 29830;
+let nextPort = 49830;
 function allocPort() {
   return nextPort++;
 }

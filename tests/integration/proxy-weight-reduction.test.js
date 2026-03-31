@@ -165,7 +165,7 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
 
   test('429 errors outside errorWindowMs are not counted', () => {
     // Use a very small window to simulate expiration
-    const config = makeConfig({
+    makeConfig({
       errorWeightReduction: {
         enabled: true,
         errorCodes: [429],

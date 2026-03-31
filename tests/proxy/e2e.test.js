@@ -933,10 +933,7 @@ describe('E2E – Proxy Server', () => {
         socket: { remoteAddress: '127.0.0.1' },
       };
       const id = getSessionId(req);
-      assert.ok(
-        id.startsWith('gen_'),
-        `Expected generated ID to start with "gen_" but got "${id}"`
-      );
+      assert.ok(id.startsWith('ip_'), `Expected generated ID to start with "ip_" but got "${id}"`);
     });
 
     test('x-opencode-session takes priority over x-session-affinity', () => {

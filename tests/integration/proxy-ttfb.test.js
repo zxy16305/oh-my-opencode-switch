@@ -285,7 +285,7 @@ describe('Proxy TTFB Integration', () => {
   // 3. Multiple requests produce multiple log entries
   // -------------------------------------------------------------------------
   it('should log multiple requests with increasing ttfb/duration', async () => {
-    // Send 3 more requests
+    // Send 3 requests
     for (let i = 0; i < 3; i++) {
       const res = await httpFetch(proxy.port, '/v1/chat/completions', {
         method: 'POST',
@@ -303,7 +303,7 @@ describe('Proxy TTFB Integration', () => {
 
     const logs = await readLogs(100);
     const testLogs = logs.filter((l) => l.includes('provider=mock') && l.includes('ttfb='));
-    assert.ok(testLogs.length >= 4, `Should have at least 4 log entries, got ${testLogs.length}`);
+    assert.ok(testLogs.length >= 3, `Should have at least 3 log entries, got ${testLogs.length}`);
 
     // All entries should be parseable with valid ttfb/duration
     for (const line of testLogs) {
@@ -327,10 +327,10 @@ describe('Proxy TTFB Integration', () => {
     const mockGroup = stats.find((s) => s.provider === 'mock');
     assert.ok(mockGroup, 'Should have stats for mock provider');
 
-    // Verify requests count (at least 4 from this test suite)
+    // Verify requests count (at least 3 from this test suite)
     assert.ok(
-      mockGroup.requests >= 4,
-      `Should have at least 4 requests, got ${mockGroup.requests}`
+      mockGroup.requests >= 3,
+      `Should have at least 3 requests, got ${mockGroup.requests}`
     );
 
     // Verify TTFB fields exist

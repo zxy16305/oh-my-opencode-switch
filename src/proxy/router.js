@@ -455,10 +455,30 @@ function setDynamicWeight(routeKey, upstreamId, weight) {
  * @param {object} config - dynamicWeight config
  * @param {Map<string, {avgDuration: number}>} latencyData - upstream latency data
  */
+const DEFAULT_DYNAMIC_WEIGHT_CONFIG = {
+  enabled: true,
+  initialWeight: 100,
+  minWeight: 10,
+  checkInterval: 10,
+  latencyThreshold: 1.5,
+  recoveryInterval: 300000,
+  recoveryAmount: 1,
+  errorWeightReduction: {
+    enabled: true,
+    errorCodes: [429, 500, 502, 503, 504],
+    reductionAmount: 10,
+    minWeight: 5,
+    errorWindowMs: 600000,
+  },
+};
+
 function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
   if (!upstreams || upstreams.length <= 1) return;
 
-  const { minWeight, latencyThreshold, initialWeight } = config;
+  const { minWeight, latencyThreshold, initialWeight } = {
+    ...DEFAULT_DYNAMIC_WEIGHT_CONFIG,
+    ...config,
+  };
 
   // Find the fastest upstream's avgDuration
   let fastestDuration = Infinity;
@@ -502,11 +522,12 @@ function adjustWeightForError(routeKey, upstreams, config, errorData) {
   if (!upstreams || upstreams.length === 0) return;
   if (!errorData || errorData.size === 0) return;
 
-  const errorConfig = config?.errorWeightReduction;
+  const mergedConfig = { ...DEFAULT_DYNAMIC_WEIGHT_CONFIG, ...config };
+  const errorConfig = mergedConfig.errorWeightReduction;
   if (!errorConfig || !errorConfig.enabled) return;
 
   const { errorCodes = [], reductionAmount = 10, minWeight = 5 } = errorConfig;
-  const initialWeight = config.initialWeight || 100;
+  const initialWeight = mergedConfig.initialWeight;
 
   for (const upstream of upstreams) {
     const codes = errorData.get(upstream.id);
@@ -531,17 +552,23 @@ function adjustWeightForError(routeKey, upstreams, config, errorData) {
  * @returns {NodeJS.Timeout} Timer ID for cleanup
  */
 function startWeightRecovery(routeKey, upstreams, config) {
-  if (!routeKey || !upstreams || upstreams.length === 0 || !config) {
+  if (!routeKey || !upstreams || upstreams.length === 0) {
     return null;
   }
 
-  if (!config.enabled || !config.recoveryInterval || config.recoveryInterval <= 0) {
+  const mergedConfig = { ...DEFAULT_DYNAMIC_WEIGHT_CONFIG, ...config };
+
+  if (
+    !mergedConfig.enabled ||
+    !mergedConfig.recoveryInterval ||
+    mergedConfig.recoveryInterval <= 0
+  ) {
     return null;
   }
 
   stopWeightRecovery(routeKey);
 
-  const { recoveryInterval, recoveryAmount, initialWeight } = config;
+  const { recoveryInterval, recoveryAmount, initialWeight } = mergedConfig;
 
   const timer = setInterval(() => {
     for (const upstream of upstreams) {

@@ -14,7 +14,7 @@
  * 10. Concurrent requests → all handled correctly
  */
 
-import { describe, test, before, after, beforeEach, afterEach } from 'node:test';
+import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 
@@ -853,11 +853,6 @@ describe('Edge Cases – Proxy', () => {
 
       // One slow upstream (3s delay) for slow-model
       const slow = await slowUpstream(slowPort, 3000);
-
-      // We'll use a separate proxy for the fast request
-      const routesSlow = buildRoutesConfig([
-        { id: 'slow-u', baseURL: `http://127.0.0.1:${slowPort}` },
-      ]);
 
       const routesFast = {
         'fast-model': {

@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { logger } from '../utils/logger.js';
 
 /**
  * Upstream configuration schema
@@ -259,36 +260,6 @@ function setDynamicWeight(routeKey, upstreamId, weight) {
       requestCount: 0,
     });
   }
-}
-
-/**
- * Reset all dynamic weights for a route
- * @param {string} routeKey
- * @param {number} initialWeight
- */
-function resetDynamicWeights(routeKey, initialWeight = 100) {
-  for (const [key, state] of dynamicWeightState) {
-    if (key.startsWith(`${routeKey}:`)) {
-      state.currentWeight = initialWeight;
-      state.lastAdjustment = Date.now();
-    }
-  }
-}
-
-/**
- * Increment request count for dynamic weight check
- * @param {string} routeKey
- * @param {string} upstreamId
- * @returns {number} Updated request count
- */
-function incrementDynamicWeightRequestCount(routeKey, upstreamId) {
-  const key = `${routeKey}:${upstreamId}`;
-  const state = dynamicWeightState.get(key);
-  if (state) {
-    state.requestCount++;
-    return state.requestCount;
-  }
-  return 0;
 }
 
 /**
@@ -607,8 +578,8 @@ export function selectUpstreamSticky(
   routeKey,
   sessionId,
   model,
-  threshold = 10,
-  minGap = 2,
+  _threshold = 10,
+  _minGap = 2,
   dynamicWeightConfig = null,
   latencyData = null
 ) {
@@ -703,13 +674,46 @@ export function selectUpstreamSticky(
  * @param {Upstream[]} upstreams - All available upstreams for the route
  * @param {string} routeKey
  * @param {string} [model] - Model name for session key (optional, for consistency with selectUpstreamSticky)
+ * @param {Function} [isAvailable] - Optional callback to check if an upstream is available (returns boolean)
  * @returns {Upstream | null} Next available upstream, or null if none
  */
-export function failoverStickySession(sessionId, failedUpstreamId, upstreams, routeKey, model) {
+export function failoverStickySession(
+  sessionId,
+  failedUpstreamId,
+  upstreams,
+  routeKey,
+  model,
+  isAvailable
+) {
   if (!upstreams || upstreams.length === 0) return null;
 
-  const available = upstreams.filter((u) => u.id !== failedUpstreamId);
-  if (available.length === 0) return null;
+  const failedProvider = upstreams.find((u) => u.id === failedUpstreamId);
+  if (!failedProvider) return null;
+
+  let available;
+
+  if (isAvailable && typeof isAvailable === 'function') {
+    try {
+      available = upstreams.filter((u) => u.id !== failedUpstreamId && isAvailable(u.id));
+    } catch (error) {
+      logger.warn(`isAvailable callback threw error: ${error.message}, skipping filter`);
+      available = upstreams.filter((u) => u.id !== failedUpstreamId);
+    }
+  } else {
+    available = upstreams.filter((u) => u.id !== failedUpstreamId);
+  }
+
+  if (available.length === 0) {
+    logger.warn(`All upstreams filtered out, falling back to failed provider: ${failedUpstreamId}`);
+    const sessionKey = model ? `${sessionId}:${model}` : sessionId;
+    sessionUpstreamMap.set(sessionKey, {
+      upstreamId: failedProvider.id,
+      routeKey,
+      timestamp: Date.now(),
+      requestCount: 1,
+    });
+    return failedProvider;
+  }
 
   decrementSessionCount(routeKey, failedUpstreamId);
 

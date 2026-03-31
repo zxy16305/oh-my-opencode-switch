@@ -54,7 +54,7 @@ export class BaseAdaptor {
    * @param {ReadableStream|Buffer|string|null} request.body - Request body
    * @returns {object} Translated request: { url, method, headers, body }
    */
-  translateRequest(request) {
+  translateRequest(_request) {
     throw new Error('translateRequest() must be implemented by subclass');
   }
 
@@ -67,7 +67,7 @@ export class BaseAdaptor {
    * @param {any} response.body       - Parsed response body
    * @returns {object} Normalized response: { status, headers, body }
    */
-  normalizeResponse(response) {
+  normalizeResponse(_response) {
     throw new Error('normalizeResponse() must be implemented by subclass');
   }
 

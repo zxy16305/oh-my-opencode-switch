@@ -52,6 +52,7 @@ export async function importAction(file) {
       // rename to next available suffix
       let idx = 1;
       let candidate = `${finalName}-${idx}`;
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         try {
           const existsNow = manager.getProfile(candidate);

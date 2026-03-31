@@ -262,7 +262,8 @@ export async function startAction(options = {}) {
               upstream.id,
               route.upstreams,
               routeKey,
-              model
+              model,
+              (id) => circuitBreaker.isAvailable(id)
             );
             if (nextUpstream && circuitBreaker.isAvailable(nextUpstream.id)) {
               upstream = nextUpstream;
@@ -521,7 +522,7 @@ export async function statsAction(options = {}) {
   }
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = path.dirname(fileURLToPath(import.meta.url)); // eslint-disable-line no-unused-vars
 
 export async function initAction(options = {}) {
   const configPath = getProxyConfigPath();

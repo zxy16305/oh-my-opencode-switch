@@ -7,9 +7,8 @@
  * - /_internal/stats endpoint
  */
 
-import { describe, it, before, after, beforeEach } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import http from 'node:http';
 
 import {
   routeRequest,

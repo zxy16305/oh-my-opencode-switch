@@ -35,19 +35,6 @@ async function fileExists(filePath) {
   }
 }
 
-async function appendToFile(filePath, content) {
-  const exists = await fileExists(filePath);
-  const existingContent = exists ? await fs.readFile(filePath, 'utf8') : '';
-
-  if (existingContent.includes('oos completion')) {
-    logger.info(`Completion already configured in ${filePath}`);
-    return false;
-  }
-
-  await fs.appendFile(filePath, content);
-  return true;
-}
-
 async function setupBash() {
   const home = os.homedir();
   const bashrc = path.join(home, '.bashrc');

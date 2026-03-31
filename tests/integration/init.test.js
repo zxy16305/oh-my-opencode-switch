@@ -18,7 +18,6 @@ let testHomeDir;
 import {
   getOosDir,
   getProfilesMetadataPath,
-  getProfileDirPath,
   getTemplatePath,
   getVariablesPath,
 } from '../../src/utils/paths.js';
@@ -27,7 +26,6 @@ describe('init command integration tests', () => {
   const profileName = 'default-template';
   let oosDir;
   let profilesMetadataPath;
-  let profileDir;
   let templatePath;
   let variablesPath;
 
@@ -36,25 +34,28 @@ describe('init command integration tests', () => {
     testHomeDir = path.join(os.tmpdir(), 'oos-integration-test-init-' + Date.now());
     await fs.mkdir(testHomeDir, { recursive: true });
     os.homedir = () => testHomeDir;
-    
+
     oosDir = getOosDir();
     profilesMetadataPath = getProfilesMetadataPath();
-    profileDir = getProfileDirPath(profileName);
     templatePath = getTemplatePath(profileName);
     variablesPath = getVariablesPath(profileName);
 
     try {
       await fs.rm(oosDir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // eslint-disable-line no-empty
+    }
   });
 
   afterEach(async () => {
     // Restore original homedir
     os.homedir = originalHomedir;
-    
+
     try {
       await fs.rm(testHomeDir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // eslint-disable-line no-empty
+    }
   });
 
   it('should create default-template profile on first initialization', async () => {

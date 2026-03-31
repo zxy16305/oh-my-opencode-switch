@@ -2,7 +2,6 @@
 
 import { program } from 'commander';
 import { readFileSync } from 'fs';
-import { readdir } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import chalk from 'chalk';
@@ -21,43 +20,6 @@ import { registerProxyCommands } from '../src/commands/proxy.js';
 import { registerProxyRegisterCommands } from '../src/commands/proxy-register.js';
 import { logger } from '../src/utils/logger.js';
 import { OosError } from '../src/utils/errors.js';
-import { getProfilesDir } from '../src/utils/paths.js';
-import { exists } from '../src/utils/files.js';
-
-let legacyWarningShown = false;
-
-async function checkLegacyProfiles() {
-  if (legacyWarningShown) return;
-
-  try {
-    const profilesDir = getProfilesDir();
-    if (!(await exists(profilesDir))) {
-      return;
-    }
-
-    const profileDirs = await readdir(profilesDir, { withFileTypes: true });
-    let hasLegacyProfiles = false;
-
-    for (const dirent of profileDirs) {
-      if (dirent.isDirectory()) {
-        const configPath = path.join(profilesDir, dirent.name, 'config.json');
-        if (await exists(configPath)) {
-          hasLegacyProfiles = true;
-          break;
-        }
-      }
-    }
-
-    if (hasLegacyProfiles) {
-      logger.warn(
-        'Legacy config.json profiles detected. Config.json mode has been removed. Please migrate your profiles to template mode manually.'
-      );
-      legacyWarningShown = true;
-    }
-  } catch (error) {
-    // Ignore errors during legacy profile check - don't break the CLI
-  }
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, '..', 'package.json');

@@ -1,17 +1,6 @@
-import { ProfileManager } from '../core/ProfileManager.js';
-
-async function getProfileNames() {
-  try {
-    const manager = new ProfileManager();
-    const profiles = await manager.listProfiles();
-    return profiles.map((p) => p.name);
-  } catch {
-    return [];
-  }
-}
-
 function generateBashCompletion() {
-  return `
+  // eslint-disable-next-line no-undef
+  const script = `
 _oos_completion() {
   local cur words base
   COMPREPLY=()
@@ -20,12 +9,12 @@ _oos_completion() {
 
   case \${COMP_CWORD} in
     1)
-      COMPREPLY=($(compgen -W "profile render current validate init completion --help -h --version -v" -- "${cur}"))
+      COMPREPLY=($(compgen -W "profile render current validate init completion --help -h --version -v" -- "\${cur}"))
       ;;
     2)
       case "\${words[1]}" in
         profile)
-          COMPREPLY=($(compgen -W "list ls create switch use delete rm rename mv copy cp show edit open import export" -- "${cur}"))
+          COMPREPLY=($(compgen -W "list ls create switch use delete rm rename mv copy cp show edit open import export" -- "\${cur}"))
           ;;
       esac
       ;;
@@ -34,7 +23,7 @@ _oos_completion() {
         profile)
           case "\${words[2]}" in
             switch|use|delete|rm|show|copy|cp|rename|mv|edit|open|export)
-              COMPREPLY=($(compgen -W "$(_oos_get_profiles)" -- "${cur}"))
+              COMPREPLY=($(compgen -W "$(_oos_get_profiles)" -- "\${cur}"))
               ;;
           esac
           ;;
@@ -60,6 +49,7 @@ _oos_get_profiles() {
 
 complete -F _oos_completion oos
 `;
+  return script;
 }
 
 function generateZshCompletion() {
@@ -192,11 +182,11 @@ complete -c oos -n '__fish_seen_subcommand_from profile' -a import -d 'Import pr
 complete -c oos -n '__fish_seen_subcommand_from profile' -a export -d 'Export profile'
 
 # Dynamic profile completion with descriptions
-complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from switch use delete rm show edit open export' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";const a=p.isActive?\" (active)\":\"\";console.log(p.name+\"\\t\"+d+a)})}catch{}")'
-complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from copy cp rename mv' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";const a=p.isActive?\" (active)\":\"\";console.log(p.name+\"\\t\"+d+a)})}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from switch use delete rm show edit open export' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(fs).readFileSync(0,\\"utf8\\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\\"\\";const a=p.isActive?\\" (active)\\":\\"\\";console.log(p.name+\\"\\\\t\\"+d+a)})}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from profile; and __fish_seen_subcommand_from copy cp rename mv' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(fs).readFileSync(0,\\"utf8\\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\\"\\";const a=p.isActive?\\" (active)\\":\\"\\";console.log(p.name+\\"\\\\t\\"+d+a)})}catch{}")'
 
 # Render
-complete -c oos -n '__fish_seen_subcommand_from render' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(\"fs\").readFileSync(0,\"utf8\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\"\";console.log(p.name+\"\\t\"+d)})}catch{}")'
+complete -c oos -n '__fish_seen_subcommand_from render' -a '(oos profile list --json 2>/dev/null | node -e "const d=require(fs).readFileSync(0,\\"utf8\\");try{const j=JSON.parse(d);j.forEach(p=>{const d=p.description||\\"\\";console.log(p.name+\\"\\\\t\\"+d)})}catch{}")'
 
 # Completion subcommands
 complete -c oos -n '__fish_seen_subcommand_from completion' -a bash -d 'Bash completion'

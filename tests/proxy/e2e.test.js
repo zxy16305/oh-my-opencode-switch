@@ -12,7 +12,6 @@
 import { describe, test, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { URL } from 'node:url';
 
 import {
   createServer,

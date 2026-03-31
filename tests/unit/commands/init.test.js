@@ -19,7 +19,9 @@ describe('init module exports', () => {
     os.homedir = originalHomedir;
     try {
       await fs.rm(testHomeDir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // eslint-disable-line no-empty
+    }
   });
 
   it('should export initAction function', async () => {

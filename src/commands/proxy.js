@@ -9,6 +9,8 @@ import {
   getSessionUpstreamMap,
   recordUpstreamError,
   recordUpstreamLatency,
+  adjustWeightForError,
+  adjustWeightForLatency,
 } from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
@@ -317,9 +319,13 @@ export async function startAction(options = {}) {
             if (proxyRes.statusCode >= 400) {
               circuitBreaker.recordFailure(upstream.id);
               recordUpstreamError(model, upstream.id, proxyRes.statusCode);
+              const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
+              adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
             } else {
               circuitBreaker.recordSuccess(upstream.id);
               recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
+              const latencyData = new Map([[upstream.id, { avgDuration: Date.now() - startTime }]]);
+              adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
             }
           },
           onStreamEnd: () => {
@@ -338,6 +344,8 @@ export async function startAction(options = {}) {
           onError: (err) => {
             circuitBreaker.recordFailure(upstream.id);
             recordUpstreamError(model, upstream.id, 502);
+            const errorData = new Map([[upstream.id, [502]]]);
+            adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
             logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
             logAccess({
               sessionId: sessionId || null,

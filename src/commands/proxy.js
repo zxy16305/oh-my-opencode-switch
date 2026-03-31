@@ -11,6 +11,8 @@ import {
   recordUpstreamLatency,
   adjustWeightForError,
   adjustWeightForLatency,
+  startWeightRecovery,
+  stopWeightRecovery,
 } from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
@@ -33,6 +35,8 @@ const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
 let activeServer = null;
 let activePort = null;
 let circuitBreaker = null;
+let periodicWeightAdjustTimer = null;
+const routeRecoveryTimers = new Map();
 
 /**
  * Start the proxy server
@@ -392,9 +396,27 @@ export async function startAction(options = {}) {
       logger.warn('No routes configured');
     }
 
+    for (const [routeKey, route] of Object.entries(routes)) {
+      const recoveryTimer = startWeightRecovery(routeKey, route.upstreams, route.dynamicWeight);
+      if (recoveryTimer) {
+        routeRecoveryTimers.set(routeKey, recoveryTimer);
+      }
+    }
+
     // Handle graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down proxy server...');
+
+      if (periodicWeightAdjustTimer) {
+        clearInterval(periodicWeightAdjustTimer);
+        periodicWeightAdjustTimer = null;
+      }
+
+      for (const [routeKey] of routeRecoveryTimers) {
+        stopWeightRecovery(routeKey);
+      }
+      routeRecoveryTimers.clear();
+
       await shutdownServer(server);
       activeServer = null;
       activePort = null;
@@ -419,6 +441,16 @@ export async function stopAction() {
   }
 
   try {
+    if (periodicWeightAdjustTimer) {
+      clearInterval(periodicWeightAdjustTimer);
+      periodicWeightAdjustTimer = null;
+    }
+
+    for (const [routeKey] of routeRecoveryTimers) {
+      stopWeightRecovery(routeKey);
+    }
+    routeRecoveryTimers.clear();
+
     await shutdownServer(activeServer);
     logger.success(`Proxy server stopped (was on port ${activePort})`);
     activeServer = null;

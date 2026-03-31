@@ -7,6 +7,8 @@ import {
   getUpstreamSessionCounts,
   getUpstreamRequestCounts,
   getSessionUpstreamMap,
+  recordUpstreamError,
+  recordUpstreamLatency,
 } from '../proxy/router.js';
 import { forwardRequest } from '../proxy/server.js';
 import { CircuitBreaker } from '../proxy/circuitbreaker.js';
@@ -314,8 +316,10 @@ export async function startAction(options = {}) {
             }
             if (proxyRes.statusCode >= 400) {
               circuitBreaker.recordFailure(upstream.id);
+              recordUpstreamError(model, upstream.id, proxyRes.statusCode);
             } else {
               circuitBreaker.recordSuccess(upstream.id);
+              recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
             }
           },
           onStreamEnd: () => {
@@ -333,6 +337,7 @@ export async function startAction(options = {}) {
           },
           onError: (err) => {
             circuitBreaker.recordFailure(upstream.id);
+            recordUpstreamError(model, upstream.id, 502);
             logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
             logAccess({
               sessionId: sessionId || null,

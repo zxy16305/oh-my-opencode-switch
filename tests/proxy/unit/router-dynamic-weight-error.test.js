@@ -101,9 +101,6 @@ describe('Dynamic Weight – adjustWeightForError', () => {
   });
 
   test('No errors means no weight change', () => {
-    const upstreams = [makeUpstream({ id: 'u1' }), makeUpstream({ id: 'u2' })];
-    const config = makeConfig();
-
     const u1Weight = getDynamicWeight('route1', 'u1', 100);
     const u2Weight = getDynamicWeight('route1', 'u2', 100);
 

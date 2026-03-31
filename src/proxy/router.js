@@ -140,6 +140,14 @@ const dynamicWeightState = new Map();
 const errorState = new Map();
 
 /**
+ * Latency state per upstream per route
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: { latencies: Array<{ timestamp: number, duration: number }> }
+ * @type {Map<string, { latencies: Array<{ timestamp: number, duration: number }> }>}
+ */
+const latencyState = new Map();
+
+/**
  * Upstream request counts
  * Key: routeKey (virtual model name)
  * Value: Map<upstreamId, requestCount>
@@ -221,6 +229,59 @@ export function getErrorState() {
 }
 
 /**
+ * Record a latency measurement for an upstream
+ * @param {string} routeKey - The route key (virtual model name)
+ * @param {string} upstreamId - The upstream identifier
+ * @param {number} duration - Request duration in milliseconds
+ */
+export function recordUpstreamLatency(routeKey, upstreamId, duration) {
+  const key = `${routeKey}:${upstreamId}`;
+  if (!latencyState.has(key)) {
+    latencyState.set(key, { latencies: [] });
+  }
+  const state = latencyState.get(key);
+  state.latencies.push({
+    timestamp: Date.now(),
+    duration,
+  });
+}
+
+/**
+ * Get average latency for an upstream within a sliding time window
+ * @param {string} routeKey - The route key (virtual model name)
+ * @param {string} upstreamId - The upstream identifier
+ * @param {number} windowMs - Time window in milliseconds
+ * @returns {number} Average latency in milliseconds, or 0 if no latencies in window
+ */
+export function getLatencyAvg(routeKey, upstreamId, windowMs = 600000) {
+  const key = `${routeKey}:${upstreamId}`;
+  const state = latencyState.get(key);
+  if (!state || state.latencies.length === 0) {
+    return 0;
+  }
+
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  state.latencies = state.latencies.filter((latency) => latency.timestamp >= windowStart);
+
+  if (state.latencies.length === 0) {
+    return 0;
+  }
+
+  const sum = state.latencies.reduce((acc, latency) => acc + latency.duration, 0);
+  return sum / state.latencies.length;
+}
+
+/**
+ * Get current latency state (useful for testing/monitoring)
+ * @returns {Map<string, { latencies: Array<{ timestamp: number, duration: number }> }>}
+ */
+export function getLatencyState() {
+  return latencyState;
+}
+
+/**
  * 选择负载最低的 upstream（考虑动态权重）
  * effectiveWeight = min(staticWeight, latencyWeight, errorWeight)
  * score = sessionCount / effectiveWeight（越低越好）
@@ -256,6 +317,32 @@ function selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig = nu
             dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
           );
           effectiveWeight = Math.min(effectiveWeight, errorWeight);
+        }
+      }
+
+      // Apply latency-based weight penalty
+      const latencyWindowMs = 600000; // 10 minutes
+      const avgLatency = getLatencyAvg(routeKey, upstream.id, latencyWindowMs);
+      if (avgLatency > 0) {
+        // Find the fastest upstream's average latency
+        let fastestLatency = Infinity;
+        for (const u of upstreams) {
+          const uAvgLatency = getLatencyAvg(routeKey, u.id, latencyWindowMs);
+          if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
+            fastestLatency = uAvgLatency;
+          }
+        }
+
+        // Apply penalty if this upstream is significantly slower than fastest
+        if (
+          fastestLatency !== Infinity &&
+          avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
+        ) {
+          const latencyPenalty = Math.max(
+            1,
+            Math.floor((avgLatency / fastestLatency - 1) * 10) // Reduce weight more for slower upstreams
+          );
+          effectiveWeight = Math.max(1, effectiveWeight - latencyPenalty);
         }
       }
     }
@@ -701,7 +788,6 @@ function stopSessionCleanup() {
  * @param {number} [threshold=10] - Request count threshold for load-aware reassignment (0 to disable)
  * @param {number} [minGap=2] - Minimum load difference to trigger reassignment
  * @param {object} [dynamicWeightConfig] - Dynamic weight configuration
- * @param {Map<string, {avgDuration: number}>} [latencyData] - Upstream latency data
  * @returns {Upstream} Selected upstream
  */
 export function selectUpstreamSticky(
@@ -711,9 +797,7 @@ export function selectUpstreamSticky(
   model,
   _threshold = 10,
   _minGap = 2,
-  dynamicWeightConfig = null,
-  latencyData = null,
-  errorData = null
+  dynamicWeightConfig = null
 ) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
@@ -767,29 +851,6 @@ export function selectUpstreamSticky(
           existing.requestCount = 1; // Reset count after switch
         }
         // Otherwise keep accumulating requestCount
-      }
-
-      // Dynamic weight adjustment based on latency
-      if (
-        dynamicWeightConfig &&
-        dynamicWeightConfig.enabled &&
-        latencyData &&
-        dynamicWeightConfig.checkInterval > 0 &&
-        existing.requestCount % dynamicWeightConfig.checkInterval === 0
-      ) {
-        adjustWeightForLatency(routeKey, upstreams, dynamicWeightConfig, latencyData);
-      }
-
-      // Dynamic weight adjustment based on errors
-      if (
-        dynamicWeightConfig &&
-        dynamicWeightConfig.enabled &&
-        errorData &&
-        errorData.size > 0 &&
-        dynamicWeightConfig.checkInterval > 0 &&
-        existing.requestCount % dynamicWeightConfig.checkInterval === 0
-      ) {
-        adjustWeightForError(routeKey, upstreams, dynamicWeightConfig, errorData);
       }
 
       return upstreamIdMap.get(existing.upstreamId) ?? mapped;
@@ -926,8 +987,7 @@ export function routeRequest(model, config, request, body = null) {
         model,
         stickyReassignThreshold,
         stickyReassignMinGap,
-        dynamicWeight,
-        null
+        dynamicWeight
       );
       break;
     case 'round-robin':
@@ -1003,6 +1063,7 @@ export function resetRoundRobinCounters() {
   upstreamRequestCounts.clear();
   dynamicWeightState.clear();
   errorState.clear();
+  latencyState.clear();
   recoveryTimers.forEach((timer) => clearInterval(timer));
   recoveryTimers.clear();
   stopSessionCleanup();

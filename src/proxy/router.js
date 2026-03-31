@@ -37,6 +37,22 @@ export const routeSchema = z.object({
       latencyThreshold: z.number().positive().default(1.5),
       recoveryInterval: z.number().int().positive().default(300000),
       recoveryAmount: z.number().int().positive().default(1),
+      errorWeightReduction: z
+        .object({
+          enabled: z.boolean().default(true),
+          errorCodes: z.array(z.number()).default([429, 500, 502, 503, 504]),
+          reductionAmount: z.number().int().positive().default(10),
+          minWeight: z.number().int().positive().default(5),
+          errorWindowMs: z.number().int().positive().default(600000),
+        })
+        .optional()
+        .default({
+          enabled: true,
+          errorCodes: [429, 500, 502, 503, 504],
+          reductionAmount: 10,
+          minWeight: 5,
+          errorWindowMs: 600000,
+        }),
     })
     .optional()
     .default({
@@ -47,6 +63,13 @@ export const routeSchema = z.object({
       latencyThreshold: 1.5,
       recoveryInterval: 300000,
       recoveryAmount: 1,
+      errorWeightReduction: {
+        enabled: true,
+        errorCodes: [429, 500, 502, 503, 504],
+        reductionAmount: 10,
+        minWeight: 5,
+        errorWindowMs: 600000,
+      },
     }),
 });
 
@@ -109,6 +132,14 @@ const sessionUpstreamMap = new Map();
 const dynamicWeightState = new Map();
 
 /**
+ * Error state per upstream per route
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: { errors: Array<{ timestamp: number, statusCode: number }> }
+ * @type {Map<string, { errors: Array<{ timestamp: number, statusCode: number }> }>}
+ */
+const errorState = new Map();
+
+/**
  * Upstream request counts
  * Key: routeKey (virtual model name)
  * Value: Map<upstreamId, requestCount>
@@ -137,8 +168,61 @@ function getOrCreateCountMap(routeKey) {
 }
 
 /**
+ * Record an error for an upstream
+ * @param {string} routeKey - The route key (virtual model name)
+ * @param {string} upstreamId - The upstream identifier
+ * @param {number} statusCode - HTTP status code of the error
+ */
+export function recordUpstreamError(routeKey, upstreamId, statusCode) {
+  const key = `${routeKey}:${upstreamId}`;
+  if (!errorState.has(key)) {
+    errorState.set(key, { errors: [] });
+  }
+  const state = errorState.get(key);
+  state.errors.push({
+    timestamp: Date.now(),
+    statusCode,
+  });
+}
+
+/**
+ * Get error rate for an upstream within a sliding time window
+ * @param {string} routeKey - The route key (virtual model name)
+ * @param {string} upstreamId - The upstream identifier
+ * @param {number|object} windowMsOrConfig - Time window in ms, or config with errorWeightReduction.errorWindowMs
+ * @returns {number} Error rate as a number (count of errors in window)
+ */
+export function getErrorRate(routeKey, upstreamId, windowMsOrConfig) {
+  const windowMs =
+    typeof windowMsOrConfig === 'object'
+      ? (windowMsOrConfig?.errorWeightReduction?.errorWindowMs ?? 600000)
+      : windowMsOrConfig;
+
+  const key = `${routeKey}:${upstreamId}`;
+  const state = errorState.get(key);
+  if (!state || state.errors.length === 0) {
+    return 0;
+  }
+
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  state.errors = state.errors.filter((error) => error.timestamp >= windowStart);
+
+  return state.errors.length;
+}
+
+/**
+ * Get current error state (useful for testing/monitoring)
+ * @returns {Map<string, { errors: Array<{ timestamp: number, statusCode: number }> }>}
+ */
+export function getErrorState() {
+  return errorState;
+}
+
+/**
  * 选择负载最低的 upstream（考虑动态权重）
- * effectiveWeight = min(staticWeight, dynamicWeight)
+ * effectiveWeight = min(staticWeight, latencyWeight, errorWeight)
  * score = sessionCount / effectiveWeight（越低越好）
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
@@ -161,6 +245,19 @@ function selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig = nu
     if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
       const dynWeight = getDynamicWeight(routeKey, upstream.id, dynamicWeightConfig.initialWeight);
       effectiveWeight = Math.min(staticWeight, dynWeight);
+
+      // Apply error-based weight penalty if error reduction is enabled
+      const errorConfig = dynamicWeightConfig.errorWeightReduction;
+      if (errorConfig && errorConfig.enabled) {
+        const errorCount = getErrorRate(routeKey, upstream.id, errorConfig.errorWindowMs);
+        if (errorCount > 0) {
+          const errorWeight = Math.max(
+            errorConfig.minWeight,
+            dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
+          );
+          effectiveWeight = Math.min(effectiveWeight, errorWeight);
+        }
+      }
     }
 
     // Score: lower is better (fewer sessions per weight unit)
@@ -302,6 +399,40 @@ function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
     if (data.avgDuration > fastestDuration * latencyThreshold) {
       setDynamicWeight(routeKey, upstream.id, Math.max(minWeight, currentWeight - 1));
     }
+  }
+}
+
+/**
+ * Adjust weights based on error data
+ * For each upstream with matching error codes in errorData, reduce weight by reductionAmount
+ * Weight is never reduced below the configured minWeight
+ * @param {string} routeKey
+ * @param {Upstream[]} upstreams
+ * @param {object} config - dynamicWeight config
+ * @param {Map<string, number[]>} errorData - Map of upstreamId to array of error status codes
+ */
+function adjustWeightForError(routeKey, upstreams, config, errorData) {
+  if (!upstreams || upstreams.length === 0) return;
+  if (!errorData || errorData.size === 0) return;
+
+  const errorConfig = config?.errorWeightReduction;
+  if (!errorConfig || !errorConfig.enabled) return;
+
+  const { errorCodes = [], reductionAmount = 10, minWeight = 5 } = errorConfig;
+  const initialWeight = config.initialWeight || 100;
+
+  for (const upstream of upstreams) {
+    const codes = errorData.get(upstream.id);
+    if (!codes || codes.length === 0) continue;
+
+    const hasMatchingError = codes.some((code) => errorCodes.includes(code));
+    if (!hasMatchingError) continue;
+
+    const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+
+    if (currentWeight <= minWeight) continue;
+
+    setDynamicWeight(routeKey, upstream.id, Math.max(minWeight, currentWeight - reductionAmount));
   }
 }
 
@@ -581,7 +712,8 @@ export function selectUpstreamSticky(
   _threshold = 10,
   _minGap = 2,
   dynamicWeightConfig = null,
-  latencyData = null
+  latencyData = null,
+  errorData = null
 ) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
@@ -646,6 +778,18 @@ export function selectUpstreamSticky(
         existing.requestCount % dynamicWeightConfig.checkInterval === 0
       ) {
         adjustWeightForLatency(routeKey, upstreams, dynamicWeightConfig, latencyData);
+      }
+
+      // Dynamic weight adjustment based on errors
+      if (
+        dynamicWeightConfig &&
+        dynamicWeightConfig.enabled &&
+        errorData &&
+        errorData.size > 0 &&
+        dynamicWeightConfig.checkInterval > 0 &&
+        existing.requestCount % dynamicWeightConfig.checkInterval === 0
+      ) {
+        adjustWeightForError(routeKey, upstreams, dynamicWeightConfig, errorData);
       }
 
       return upstreamIdMap.get(existing.upstreamId) ?? mapped;
@@ -858,6 +1002,7 @@ export function resetRoundRobinCounters() {
   upstreamSessionCounts.clear();
   upstreamRequestCounts.clear();
   dynamicWeightState.clear();
+  errorState.clear();
   recoveryTimers.forEach((timer) => clearInterval(timer));
   recoveryTimers.clear();
   stopSessionCleanup();
@@ -915,6 +1060,7 @@ export {
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForLatency,
+  adjustWeightForError,
   startWeightRecovery,
   stopWeightRecovery,
 };

@@ -11,6 +11,8 @@ import {
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForError,
+  recordUpstreamError,
+  getErrorRate,
 } from '../../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +29,23 @@ function makeUpstream(overrides = {}) {
   };
 }
 
+function makeConfig(overrides = {}) {
+  return {
+    enabled: true,
+    initialWeight: 100,
+    minWeight: 10,
+    ...overrides,
+    errorWeightReduction: {
+      enabled: true,
+      errorCodes: [429, 500, 502, 503, 504],
+      reductionAmount: 5,
+      minWeight: 5,
+      errorWindowMs: 600000,
+      ...(overrides.errorWeightReduction || {}),
+    },
+  };
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -37,77 +56,53 @@ describe('Dynamic Weight – adjustWeightForError', () => {
 
   test('Single error reduces weight for the failed upstream', () => {
     const upstreams = [makeUpstream({ id: 'good' }), makeUpstream({ id: 'failed' })];
+    const config = makeConfig();
 
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500, 502, 503, 504],
-    };
+    recordUpstreamError('route1', 'failed', 500);
 
-    // Error on 'failed' with 500 status code
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
+    const errorData = new Map([['failed', [500]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
 
     const goodWeight = getDynamicWeight('route1', 'good', 100);
     const failedWeight = getDynamicWeight('route1', 'failed', 100);
 
-    assert.strictEqual(goodWeight, 100); // unchanged
-    assert.strictEqual(failedWeight, 95); // reduced by errorReduction (5)
+    assert.strictEqual(goodWeight, 100);
+    assert.strictEqual(failedWeight, 95);
   });
 
   test('Multiple consecutive errors reduce weight more', () => {
     const upstreams = [makeUpstream({ id: 'failed' })];
+    const config = makeConfig();
 
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500, 502, 503, 504],
-    };
+    recordUpstreamError('route1', 'failed', 500);
 
-    // Three consecutive errors
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
+    const errorData = new Map([['failed', [500]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
+    adjustWeightForError('route1', upstreams, config, errorData);
+    adjustWeightForError('route1', upstreams, config, errorData);
 
     const failedWeight = getDynamicWeight('route1', 'failed', 100);
-    assert.strictEqual(failedWeight, 85); // 100 - (5 * 3) = 85
+    assert.strictEqual(failedWeight, 85);
   });
 
   test('Weight does not go below minWeight', () => {
     const upstreams = [makeUpstream({ id: 'failed' })];
+    const config = makeConfig({ errorWeightReduction: { reductionAmount: 20 } });
 
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 20,
-      errorCodes: [500, 502, 503, 504],
-    };
-
-    // Multiple large reductions that would go below minWeight
     setDynamicWeight('route1', 'failed', 15);
 
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
+    recordUpstreamError('route1', 'failed', 500);
+
+    const errorData = new Map([['failed', [500]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
 
     const failedWeight = getDynamicWeight('route1', 'failed', 100);
-    assert.strictEqual(failedWeight, 10); // clamped to minWeight
+    assert.strictEqual(failedWeight, 5);
   });
 
   test('No errors means no weight change', () => {
     const upstreams = [makeUpstream({ id: 'u1' }), makeUpstream({ id: 'u2' })];
-
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500, 502, 503, 504],
-    };
-
-    // Don't call adjustWeightForError for any errors
+    const config = makeConfig();
 
     const u1Weight = getDynamicWeight('route1', 'u1', 100);
     const u2Weight = getDynamicWeight('route1', 'u2', 100);
@@ -118,60 +113,160 @@ describe('Dynamic Weight – adjustWeightForError', () => {
 
   test("Error codes outside errorCodes list don't trigger reduction", () => {
     const upstreams = [makeUpstream({ id: 'client-error' }), makeUpstream({ id: 'success' })];
+    const config = makeConfig();
 
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500, 502, 503, 504],
-    };
+    recordUpstreamError('route1', 'client-error', 400);
 
-    // 400 is client error, not in the list
-    adjustWeightForError('route1', upstreams, config, 'client-error', 400);
+    const errorData = new Map([['client-error', [400]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
 
     const errorWeight = getDynamicWeight('route1', 'client-error', 100);
-    assert.strictEqual(errorWeight, 100); // unchanged
+    assert.strictEqual(errorWeight, 100);
   });
 
   test('skips adjustment when disabled', () => {
     const upstreams = [makeUpstream({ id: 'failed' })];
+    const config = makeConfig({ errorWeightReduction: { enabled: false } });
 
-    const config = {
-      enabled: false,
-      initialWeight: 100,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500, 502, 503, 504],
-    };
+    recordUpstreamError('route1', 'failed', 500);
 
-    adjustWeightForError('route1', upstreams, config, 'failed', 500);
+    const errorData = new Map([['failed', [500]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
 
     const failedWeight = getDynamicWeight('route1', 'failed', 100);
-    assert.strictEqual(failedWeight, 100); // unchanged when disabled
+    assert.strictEqual(failedWeight, 100);
   });
 
   test('skips adjustment for null upstreams', () => {
-    const config = {
-      enabled: true,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500],
-    };
+    const config = makeConfig();
+    const errorData = new Map([['failed', [500]]]);
 
-    // Should not throw
-    adjustWeightForError('route1', null, config, 'failed', 500);
+    assert.doesNotThrow(() => {
+      adjustWeightForError('route1', null, config, errorData);
+    });
   });
 
   test('skips adjustment for empty upstreams array', () => {
+    const config = makeConfig();
+    const errorData = new Map([['failed', [500]]]);
+
+    assert.doesNotThrow(() => {
+      adjustWeightForError('route1', [], config, errorData);
+    });
+  });
+
+  test('skips adjustment for null errorData', () => {
+    const upstreams = [makeUpstream({ id: 'u1' })];
+    const config = makeConfig();
+
+    assert.doesNotThrow(() => {
+      adjustWeightForError('route1', upstreams, config, null);
+    });
+
+    assert.strictEqual(getDynamicWeight('route1', 'u1', 100), 100);
+  });
+
+  test('skips adjustment for empty errorData', () => {
+    const upstreams = [makeUpstream({ id: 'u1' })];
+    const config = makeConfig();
+
+    assert.doesNotThrow(() => {
+      adjustWeightForError('route1', upstreams, config, new Map());
+    });
+
+    assert.strictEqual(getDynamicWeight('route1', 'u1', 100), 100);
+  });
+
+  test('skips when config has no errorWeightReduction', () => {
+    const upstreams = [makeUpstream({ id: 'u1' })];
+    const config = { enabled: true, initialWeight: 100, minWeight: 10 };
+    const errorData = new Map([['u1', [500]]]);
+
+    assert.doesNotThrow(() => {
+      adjustWeightForError('route1', upstreams, config, errorData);
+    });
+
+    assert.strictEqual(getDynamicWeight('route1', 'u1', 100), 100);
+  });
+
+  test('429 status code triggers reduction', () => {
+    const upstreams = [makeUpstream({ id: 'rate-limited' })];
+    const config = makeConfig();
+
+    recordUpstreamError('route1', 'rate-limited', 429);
+
+    const errorData = new Map([['rate-limited', [429]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
+
+    const weight = getDynamicWeight('route1', 'rate-limited', 100);
+    assert.strictEqual(weight, 95);
+  });
+
+  test('multiple error codes in one call reduce weight once', () => {
+    const upstreams = [makeUpstream({ id: 'multi-error' })];
+    const config = makeConfig();
+
+    const errorData = new Map([['multi-error', [500, 502, 503]]]);
+    adjustWeightForError('route1', upstreams, config, errorData);
+
+    const weight = getDynamicWeight('route1', 'multi-error', 100);
+    assert.strictEqual(weight, 95);
+  });
+
+  test('reduces multiple upstreams with errors in one call', () => {
+    const upstreams = [makeUpstream({ id: 'u1' }), makeUpstream({ id: 'u2' })];
+    const config = makeConfig();
+
+    const errorData = new Map([
+      ['u1', [500]],
+      ['u2', [502]],
+    ]);
+    adjustWeightForError('route1', upstreams, config, errorData);
+
+    assert.strictEqual(getDynamicWeight('route1', 'u1', 100), 95);
+    assert.strictEqual(getDynamicWeight('route1', 'u2', 100), 95);
+  });
+});
+
+describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
+  beforeEach(() => resetRoundRobinCounters());
+  afterEach(() => resetRoundRobinCounters());
+
+  test('recordUpstreamError records an error', () => {
+    recordUpstreamError('route1', 'upstream1', 500);
+    const rate = getErrorRate('route1', 'upstream1', 600000);
+    assert.strictEqual(rate, 1);
+  });
+
+  test('getErrorRate returns 0 for no errors', () => {
+    const rate = getErrorRate('route1', 'upstream1', 600000);
+    assert.strictEqual(rate, 0);
+  });
+
+  test('getErrorRate accepts config object with errorWindowMs', () => {
+    recordUpstreamError('route1', 'upstream1', 500);
+
     const config = {
-      enabled: true,
-      minWeight: 10,
-      errorReduction: 5,
-      errorCodes: [500],
+      errorWeightReduction: { errorWindowMs: 600000 },
     };
 
-    // Should not throw
-    adjustWeightForError('route1', [], config, 'failed', 500);
+    const rate = getErrorRate('route1', 'upstream1', config);
+    assert.strictEqual(rate, 1);
+  });
+
+  test('getErrorRate defaults to 600000ms when config has no errorWindowMs', () => {
+    recordUpstreamError('route1', 'upstream1', 500);
+
+    const rate = getErrorRate('route1', 'upstream1', {});
+    assert.strictEqual(rate, 1);
+  });
+
+  test('multiple errors are counted', () => {
+    recordUpstreamError('route1', 'upstream1', 500);
+    recordUpstreamError('route1', 'upstream1', 502);
+    recordUpstreamError('route1', 'upstream1', 503);
+
+    const rate = getErrorRate('route1', 'upstream1', 600000);
+    assert.strictEqual(rate, 3);
   });
 });

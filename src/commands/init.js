@@ -85,7 +85,7 @@ export const DEFAULT_TEMPLATE_JSON = {
       model: '{{MODEL_EXECUTOR_DEEP}}',
     },
     quick: {
-      model: '{{MODEL_LIGHT}}',
+      model: '{{MODEL_EXECUTOR}}',
     },
     'visual-engineering': {
       model: '{{MODEL_VISUAL}}',

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { logBuffer } from './log-buffer.js';
 
 const LOG_DIR = path.join(os.homedir(), '.config', 'opencode', '.oos', 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'proxy-access.log');
@@ -64,6 +65,9 @@ export async function logAccess(entry) {
   const logLine = formatLogEntry(logEntry);
 
   await fs.appendFile(LOG_FILE, logLine, 'utf8');
+
+  // Add to in-memory buffer for SSE streaming
+  logBuffer.add(logEntry);
 
   logCallbacks.forEach((callback) => {
     try {

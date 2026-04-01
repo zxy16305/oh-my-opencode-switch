@@ -4,7 +4,7 @@ import net from 'node:net';
 import { URL } from 'node:url';
 
 const DEFAULT_PORT = 3000;
-const SSE_HEADERS = {
+export const SSE_HEADERS = {
   'Cache-Control': 'no-cache',
   Connection: 'keep-alive',
   'X-Accel-Buffering': 'no',

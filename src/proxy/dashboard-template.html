@@ -71,6 +71,105 @@
         border-bottom: 1px solid #f0f0f0;
         color: #333;
       }
+      .log-table-container {
+        max-height: 500px;
+        overflow-y: auto;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+      }
+      #logTable {
+        font-size: 0.85rem;
+      }
+      #logTable th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: #f8f9fa;
+        padding: 12px 10px;
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      #logTable td {
+        padding: 10px;
+        white-space: nowrap;
+        font-size: 0.85rem;
+      }
+      #logTable th:nth-child(1),
+      #logTable td:nth-child(1) {
+        width: 160px;
+      }
+      #logTable th:nth-child(2),
+      #logTable td:nth-child(2) {
+        width: 120px;
+      }
+      #logTable th:nth-child(3),
+      #logTable td:nth-child(3) {
+        width: 100px;
+      }
+      #logTable th:nth-child(4),
+      #logTable td:nth-child(4) {
+        width: 140px;
+      }
+      #logTable th:nth-child(5),
+      #logTable td:nth-child(5) {
+        width: 70px;
+        text-align: center;
+      }
+      #logTable th:nth-child(6),
+      #logTable td:nth-child(6) {
+        width: 80px;
+        text-align: right;
+      }
+      #logTable th:nth-child(7),
+      #logTable td:nth-child(7) {
+        width: 80px;
+        text-align: right;
+      }
+      #logTable th:nth-child(8),
+      #logTable td:nth-child(8) {
+        width: 200px;
+        font-family: monospace;
+        font-size: 0.75rem;
+      }
+      .status-2xx {
+        background: #10b981;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.75rem;
+      }
+      .status-4xx {
+        background: #f59e0b;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.75rem;
+      }
+      .status-5xx {
+        background: #ef4444;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.75rem;
+      }
+      .log-row {
+        animation: fadeIn 0.3s ease-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .log-empty {
+        background: #fafafa;
       }
       .updated {
         color: #666;
@@ -109,6 +208,34 @@
       <div class="card">
         <h2>请求量占比</h2>
         <canvas id="pieChart"></canvas>
+      </div>
+    </div>
+    <div class="container" style="margin-top: 20px">
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>访问日志 (Access Logs)</h2>
+        <div class="log-table-container">
+          <table id="logTable">
+            <thead>
+              <tr>
+                <th>时间戳</th>
+                <th>路由</th>
+                <th>提供商</th>
+                <th>模型</th>
+                <th>状态码</th>
+                <th>TTFB</th>
+                <th>耗时</th>
+                <th>会话ID</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <tr class="log-empty">
+                <td colspan="8" style="text-align: center; color: #999; padding: 40px">
+                  等待日志数据...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
     <footer>自动更新间隔：10秒轮询 | 历史数据保留：本地存储 (24小时)</footer>
@@ -252,6 +379,93 @@
 
       fetchStats();
       setInterval(fetchStats, POLL_INTERVAL);
+
+      // Access Logs SSE
+      const LOGS_MAX_ENTRIES = 50;
+      let eventSource = null;
+
+      function getStatusClass(status) {
+        if (status >= 200 && status < 300) return 'status-2xx';
+        if (status >= 400 && status < 500) return 'status-4xx';
+        if (status >= 500) return 'status-5xx';
+        return '';
+      }
+
+      function formatDuration(ms) {
+        if (ms === undefined || ms === null) return '-';
+        return `${ms}ms`;
+      }
+
+      function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        return date.toLocaleString('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        });
+      }
+
+      function addLogEntry(log) {
+        const tbody = document.getElementById('logTableBody');
+        const emptyRow = tbody.querySelector('.log-empty');
+        if (emptyRow) {
+          emptyRow.remove();
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = 'log-row';
+        tr.innerHTML = `
+          <td>${formatTimestamp(log.timestamp)}</td>
+          <td>${log.virtualModel || '-'}</td>
+          <td>${log.provider || '-'}</td>
+          <td>${log.model || '-'}</td>
+          <td><span class="${getStatusClass(log.status)}">${log.status}</span></td>
+          <td>${formatDuration(log.ttfb)}</td>
+          <td>${formatDuration(log.duration)}</td>
+          <td>${log.sessionId || '-'}</td>
+        `;
+
+        tbody.insertBefore(tr, tbody.firstChild);
+
+        // Keep only LOGS_MAX_ENTRIES
+        while (tbody.children.length > LOGS_MAX_ENTRIES) {
+          tbody.removeChild(tbody.lastChild);
+        }
+      }
+
+      function connectEventSource() {
+        if (eventSource) {
+          eventSource.close();
+        }
+
+        eventSource = new EventSource('/_internal/logs/stream');
+
+        eventSource.onmessage = (event) => {
+          try {
+            const log = JSON.parse(event.data);
+            addLogEntry(log);
+          } catch (err) {
+            console.error('Failed to parse log entry:', err);
+          }
+        };
+
+        eventSource.onerror = (err) => {
+          console.error('EventSource error:', err);
+        };
+      }
+
+      // Connect on load
+      connectEventSource();
+
+      // Close on unload
+      window.addEventListener('beforeunload', () => {
+        if (eventSource) {
+          eventSource.close();
+        }
+      });
     </script>
   </body>
 </html>

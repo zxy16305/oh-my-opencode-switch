@@ -1,4 +1,4 @@
-import { createServer, shutdownServer, isPortAvailable } from '../proxy/server.js';
+import { createServer, shutdownServer, isPortAvailable, SSE_HEADERS } from '../proxy/server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
@@ -20,7 +20,8 @@ import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
-import { logAccess, readLogs, getLogPath, clearLogs } from '../utils/access-log.js';
+import { logAccess, readLogs, getLogPath, clearLogs, onLogAdded } from '../utils/access-log.js';
+import { logBuffer } from '../utils/log-buffer.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { parseTimeRange, generateStats } from '../utils/stats.js';
 import path from 'path';
@@ -241,6 +242,56 @@ export async function startAction(options = {}) {
     }
   }
 
+  // SSE clients for real-time log streaming
+  const sseClients = new Set();
+
+  // Register log callback to push to all SSE clients
+  onLogAdded((logEntry) => {
+    for (const clientRes of sseClients) {
+      try {
+        clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+      } catch {
+        // Remove client if write fails
+        sseClients.delete(clientRes);
+      }
+    }
+  });
+
+  /**
+   * Handle SSE logs stream endpoint - return real-time log stream
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
+  function handleLogsStream(req, res) {
+    // Security: only allow localhost
+    const clientIp = req.socket.remoteAddress || '';
+    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+      return;
+    }
+
+    // Set SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      ...SSE_HEADERS,
+    });
+
+    // Add client to the set
+    sseClients.add(res);
+
+    // Push buffered logs to new client
+    const bufferedLogs = logBuffer.getAll();
+    for (const logEntry of bufferedLogs) {
+      res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+    }
+
+    // Handle client disconnect
+    req.on('close', () => {
+      sseClients.delete(res);
+    });
+  }
+
   // Create request handler
   const requestHandler = async (req, res) => {
     let body = '';
@@ -265,6 +316,12 @@ export async function startAction(options = {}) {
         // Stats endpoint - no auth required, localhost only
         if (req.url === '/_internal/stats' && req.method === 'GET') {
           handleStats(req, res, routes);
+          return;
+        }
+
+        // Logs stream endpoint - no auth required, localhost only
+        if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
+          handleLogsStream(req, res);
           return;
         }
 

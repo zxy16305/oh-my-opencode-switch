@@ -383,6 +383,7 @@
       // Access Logs SSE
       const LOGS_MAX_ENTRIES = 50;
       let eventSource = null;
+      let isInitialLoad = true;
 
       function getStatusClass(status) {
         if (status >= 200 && status < 300) return 'status-2xx';
@@ -408,7 +409,7 @@
         });
       }
 
-      function addLogEntry(log) {
+      function addLogEntry(log, prepend = true) {
         const tbody = document.getElementById('logTableBody');
         const emptyRow = tbody.querySelector('.log-empty');
         if (emptyRow) {
@@ -428,7 +429,11 @@
           <td>${log.sessionId || '-'}</td>
         `;
 
-        tbody.insertBefore(tr, tbody.firstChild);
+        if (prepend) {
+          tbody.insertBefore(tr, tbody.firstChild);
+        } else {
+          tbody.appendChild(tr);
+        }
 
         // Keep only LOGS_MAX_ENTRIES
         while (tbody.children.length > LOGS_MAX_ENTRIES) {
@@ -441,12 +446,24 @@
           eventSource.close();
         }
 
+        // Clear table for initial load
+        const tbody = document.getElementById('logTableBody');
+        tbody.innerHTML = `
+          <tr class="log-empty">
+            <td colspan="8" style="text-align: center; color: #999; padding: 40px">
+              等待日志数据...
+            </td>
+          </tr>
+        `;
+        isInitialLoad = true;
+
         eventSource = new EventSource('/_internal/logs/stream');
 
         eventSource.onmessage = (event) => {
           try {
             const log = JSON.parse(event.data);
-            addLogEntry(log);
+            addLogEntry(log, !isInitialLoad);
+            isInitialLoad = false;
           } catch (err) {
             console.error('Failed to parse log entry:', err);
           }

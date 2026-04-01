@@ -283,12 +283,11 @@ export async function startAction(options = {}) {
     sseClients.add(res);
     console.log('[SSE] Client connected, total clients:', sseClients.size);
 
-    // Push buffered logs to new client (oldest first, so newest ends up on top)
+    // Push buffered logs to new client
     const bufferedLogs = logBuffer.getAll();
     console.log('[SSE] Sending', bufferedLogs.length, 'buffered logs');
-    // Reverse order: send oldest first, so when client prepends, newest is on top
-    for (let i = bufferedLogs.length - 1; i >= 0; i--) {
-      res.write(`data: ${JSON.stringify(bufferedLogs[i])}\n\n`);
+    for (const logEntry of bufferedLogs) {
+      res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
     }
 
     // Handle client disconnect

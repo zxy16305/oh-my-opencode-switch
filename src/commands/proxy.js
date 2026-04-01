@@ -25,6 +25,7 @@ import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/p
 import { parseTimeRange, generateStats } from '../utils/stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { promises as fs } from 'fs';
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
@@ -217,7 +218,7 @@ export async function startAction(options = {}) {
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
    */
-  function handleDashboard(req, res) {
+  async function handleDashboard(req, res) {
     // Security: only allow localhost
     const clientIp = req.socket.remoteAddress || '';
     if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
@@ -226,138 +227,18 @@ export async function startAction(options = {}) {
       return;
     }
 
-    const html = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>负载均衡可视化</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 1400px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .card h2 { color: #444; margin-bottom: 15px; font-size: 1.2rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-    th { background: #f5f5f5; font-weight: 600; }
-    .updated { color: #666; margin-bottom: 10px; font-size: 0.9rem; }
-    footer { margin-top: 20px; color: #888; font-size: 0.9rem; text-align: center; }
-  </style>
-</head>
-<body>
-  <h1>负载均衡可视化</h1>
-  <div class="updated" id="updated">等待数据加载中...</div>
-  <div class="container">
-    <div class="card">
-      <h2>上游数据</h2>
-      <table>
-        <thead>
-          <tr><th>Provider</th><th>Model</th><th>Requests</th><th>Sessions</th><th>Weight</th></tr>
-        </thead>
-        <tbody id="dataTable"></tbody>
-      </table>
-    </div>
-    <div class="card">
-      <h2>请求量占比</h2>
-      <canvas id="pieChart"></canvas>
-    </div>
-  </div>
-  <footer>自动更新间隔：10秒轮询 | 历史数据保留：本地存储 (24小时)</footer>
-  <script>
-    let chart = null;
-    const HISTORY_KEY = 'oos-dashboard-history';
-    const POLL_INTERVAL = 10000; // 10秒
-    const HISTORY_TTL = 24 * 60 * 60 * 1000; // 24小时
+    try {
+      const __dirname = path.dirname(fileURLToPath(import.meta.url));
+      const templatePath = path.join(__dirname, '../proxy/dashboard-template.html');
+      const html = await fs.readFile(templatePath, 'utf-8');
 
-    function loadHistory() {
-      try {
-        const raw = localStorage.getItem(HISTORY_KEY);
-        if (!raw) return [];
-        const data = JSON.parse(raw);
-        const now = Date.now();
-        return data.filter(entry => now - entry.timestamp < HISTORY_TTL);
-      } catch {
-        return [];
-      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    } catch (err) {
+      logger.error(`Failed to load dashboard template: ${err.message}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to load dashboard' }));
     }
-
-    function saveHistory(data) {
-      const history = loadHistory();
-      history.push({ timestamp: Date.now(), data });
-      const now = Date.now();
-      const filtered = history.filter(entry => now - entry.timestamp < HISTORY_TTL);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
-    }
-
-    function aggregateUpstreams(data) {
-      const upstreams = [];
-      for (const [routeName, route] of Object.entries(data.routes || {})) {
-        for (const upstream of route.upstreams || []) {
-          upstreams.push(upstream);
-        }
-      }
-      return upstreams;
-    }
-
-    function renderTable(upstreams) {
-      const tbody = document.getElementById('dataTable');
-      tbody.innerHTML = '';
-      upstreams.forEach(u => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = \`
-          <td>\${u.provider || '-'}</td>
-          <td>\${u.model || '-'}</td>
-          <td>\${u.requestCount}</td>
-          <td>\${u.sessionCount}</td>
-          <td>\${u.currentWeight}</td>
-        \`;
-        tbody.appendChild(tr);
-      });
-    }
-
-    function renderPieChart(upstreams) {
-      const ctx = document.getElementById('pieChart').getContext('2d');
-      const labels = upstreams.map(u => \`\${u.provider || '-'}/\${u.model || '-'}\`);
-      const data = upstreams.map(u => u.requestCount);
-      const colors = [
-        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
-        '#FF6384', '#C9CBCF', '#4BC0C0'
-      ];
-
-      if (chart) chart.destroy();
-      chart = new Chart(ctx, {
-        type: 'pie',
-        data: { labels, datasets: [{ data, backgroundColor: colors.slice(0, labels.length) }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-      });
-    }
-
-    async function fetchStats() {
-      try {
-        const res = await fetch('/_internal/stats');
-        const data = await res.json();
-        saveHistory(data);
-        const upstreams = aggregateUpstreams(data);
-        renderTable(upstreams);
-        renderPieChart(upstreams);
-        document.getElementById('updated').textContent = \`最后更新: \${new Date(data.timestamp).toLocaleString()}\`;
-      } catch (err) {
-        console.error('Failed to fetch stats:', err);
-        document.getElementById('updated').textContent = \`获取数据失败: \${err.message}\`;
-      }
-    }
-
-    fetchStats();
-    setInterval(fetchStats, POLL_INTERVAL);
-  </script>
-</body>
-</html>`;
-
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html);
   }
 
   // Create request handler

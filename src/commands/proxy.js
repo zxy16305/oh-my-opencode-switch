@@ -247,14 +247,12 @@ export async function startAction(options = {}) {
 
   // Register log callback to push to all SSE clients
   onLogAdded((logEntry) => {
-    console.log('[SSE] Broadcasting log to', sseClients.size, 'clients');
     for (const clientRes of sseClients) {
       try {
         clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
         // Explicitly flush to ensure data is sent immediately
         clientRes.flush?.();
-      } catch (err) {
-        console.error('[SSE] Write error:', err);
+      } catch {
         // Remove client if write fails
         sseClients.delete(clientRes);
       }
@@ -283,11 +281,9 @@ export async function startAction(options = {}) {
 
     // Add client to the set
     sseClients.add(res);
-    console.log('[SSE] Client connected, total clients:', sseClients.size);
 
     // Push buffered logs to new client
     const bufferedLogs = logBuffer.getAll();
-    console.log('[SSE] Sending', bufferedLogs.length, 'buffered logs');
     for (const logEntry of bufferedLogs) {
       res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
     }

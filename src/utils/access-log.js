@@ -7,6 +7,7 @@ const LOG_FILE = path.join(LOG_DIR, 'proxy-access.log');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
 let logInitialized = false;
+const logCallbacks = [];
 
 async function ensureLogDir() {
   if (!logInitialized) {
@@ -48,16 +49,29 @@ async function rotateLogIfNeeded() {
   }
 }
 
+export function onLogAdded(callback) {
+  logCallbacks.push(callback);
+}
+
 export async function logAccess(entry) {
   await ensureLogDir();
   await rotateLogIfNeeded();
 
-  const logLine = formatLogEntry({
+  const logEntry = {
     timestamp: formatTimestamp(),
     ...entry,
-  });
+  };
+  const logLine = formatLogEntry(logEntry);
 
   await fs.appendFile(LOG_FILE, logLine, 'utf8');
+
+  logCallbacks.forEach((callback) => {
+    try {
+      callback(logEntry);
+    } catch {
+      // ignore
+    }
+  });
 }
 
 export function getLogPath() {

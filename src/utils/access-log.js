@@ -55,6 +55,7 @@ export function onLogAdded(callback) {
 }
 
 export async function logAccess(entry) {
+  console.log('[access-log] logAccess called');
   await ensureLogDir();
   await rotateLogIfNeeded();
 
@@ -65,15 +66,17 @@ export async function logAccess(entry) {
   const logLine = formatLogEntry(logEntry);
 
   await fs.appendFile(LOG_FILE, logLine, 'utf8');
+  console.log('[access-log] Log written to file');
 
   // Add to in-memory buffer for SSE streaming
   logBuffer.add(logEntry);
+  console.log('[access-log] Added to buffer, callbacks:', logCallbacks.length);
 
   logCallbacks.forEach((callback) => {
     try {
       callback(logEntry);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[access-log] callback error:', err);
     }
   });
 }

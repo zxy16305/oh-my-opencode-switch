@@ -247,10 +247,12 @@ export async function startAction(options = {}) {
 
   // Register log callback to push to all SSE clients
   onLogAdded((logEntry) => {
+    console.log('[SSE] Broadcasting log to', sseClients.size, 'clients');
     for (const clientRes of sseClients) {
       try {
         clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
-      } catch {
+      } catch (err) {
+        console.error('[SSE] Write error:', err);
         // Remove client if write fails
         sseClients.delete(clientRes);
       }
@@ -279,11 +281,14 @@ export async function startAction(options = {}) {
 
     // Add client to the set
     sseClients.add(res);
+    console.log('[SSE] Client connected, total clients:', sseClients.size);
 
-    // Push buffered logs to new client
+    // Push buffered logs to new client (oldest first, so newest ends up on top)
     const bufferedLogs = logBuffer.getAll();
-    for (const logEntry of bufferedLogs) {
-      res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+    console.log('[SSE] Sending', bufferedLogs.length, 'buffered logs');
+    // Reverse order: send oldest first, so when client prepends, newest is on top
+    for (let i = bufferedLogs.length - 1; i >= 0; i--) {
+      res.write(`data: ${JSON.stringify(bufferedLogs[i])}\n\n`);
     }
 
     // Handle client disconnect

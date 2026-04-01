@@ -251,6 +251,8 @@ export async function startAction(options = {}) {
     for (const clientRes of sseClients) {
       try {
         clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+        // Explicitly flush to ensure data is sent immediately
+        clientRes.flush?.();
       } catch (err) {
         console.error('[SSE] Write error:', err);
         // Remove client if write fails
@@ -289,6 +291,8 @@ export async function startAction(options = {}) {
     for (const logEntry of bufferedLogs) {
       res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
     }
+    // Flush buffered logs
+    res.flush?.();
 
     // Handle client disconnect
     req.on('close', () => {

@@ -302,6 +302,12 @@ export async function startAction(options = {}) {
 
   // Create request handler
   const requestHandler = async (req, res) => {
+    // Handle SSE endpoint immediately (before waiting for request body)
+    if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
+      handleLogsStream(req, res);
+      return;
+    }
+
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
@@ -324,12 +330,6 @@ export async function startAction(options = {}) {
         // Stats endpoint - no auth required, localhost only
         if (req.url === '/_internal/stats' && req.method === 'GET') {
           handleStats(req, res, routes);
-          return;
-        }
-
-        // Logs stream endpoint - no auth required, localhost only
-        if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
-          handleLogsStream(req, res);
           return;
         }
 

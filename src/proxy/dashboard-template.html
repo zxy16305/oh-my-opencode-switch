@@ -238,32 +238,10 @@
         </div>
       </div>
     </div>
-    <footer>自动更新间隔：10秒轮询 | 历史数据保留：本地存储 (24小时)</footer>
+    <footer>自动更新间隔：10秒轮询</footer>
     <script>
       let chart = null;
-      const HISTORY_KEY = 'oos-dashboard-history';
       const POLL_INTERVAL = 10000;
-      const HISTORY_TTL = 24 * 60 * 60 * 1000;
-
-      function loadHistory() {
-        try {
-          const raw = localStorage.getItem(HISTORY_KEY);
-          if (!raw) return [];
-          const data = JSON.parse(raw);
-          const now = Date.now();
-          return data.filter((entry) => now - entry.timestamp < HISTORY_TTL);
-        } catch {
-          return [];
-        }
-      }
-
-      function saveHistory(data) {
-        const history = loadHistory();
-        history.push({ timestamp: Date.now(), data });
-        const now = Date.now();
-        const filtered = history.filter((entry) => now - entry.timestamp < HISTORY_TTL);
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
-      }
 
       function aggregateUpstreams(data) {
         const upstreams = [];
@@ -365,7 +343,6 @@
         try {
           const res = await fetch('/_internal/stats');
           const data = await res.json();
-          saveHistory(data);
           const upstreams = aggregateUpstreams(data);
           renderTable(upstreams);
           renderPieChart(upstreams);

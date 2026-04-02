@@ -14,10 +14,18 @@
 
 import { logger } from './logger.js';
 import { execSync } from 'child_process';
-import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync } from 'fs';
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  createReadStream,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pipeline } from 'stream/promises';
+import { extract } from 'tar';
 
 const discoveryCache = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -113,10 +121,20 @@ async function downloadPackageFromNpm(packageName, version = 'latest') {
 
     const tarballPath = join(tempDir, 'package.tgz');
     const response = await fetch(tarballUrl);
-    const fileStream = createWriteStream(tarballPath);
-    await pipeline(response.body, fileStream);
+    const buffer = Buffer.from(await response.arrayBuffer());
 
-    execSync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, { stdio: 'pipe' });
+    await new Promise((resolve, reject) => {
+      const stream = createWriteStream(tarballPath);
+      stream.write(buffer);
+      stream.end();
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+
+    await extract({
+      file: tarballPath,
+      cwd: tempDir,
+    });
 
     rmSync(tarballPath, { force: true });
 
@@ -158,22 +176,29 @@ function extractBaseURLFromFile(filePath) {
     const content = readFileSync(filePath, 'utf-8');
 
     const patterns = [
-      /baseURL\s*:\s*['"]([^'"]+)['"]/,
-      /baseUrl\s*:\s*['"]([^'"]+)['"]/,
-      /base_url\s*:\s*['"]([^'"]+)['"]/,
-      /['"]https:\/\/api\.moonshot\.cn[^'"]*['"]/,
-      /['"]https:\/\/api\.deepseek\.com[^'"]*['"]/,
-      /['"]https:\/\/open\.bigmodel\.cn[^'"]*['"]/,
+      /var\s+\w*[Bb]ase[Uu][Rr][Ll]\s*=\s*["']([^"']+)["']/,
+      /const\s+\w*[Bb]ase[Uu][Rr][Ll]\s*=\s*["']([^"']+)["']/,
+      /let\s+\w*[Bb]ase[Uu][Rr][Ll]\s*=\s*["']([^"']+)["']/,
+      /baseURL\s*:\s*["']([^"']+)["']/,
+      /baseUrl\s*:\s*["']([^"']+)["']/,
+      /base_url\s*:\s*["']([^"']+)["']/,
+      /["']https:\/\/api\.moonshot\.ai[^"']*["']/,
+      /["']https:\/\/api\.moonshot\.cn[^"']*["']/,
+      /["']https:\/\/api\.deepseek\.com[^"']*["']/,
+      /["']https:\/\/open\.bigmodel\.cn[^"']*["']/,
     ];
 
     for (const pattern of patterns) {
       const match = content.match(pattern);
-      if (match && match[1]) {
-        let baseURL = match[1];
+      if (match) {
+        let baseURL = match[1] || match[0];
+        if (!baseURL.startsWith('http')) {
+          baseURL = baseURL.replace(/["']/g, '');
+        }
         if (!baseURL.startsWith('http')) {
           continue;
         }
-        baseURL = baseURL.replace(/\/v\d+\/?$/, '') + '/v1';
+        baseURL = baseURL.replace(/\/$/, '');
         return baseURL;
       }
     }

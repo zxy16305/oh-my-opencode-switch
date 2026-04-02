@@ -36,6 +36,7 @@
     "handlebars": "^4.7.8",
     "json5": "^2.2.3",
     "node-windows": "^0.1.14",
+    "unzipper": "^0.12.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {

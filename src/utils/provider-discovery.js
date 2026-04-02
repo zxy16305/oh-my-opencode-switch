@@ -7,34 +7,22 @@
  * Discovery Strategy:
  * 1. Parse provider name to extract keywords
  * 2. Infer possible npm package names using heuristic rules
- * 3. Try to dynamically import packages
- * 4. Extract baseURL from provider instance by creating dummy model
+ * 3. Try to dynamically import packages or download from npm
+ * 4. Extract baseURL from provider instance or package source
  * 5. Cache discovered results for performance
  */
 
 import { logger } from './logger.js';
+import { execSync } from 'child_process';
+import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { pipeline } from 'stream/promises';
 
-/**
- * Cache for discovered provider base URLs
- * Key: providerName, Value: { baseURL: string, timestamp: number }
- * @type {Map<string, { baseURL: string, timestamp: number }>}
- */
 const discoveryCache = new Map();
-
-/**
- * Cache TTL in milliseconds (24 hours)
- * @type {number}
- */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Common AI SDK package name patterns
- * These are patterns used by Vercel AI SDK community packages
- * NOT hardcoded provider names, just common naming conventions
- */
 const SDK_PACKAGE_PATTERNS = {
-  // Pattern: provider keyword -> possible package names (in priority order)
-  // These are naming conventions, not hardcoded providers
   kimi: ['@ai-sdk/moonshotai', '@ai-sdk/kimi'],
   moonshot: ['@ai-sdk/moonshotai'],
   deepseek: ['@ai-sdk/deepseek'],
@@ -58,9 +46,6 @@ const SDK_PACKAGE_PATTERNS = {
   ollama: ['@ai-sdk/ollama'],
 };
 
-/**
- * Error class for provider discovery failures
- */
 export class ProviderDiscoveryError extends Error {
   constructor(message, providerName, details = {}) {
     super(message);
@@ -71,17 +56,6 @@ export class ProviderDiscoveryError extends Error {
   }
 }
 
-/**
- * Extract keywords from provider name
- * Examples:
- * - "kimi-for-coding" -> ["kimi"]
- * - "deepseek-coder" -> ["deepseek", "coder"]
- * - "zhipuai-coding-plan" -> ["zhipuai", "coding", "plan"]
- * - "moonshot-v1" -> ["moonshot", "v1"]
- *
- * @param {string} providerName - Provider name from auth config
- * @returns {string[]} Array of extracted keywords
- */
 function extractKeywords(providerName) {
   if (!providerName || typeof providerName !== 'string') {
     return [];
@@ -90,24 +64,11 @@ function extractKeywords(providerName) {
   const parts = providerName.toLowerCase().split(/[-_\s]+/);
   const noiseWords = ['for', 'the', 'a', 'an', 'v1', 'v2', 'v3', 'api'];
 
-  const keywords = parts.filter((part) => {
+  return parts.filter((part) => {
     return part.length >= 2 && !noiseWords.includes(part) && !/^\d+$/.test(part);
   });
-
-  return keywords;
 }
 
-/**
- * Infer possible npm package names from provider name using heuristic rules
- *
- * Strategy:
- * 1. Extract keywords from provider name
- * 2. Match keywords against known SDK package patterns
- * 3. Generate fallback package names using common conventions
- *
- * @param {string} providerName - Provider name from auth config
- * @returns {string[]} Array of possible npm package names to try
- */
 function inferPackageNames(providerName) {
   if (!providerName || typeof providerName !== 'string') {
     return [];
@@ -116,7 +77,6 @@ function inferPackageNames(providerName) {
   const keywords = extractKeywords(providerName);
   const packageNames = new Set();
 
-  // 1. Try to match keywords against known patterns
   for (const keyword of keywords) {
     const matchedPatterns = SDK_PACKAGE_PATTERNS[keyword];
     if (matchedPatterns) {
@@ -124,31 +84,106 @@ function inferPackageNames(providerName) {
     }
   }
 
-  // 2. Try common naming conventions as fallback
-  // Pattern: @ai-sdk/{provider-keyword}
   for (const keyword of keywords) {
     packageNames.add(`@ai-sdk/${keyword}`);
   }
 
-  // 3. Try hyphenated variations
   const baseName = keywords.join('-');
   if (baseName && baseName.length >= 2) {
     packageNames.add(`@ai-sdk/${baseName}`);
   }
 
-  // 4. Special handling for common variations
-  // OpenAI-compatible providers often work with the generic package
   packageNames.add('@ai-sdk/openai-compatible');
 
   return Array.from(packageNames);
 }
 
-/**
- * Try to load a provider package dynamically
- *
- * @param {string} packageName - NPM package name to load
- * @returns {Promise<any|null>} Package module or null if not found
- */
+async function downloadPackageFromNpm(packageName, version = 'latest') {
+  try {
+    const info = execSync(`npm view ${packageName}@${version} --json`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const packageInfo = JSON.parse(info);
+    const tarballUrl = packageInfo.dist.tarball;
+
+    const tempDir = join(tmpdir(), `oos-provider-${packageName.replace('/', '-')}-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    const tarballPath = join(tempDir, 'package.tgz');
+    const response = await fetch(tarballUrl);
+    const fileStream = createWriteStream(tarballPath);
+    await pipeline(response.body, fileStream);
+
+    execSync(`tar -xzf "${tarballPath}" -C "${tempDir}"`, { stdio: 'pipe' });
+
+    rmSync(tarballPath, { force: true });
+
+    return join(tempDir, 'package');
+  } catch (error) {
+    logger.debug(`Failed to download package ${packageName}: ${error.message}`);
+    return null;
+  }
+}
+
+function extractBaseURLFromPackageSource(packageDir, packageName) {
+  try {
+    const packageJsonPath = join(packageDir, 'package.json');
+    if (!existsSync(packageJsonPath)) {
+      return null;
+    }
+
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    const mainFile = packageJson.main || 'index.js';
+
+    const mainPath = join(packageDir, mainFile);
+    if (!existsSync(mainPath)) {
+      const distPath = join(packageDir, 'dist', 'index.js');
+      if (!existsSync(distPath)) {
+        return null;
+      }
+      return extractBaseURLFromFile(distPath);
+    }
+
+    return extractBaseURLFromFile(mainPath);
+  } catch (error) {
+    logger.debug(`Failed to extract baseURL from ${packageName}: ${error.message}`);
+    return null;
+  }
+}
+
+function extractBaseURLFromFile(filePath) {
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+
+    const patterns = [
+      /baseURL\s*:\s*['"]([^'"]+)['"]/,
+      /baseUrl\s*:\s*['"]([^'"]+)['"]/,
+      /base_url\s*:\s*['"]([^'"]+)['"]/,
+      /['"]https:\/\/api\.moonshot\.cn[^'"]*['"]/,
+      /['"]https:\/\/api\.deepseek\.com[^'"]*['"]/,
+      /['"]https:\/\/open\.bigmodel\.cn[^'"]*['"]/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match && match[1]) {
+        let baseURL = match[1];
+        if (!baseURL.startsWith('http')) {
+          continue;
+        }
+        baseURL = baseURL.replace(/\/v\d+\/?$/, '') + '/v1';
+        return baseURL;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function tryLoadProviderPackage(packageName) {
   try {
     const module = await import(packageName);
@@ -161,7 +196,26 @@ async function tryLoadProviderPackage(packageName) {
       error.message?.includes('Cannot find module') ||
       error.message?.includes('Failed to resolve')
     ) {
-      logger.debug(`Package not found: ${packageName}`);
+      logger.debug(`Package not installed, trying to download from npm: ${packageName}`);
+
+      const packageDir = await downloadPackageFromNpm(packageName);
+      if (packageDir) {
+        const baseURL = extractBaseURLFromPackageSource(packageDir, packageName);
+
+        try {
+          rmSync(join(packageDir, '..'), { recursive: true, force: true });
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+
+        if (baseURL) {
+          return {
+            _extractedBaseURL: baseURL,
+            createProvider: () => () => ({ config: { baseURL } }),
+          };
+        }
+      }
+
       return null;
     }
     logger.debug(`Failed to load package ${packageName}: ${error.message}`);
@@ -169,27 +223,16 @@ async function tryLoadProviderPackage(packageName) {
   }
 }
 
-/**
- * Extract baseURL from a provider instance
- *
- * Strategy:
- * 1. Find the provider factory function (createXxxAI pattern)
- * 2. Create a provider instance with default config
- * 3. Create a dummy model to access the config
- * 4. Extract baseURL from the model's config
- *
- * @param {any} providerModule - Loaded provider module
- * @param {string} packageName - Package name for logging
- * @returns {string|null} Extracted baseURL or null
- */
 function extractBaseURLFromProvider(providerModule, packageName) {
   if (!providerModule || typeof providerModule !== 'object') {
     return null;
   }
 
+  if (providerModule._extractedBaseURL) {
+    return providerModule._extractedBaseURL;
+  }
+
   try {
-    // Find provider factory function
-    // Common patterns: createMoonshotAI, createOpenAI, createAnthropic, etc.
     const factoryNames = Object.keys(providerModule).filter(
       (key) => key.startsWith('create') && (key.endsWith('AI') || key.endsWith('Provider'))
     );
@@ -199,13 +242,11 @@ function extractBaseURLFromProvider(providerModule, packageName) {
       return null;
     }
 
-    // Try each factory function
     for (const factoryName of factoryNames) {
       const factory = providerModule[factoryName];
       if (typeof factory !== 'function') continue;
 
       try {
-        // Create provider instance with default config
         const provider = factory();
 
         if (typeof provider !== 'function') {
@@ -213,8 +254,6 @@ function extractBaseURLFromProvider(providerModule, packageName) {
           continue;
         }
 
-        // Try to create a dummy model to access config
-        // Provider functions are callable: provider('model-name')
         const dummyModelName = 'dummy-model';
         const model = provider(dummyModelName);
 
@@ -223,11 +262,8 @@ function extractBaseURLFromProvider(providerModule, packageName) {
           continue;
         }
 
-        // Try to access baseURL from model config
-        // Vercel AI SDK models have a config object with baseURL
         const config = model.config || model;
 
-        // Common properties where baseURL might be stored
         const baseURLCandidates = [config.baseURL, config.baseUrl, config.base_url, config.url];
 
         for (const candidate of baseURLCandidates) {
@@ -237,12 +273,10 @@ function extractBaseURLFromProvider(providerModule, packageName) {
           }
         }
 
-        // Try to construct baseURL from model's url method if available
         if (typeof model.url === 'function') {
           try {
             const testUrl = model.url({ path: '/test' });
             if (testUrl && typeof testUrl === 'string') {
-              // Extract base URL by removing the test path
               const baseURL = testUrl.replace(/\/test\/?$/, '').replace(/\/v\d+\/test\/?$/, '/v1');
               if (baseURL && baseURL.startsWith('http')) {
                 logger.debug(`Constructed baseURL from ${packageName}: ${baseURL}`);
@@ -269,18 +303,6 @@ function extractBaseURLFromProvider(providerModule, packageName) {
   }
 }
 
-/**
- * Discover provider baseURL using heuristic package discovery
- *
- * This is the main entry point for provider discovery.
- * It uses caching to avoid repeated discovery attempts.
- *
- * @param {string} providerName - Provider name from auth config (e.g., "kimi-for-coding")
- * @param {object} options - Discovery options
- * @param {boolean} [options.useCache=true] - Whether to use cached results
- * @param {boolean} [options.verbose=false] - Enable verbose logging
- * @returns {Promise<string|null>} Discovered baseURL or null if not found
- */
 export async function discoverProviderBaseURL(providerName, options = {}) {
   const { useCache = true, verbose = false } = options;
 
@@ -306,7 +328,6 @@ export async function discoverProviderBaseURL(providerName, options = {}) {
     logger.info(`Discovering baseURL for provider: ${providerName}`);
   }
 
-  // Infer possible package names
   const packageNames = inferPackageNames(providerName);
 
   if (packageNames.length === 0) {
@@ -320,7 +341,6 @@ export async function discoverProviderBaseURL(providerName, options = {}) {
     logger.debug(`Trying packages: ${packageNames.join(', ')}`);
   }
 
-  // Try each package name
   for (const packageName of packageNames) {
     const module = await tryLoadProviderPackage(packageName);
 
@@ -331,7 +351,6 @@ export async function discoverProviderBaseURL(providerName, options = {}) {
     const baseURL = extractBaseURLFromProvider(module, packageName);
 
     if (baseURL) {
-      // Cache the successful discovery
       discoveryCache.set(providerName, {
         baseURL,
         timestamp: Date.now(),
@@ -352,20 +371,10 @@ export async function discoverProviderBaseURL(providerName, options = {}) {
   return null;
 }
 
-/**
- * Clear the discovery cache
- * Useful for testing or when provider packages are updated
- */
 export function clearDiscoveryCache() {
   discoveryCache.clear();
 }
 
-/**
- * Get cache statistics
- * Useful for debugging and monitoring
- *
- * @returns {{ size: number, entries: Array<{provider: string, baseURL: string, age: number}> }}
- */
 export function getDiscoveryCacheStats() {
   const entries = [];
   const now = Date.now();
@@ -384,13 +393,6 @@ export function getDiscoveryCacheStats() {
   };
 }
 
-/**
- * Get the list of packages that would be tried for a given provider name
- * Useful for debugging and understanding the discovery process
- *
- * @param {string} providerName - Provider name
- * @returns {string[]} List of package names that would be tried
- */
 export function getPackagesToTry(providerName) {
   return inferPackageNames(providerName);
 }

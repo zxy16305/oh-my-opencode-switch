@@ -7,6 +7,7 @@ import {
   getUpstreamSessionCounts,
   getUpstreamRequestCounts,
   getSessionUpstreamMap,
+  getUpstreamStats,
   recordUpstreamError,
   recordUpstreamLatency,
   adjustWeightForError,
@@ -192,6 +193,7 @@ export async function startAction(options = {}) {
     const sessionCounts = getUpstreamSessionCounts();
     const weightState = getDynamicWeightState();
     const sessionMap = getSessionUpstreamMap();
+    const statsData = getUpstreamStats();
 
     const sessions = {};
     for (const [sessionKey, entry] of sessionMap) {
@@ -216,6 +218,7 @@ export async function startAction(options = {}) {
           const routeRequestCounts = requestCounts.get(routeName);
           const routeSessions = sessionCounts.get(routeName);
           const weightEntry = weightState.get(key);
+          const stats = statsData.get(key);
 
           return {
             id: upstream.id,
@@ -224,6 +227,14 @@ export async function startAction(options = {}) {
             requestCount: routeRequestCounts?.get(upstream.id) ?? 0,
             sessionCount: routeSessions?.get(upstream.id) ?? 0,
             currentWeight: weightEntry?.currentWeight ?? 100,
+            avgTtfb: stats?.avgTtfb ?? 0,
+            ttfbP95: stats?.ttfbP95 ?? 0,
+            ttfbP99: stats?.ttfbP99 ?? 0,
+            avgDuration: stats?.avgDuration ?? 0,
+            durationP95: stats?.durationP95 ?? 0,
+            durationP99: stats?.durationP99 ?? 0,
+            sampleCount: stats?.sampleCount ?? 0,
+            errorCount: stats?.errorCount ?? 0,
           };
         }),
       };

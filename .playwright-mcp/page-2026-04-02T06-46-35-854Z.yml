@@ -1,0 +1,112 @@
+- generic [active] [ref=e1]:
+    - heading "负载均衡可视化" [level=1] [ref=e2]
+    - generic [ref=e3]: '最后更新: 2026/4/2 14:46:29'
+    - generic [ref=e4]:
+        - generic [ref=e5]:
+            - heading "上游数据" [level=2] [ref=e6]
+            - table [ref=e7]:
+                - rowgroup [ref=e8]:
+                    - row "Route Provider Model Requests Sessions Weight" [ref=e9]:
+                        - columnheader "Route" [ref=e10]
+                        - columnheader "Provider" [ref=e11]
+                        - columnheader "Model" [ref=e12]
+                        - columnheader "Requests" [ref=e13]
+                        - columnheader "Sessions" [ref=e14]
+                        - columnheader "Weight" [ref=e15]
+                - rowgroup [ref=e16]:
+                    - row "lb-glm47 sticky ali glm-4.7 0 0 100" [ref=e109]:
+                        - cell "lb-glm47 sticky" [ref=e110]:
+                            - text: lb-glm47
+                            - text: sticky
+                        - cell "ali" [ref=e111]
+                        - cell "glm-4.7" [ref=e112]
+                        - cell "0" [ref=e113]
+                        - cell "0" [ref=e114]
+                        - cell "100" [ref=e115]
+                    - row "baidu minimax-m2.5 0 0 100" [ref=e116]:
+                        - cell "baidu" [ref=e117]
+                        - cell "minimax-m2.5" [ref=e118]
+                        - cell "0" [ref=e119]
+                        - cell "0" [ref=e120]
+                        - cell "100" [ref=e121]
+                    - row "fangzhou doubao-seed-2.0-lite 0 0 100" [ref=e122]:
+                        - cell "fangzhou" [ref=e123]
+                        - cell "doubao-seed-2.0-lite" [ref=e124]
+                        - cell "0" [ref=e125]
+                        - cell "0" [ref=e126]
+                        - cell "100" [ref=e127]
+                    - row "lb-minimax sticky ali MiniMax-M2.5 0 0 100" [ref=e128]:
+                        - cell "lb-minimax sticky" [ref=e129]:
+                            - text: lb-minimax
+                            - text: sticky
+                        - cell "ali" [ref=e130]
+                        - cell "MiniMax-M2.5" [ref=e131]
+                        - cell "0" [ref=e132]
+                        - cell "0" [ref=e133]
+                        - cell "100" [ref=e134]
+                    - row "baidu minimax-m2.5 0 0 100" [ref=e135]:
+                        - cell "baidu" [ref=e136]
+                        - cell "minimax-m2.5" [ref=e137]
+                        - cell "0" [ref=e138]
+                        - cell "0" [ref=e139]
+                        - cell "100" [ref=e140]
+                    - row "fangzhou doubao-seed-2.0-pro 0 0 100" [ref=e141]:
+                        - cell "fangzhou" [ref=e142]
+                        - cell "doubao-seed-2.0-pro" [ref=e143]
+                        - cell "0" [ref=e144]
+                        - cell "0" [ref=e145]
+                        - cell "100" [ref=e146]
+                    - row "lb-glm5 sticky ali glm-5 0 0 100" [ref=e147]:
+                        - cell "lb-glm5 sticky" [ref=e148]:
+                            - text: lb-glm5
+                            - text: sticky
+                        - cell "ali" [ref=e149]
+                        - cell "glm-5" [ref=e150]
+                        - cell "0" [ref=e151]
+                        - cell "0" [ref=e152]
+                        - cell "100" [ref=e153]
+                    - row "baidu qianfan-code-latest 0 0 100" [ref=e154]:
+                        - cell "baidu" [ref=e155]
+                        - cell "qianfan-code-latest" [ref=e156]
+                        - cell "0" [ref=e157]
+                        - cell "0" [ref=e158]
+                        - cell "100" [ref=e159]
+                    - row "fangzhou doubao-seed-2.0-pro 0 0 100" [ref=e160]:
+                        - cell "fangzhou" [ref=e161]
+                        - cell "doubao-seed-2.0-pro" [ref=e162]
+                        - cell "0" [ref=e163]
+                        - cell "0" [ref=e164]
+                        - cell "100" [ref=e165]
+                    - row "lb-kimik2p5 sticky ali kimi-k2.5 0 0 100" [ref=e166]:
+                        - cell "lb-kimik2p5 sticky" [ref=e167]:
+                            - text: lb-kimik2p5
+                            - text: sticky
+                        - cell "ali" [ref=e168]
+                        - cell "kimi-k2.5" [ref=e169]
+                        - cell "0" [ref=e170]
+                        - cell "0" [ref=e171]
+                        - cell "100" [ref=e172]
+                    - row "baidu kimi-k2.5 0 0 100" [ref=e173]:
+                        - cell "baidu" [ref=e174]
+                        - cell "kimi-k2.5" [ref=e175]
+                        - cell "0" [ref=e176]
+                        - cell "0" [ref=e177]
+                        - cell "100" [ref=e178]
+        - heading "请求量占比" [level=2] [ref=e88]
+    - generic [ref=e91]:
+        - heading "访问日志 (Access Logs)" [level=2] [ref=e92]
+        - table [ref=e94]:
+            - rowgroup [ref=e95]:
+                - row "时间戳 路由 提供商 模型 状态码 TTFB 耗时 会话ID" [ref=e96]:
+                    - columnheader "时间戳" [ref=e97]
+                    - columnheader "路由" [ref=e98]
+                    - columnheader "提供商" [ref=e99]
+                    - columnheader "模型" [ref=e100]
+                    - columnheader "状态码" [ref=e101]
+                    - columnheader "TTFB" [ref=e102]
+                    - columnheader "耗时" [ref=e103]
+                    - columnheader "会话ID" [ref=e104]
+            - rowgroup [ref=e105]:
+                - row "等待日志数据..." [ref=e106]:
+                    - cell "等待日志数据..." [ref=e107]
+    - contentinfo [ref=e108]: 自动更新间隔：10秒轮询

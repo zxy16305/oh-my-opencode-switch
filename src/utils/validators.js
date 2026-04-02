@@ -99,23 +99,20 @@ const modelArraySchema = z
   .array(nonEmptyStringSchema)
   .min(1, 'Model array must contain at least one model');
 
-export const modelValueSchema = z.union([
-  nonEmptyStringSchema,
-  modelArraySchema,
-]);
+export const modelValueSchema = z.union([nonEmptyStringSchema, modelArraySchema]);
 
 export function validateModelValue(value) {
   try {
     // First, parse with the schema to validate types
     const parsed = modelValueSchema.parse(value);
-    
+
     // Handle deduplication for arrays
     let data = parsed;
     if (Array.isArray(data)) {
       // Remove duplicates while preserving order
       data = [...new Set(data)];
     }
-    
+
     return { success: true, data };
   } catch (error) {
     if (error instanceof z.ZodError) {

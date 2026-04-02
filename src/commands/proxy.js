@@ -89,7 +89,7 @@ export async function startAction(options = {}) {
         const keywords = provider.toLowerCase().split(/[-_\s]+/);
         
         if (keywords.includes('kimi') || keywords.includes('moonshot')) {
-          suggestions.push('npm install -g @ai-sdk/moonshot');
+          suggestions.push('npm install -g @ai-sdk/moonshotai');
         }
         if (keywords.includes('deepseek')) {
           suggestions.push('npm install -g @ai-sdk/deepseek');

@@ -4,7 +4,7 @@ import {
   variableNameSchema,
   validateVariableName,
   modelValueSchema,
-  validateModelValue
+  validateModelValue,
 } from '../../../src/utils/validators.js';
 
 describe('variableNameSchema', () => {

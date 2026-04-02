@@ -35,8 +35,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SDK_PACKAGE_PATTERNS = {
   // Pattern: provider keyword -> possible package names (in priority order)
   // These are naming conventions, not hardcoded providers
-  kimi: ['@ai-sdk/moonshot', '@ai-sdk/kimi'],
-  moonshot: ['@ai-sdk/moonshot'],
+  kimi: ['@ai-sdk/moonshotai', '@ai-sdk/kimi'],
+  moonshot: ['@ai-sdk/moonshotai'],
   deepseek: ['@ai-sdk/deepseek'],
   zhipu: ['@ai-sdk/gateway', '@ai-sdk/zhipu'],
   glm: ['@ai-sdk/gateway', '@ai-sdk/zhipu'],

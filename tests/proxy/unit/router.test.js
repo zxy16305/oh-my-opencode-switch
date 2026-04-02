@@ -25,6 +25,10 @@ import {
   upstreamSchema,
   routeSchema,
   routesConfigSchema,
+  getDynamicWeight,
+  setDynamicWeight,
+  getUpstreamRequestCountInWindow,
+  getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
@@ -365,6 +369,172 @@ describe('Router – selectUpstreamSticky()', () => {
     assert.ok(['a', 'b'].includes(result2.id));
 
     assert.equal(getSessionMapSize(), 2, 'Should have 2 independent session entries');
+  });
+
+  // -------------------------------------------------------------------------
+  // Weight-aware sticky distribution tests (verify fix for weight bug)
+  // -------------------------------------------------------------------------
+
+  test('static weight distribution respects weight ratios', () => {
+    // Setup: 3 providers with weights 100, 100, 8
+    // Expected: weight=8 provider should get ~2-8% of requests
+    const upstreams = [
+      makeUpstream({ id: 'heavy-a', weight: 100 }),
+      makeUpstream({ id: 'heavy-b', weight: 100 }),
+      makeUpstream({ id: 'light', weight: 8 }),
+    ];
+
+    // Simulate 1000 unique sessions (each session gets its own upstream)
+    const counts = { 'heavy-a': 0, 'heavy-b': 0, light: 0 };
+    for (let i = 0; i < 1000; i++) {
+      const selected = selectUpstreamSticky(upstreams, 'weight-route', `sess-${i}`);
+      counts[selected.id]++;
+    }
+
+    // weight=8 provider has 8/(100+100+8) = ~3.8% expected share
+    // Allow 2-8% range to account for statistical variance
+    const lightPercent = (counts['light'] / 1000) * 100;
+    assert.ok(
+      lightPercent >= 2 && lightPercent <= 8,
+      `Expected light provider to get 2-8% of requests, got ${lightPercent.toFixed(2)}% (${counts['light']}/1000)`
+    );
+
+    // Heavy providers should each get ~48%
+    const heavyAPercent = (counts['heavy-a'] / 1000) * 100;
+    const heavyBPercent = (counts['heavy-b'] / 1000) * 100;
+    assert.ok(
+      heavyAPercent >= 40 && heavyAPercent <= 55,
+      `Expected heavy-a to get 40-55% of requests, got ${heavyAPercent.toFixed(2)}%`
+    );
+    assert.ok(
+      heavyBPercent >= 40 && heavyBPercent <= 55,
+      `Expected heavy-b to get 40-55% of requests, got ${heavyBPercent.toFixed(2)}%`
+    );
+  });
+
+  test('weight recovery redistributes traffic after weight increase', () => {
+    // Setup: provider with low weight initially, then weight increases
+    const upstreams = [
+      makeUpstream({ id: 'main', weight: 100 }),
+      makeUpstream({ id: 'recovering', weight: 8 }),
+    ];
+
+    // Phase 1: Distribute sessions with low weight
+    for (let i = 0; i < 100; i++) {
+      selectUpstreamSticky(upstreams, 'recovery-route', `phase1-sess-${i}`);
+    }
+
+    // Get initial distribution
+    const phase1Counts = { main: 0, recovering: 0 };
+    for (let i = 0; i < 100; i++) {
+      phase1Counts['main'] += getUpstreamRequestCountInWindow('recovery-route', 'main');
+      phase1Counts['recovering'] += getUpstreamRequestCountInWindow('recovery-route', 'recovering');
+    }
+
+    // Phase 2: Change weight from 8 to 100
+    const updatedUpstreams = [
+      makeUpstream({ id: 'main', weight: 100 }),
+      makeUpstream({ id: 'recovering', weight: 100 }),
+    ];
+
+    // Reset sliding window to simulate time passage
+    resetRoundRobinCounters();
+
+    // Distribute new sessions with equal weights
+    const phase2Counts = { main: 0, recovering: 0 };
+    for (let i = 0; i < 200; i++) {
+      const selected = selectUpstreamSticky(updatedUpstreams, 'recovery-route', `phase2-sess-${i}`);
+      phase2Counts[selected.id]++;
+    }
+
+    // With equal weights, both should get roughly equal share (40-60%)
+    const recoveringPercent = (phase2Counts['recovering'] / 200) * 100;
+    assert.ok(
+      recoveringPercent >= 40 && recoveringPercent <= 60,
+      `Expected recovering provider to get 40-60% after weight recovery, got ${recoveringPercent.toFixed(2)}%`
+    );
+  });
+
+  test('sliding window filters old requests correctly', () => {
+    const upstreams = [
+      makeUpstream({ id: 'a', weight: 100 }),
+      makeUpstream({ id: 'b', weight: 8 }),
+    ];
+
+    // Simulate old requests (manually add timestamps > 10 minutes ago)
+    const oldTimestamp = Date.now() - 700000; // 11+ minutes ago
+    const slidingCounts = getUpstreamSlidingWindowCounts();
+
+    // Add old requests for upstream 'a'
+    const keyA = 'window-route:a';
+    slidingCounts.set(keyA, [
+      { timestamp: oldTimestamp },
+      { timestamp: oldTimestamp },
+      { timestamp: oldTimestamp },
+    ]);
+
+    // Add recent requests for upstream 'b'
+    const keyB = 'window-route:b';
+    slidingCounts.set(keyB, [{ timestamp: Date.now() }]);
+
+    // Now check: old requests should be filtered out
+    const countA = getUpstreamRequestCountInWindow('window-route', 'a');
+    const countB = getUpstreamRequestCountInWindow('window-route', 'b');
+
+    // Old requests for 'a' should be filtered (countA = 0)
+    assert.equal(countA, 0, 'Old requests should be filtered from sliding window');
+
+    // Recent request for 'b' should count (countB = 1)
+    assert.equal(countB, 1, 'Recent requests should remain in sliding window');
+
+    // New session selection should favor 'a' (since it has fewer recent requests)
+    resetRoundRobinCounters();
+    const selected = selectUpstreamSticky(upstreams, 'window-route', 'new-session');
+    assert.equal(
+      selected.id,
+      'a',
+      'Should select upstream with fewer recent requests (weight-aware)'
+    );
+  });
+
+  test('dynamic weight affects sticky selection', () => {
+    const upstreams = [
+      makeUpstream({ id: 'normal', weight: 100 }),
+      makeUpstream({ id: 'penalized', weight: 100 }),
+    ];
+
+    // Set dynamic weight: normal=100, penalized=10
+    setDynamicWeight('dyn-route', 'normal', 100);
+    setDynamicWeight('dyn-route', 'penalized', 10);
+
+    const dynamicWeightConfig = {
+      enabled: true,
+      initialWeight: 100,
+      minWeight: 10,
+      latencyThreshold: 1.5,
+    };
+
+    // Distribute sessions with dynamic weight config
+    const counts = { normal: 0, penalized: 0 };
+    for (let i = 0; i < 50; i++) {
+      const selected = selectUpstreamSticky(
+        upstreams,
+        'dyn-route',
+        `dyn-sess-${i}`,
+        null,
+        0,
+        2,
+        dynamicWeightConfig
+      );
+      counts[selected.id]++;
+    }
+
+    // With penalized having weight=10 vs normal=100, penalized should get fewer requests
+    const penalizedPercent = (counts['penalized'] / 50) * 100;
+    assert.ok(
+      penalizedPercent <= 20,
+      `Expected penalized upstream to get <=20% of requests with low dynamic weight, got ${penalizedPercent.toFixed(2)}%`
+    );
   });
 });
 

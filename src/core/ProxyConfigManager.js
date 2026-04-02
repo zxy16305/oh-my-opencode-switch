@@ -7,6 +7,8 @@ import { readJson, writeJson, exists, ensureDir } from '../utils/files.js';
 import { validateProxyConfig } from '../utils/proxy-validators.js';
 import { ConfigError, FileSystemError } from '../utils/errors.js';
 import { getOosDir } from '../utils/paths.js';
+import { discoverProviderBaseURL } from '../utils/provider-discovery.js';
+import { logger } from '../utils/logger.js';
 
 export class ProxyConfigManager {
   constructor() {
@@ -125,24 +127,38 @@ export class ProxyConfigManager {
     const resolvedRoutes = {};
 
     for (const [routeName, route] of Object.entries(routes || {})) {
-      const resolvedUpstreams = (route.upstreams || []).map((upstream, index) => {
-        const provider = upstream.provider;
-        const info = providerInfo[provider] || {};
+      const resolvedUpstreams = await Promise.all(
+        (route.upstreams || []).map(async (upstream, index) => {
+          const provider = upstream.provider;
+          const info = providerInfo[provider] || {};
 
-        if (!upstream.baseURL && info.baseURL) {
-          upstream = { ...upstream, baseURL: info.baseURL };
-        }
+          if (!upstream.baseURL && info.baseURL) {
+            upstream = { ...upstream, baseURL: info.baseURL };
+          }
 
-        if (!upstream.apiKey && info.apiKey) {
-          upstream = { ...upstream, apiKey: info.apiKey };
-        }
+          if (!upstream.baseURL) {
+            try {
+              const discoveredBaseURL = await discoverProviderBaseURL(provider);
+              if (discoveredBaseURL) {
+                upstream = { ...upstream, baseURL: discoveredBaseURL };
+                logger.debug(`Discovered baseURL for ${provider}: ${discoveredBaseURL}`);
+              }
+            } catch (error) {
+              logger.debug(`Failed to discover baseURL for ${provider}: ${error.message}`);
+            }
+          }
 
-        if (!upstream.id) {
-          upstream = { ...upstream, id: `${provider}-${upstream.model || index}` };
-        }
+          if (!upstream.apiKey && info.apiKey) {
+            upstream = { ...upstream, apiKey: info.apiKey };
+          }
 
-        return upstream;
-      });
+          if (!upstream.id) {
+            upstream = { ...upstream, id: `${provider}-${upstream.model || index}` };
+          }
+
+          return upstream;
+        })
+      );
 
       resolvedRoutes[routeName] = {
         ...route,

@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>负载均衡可视化</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       * {
         margin: 0;
@@ -24,9 +23,7 @@
         font-size: 1.8rem;
       }
       .container {
-        display: grid;
-        grid-template-columns: 1.2fr 1fr;
-        gap: 20px;
+        display: block;
         margin-top: 20px;
       }
       .card {
@@ -200,14 +197,17 @@
               <th>Requests</th>
               <th>Sessions</th>
               <th>Weight</th>
+              <th>Errors</th>
+              <th>Avg TTFB</th>
+              <th>TTFB P95</th>
+              <th>TTFB P99</th>
+              <th>Avg Duration</th>
+              <th>Duration P95</th>
+              <th>Duration P99</th>
             </tr>
           </thead>
           <tbody id="dataTable"></tbody>
         </table>
-      </div>
-      <div class="card">
-        <h2>请求量占比</h2>
-        <canvas id="pieChart"></canvas>
       </div>
     </div>
     <div class="container" style="margin-top: 20px">
@@ -240,7 +240,6 @@
     </div>
     <footer>自动更新间隔：10秒轮询</footer>
     <script>
-      let chart = null;
       const POLL_INTERVAL = 10000;
 
       function aggregateUpstreams(data) {
@@ -282,6 +281,13 @@
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.errorCount || 0}</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.avgTtfb || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.ttfbP95 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.ttfbP99 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.avgDuration || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.durationP95 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.durationP99 || 0}ms</td>
             `;
             } else {
               tr.innerHTML = `
@@ -290,6 +296,13 @@
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.errorCount || 0}</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.avgTtfb || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.ttfbP95 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.ttfbP99 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.avgDuration || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.durationP95 || 0}ms</td>
+              <td style="text-align:right;${groupBorderStyle}">${u.durationP99 || 0}ms</td>
             `;
             }
 
@@ -298,54 +311,12 @@
         }
       }
 
-      function renderPieChart(upstreams) {
-        const ctx = document.getElementById('pieChart').getContext('2d');
-        const labels = upstreams.map((u) => `${u.provider || '-'}/${u.model || '-'}`);
-        const data = upstreams.map((u) => u.requestCount);
-        const colors = [
-          '#60a5fa',
-          '#34d399',
-          '#fbbf24',
-          '#f87171',
-          '#a78bfa',
-          '#fb923c',
-          '#2dd4bf',
-          '#94a3b8',
-          '#f472b6',
-        ];
-
-        if (chart) chart.destroy();
-        chart = new Chart(ctx, {
-          type: 'pie',
-          data: {
-            labels,
-            datasets: [
-              {
-                data,
-                backgroundColor: colors.slice(0, labels.length),
-                borderWidth: 2,
-                borderColor: '#fff',
-              },
-            ],
-          },
-          options: {
-            animation: false,
-            responsive: true,
-            plugins: {
-              legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } },
-              tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12 },
-            },
-          },
-        });
-      }
-
       async function fetchStats() {
         try {
           const res = await fetch('/_internal/stats');
           const data = await res.json();
           const upstreams = aggregateUpstreams(data);
           renderTable(upstreams);
-          renderPieChart(upstreams);
           document.getElementById('updated').textContent =
             `最后更新: ${new Date(data.timestamp).toLocaleString()}`;
         } catch (err) {

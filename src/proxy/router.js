@@ -886,32 +886,141 @@ export function selectUpstreamSticky(
       // Increment global request count FIRST (before checking)
       incrementUpstreamRequestCount(routeKey, existing.upstreamId);
 
-      // Every 10 requests, check global request counts for soft rotation
+      // Every 10 requests, check sliding window request counts for soft rotation
       if (existing.requestCount % 10 === 0) {
-        const requestCounts = getUpstreamRequestCounts();
-        const routeRequestCounts = requestCounts.get(routeKey);
+        // Calculate current upstream's score using sliding window count and effectiveWeight
+        const currentRequestCount = getUpstreamRequestCountInWindow(routeKey, existing.upstreamId);
+        const currentStaticWeight = mapped.weight ?? 1;
+        let currentEffectiveWeight = currentStaticWeight;
 
-        // Get current upstream's global request count (now includes current request)
-        const currentRequestCount = routeRequestCounts?.get(existing.upstreamId) ?? 0;
+        // Apply dynamic weight for current upstream if enabled
+        if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
+          const dynWeight = getDynamicWeight(
+            routeKey,
+            existing.upstreamId,
+            dynamicWeightConfig.initialWeight
+          );
+          currentEffectiveWeight = Math.min(currentStaticWeight, dynWeight);
 
-        // Find candidate with fewest requests (excluding current upstream)
-        let minRequestCount = Infinity;
-        let minRequestUpstream = null;
+          // Apply error-based weight penalty if error reduction is enabled
+          const errorConfig = dynamicWeightConfig.errorWeightReduction;
+          if (errorConfig && errorConfig.enabled) {
+            const errorCount = getErrorRate(
+              routeKey,
+              existing.upstreamId,
+              errorConfig.errorWindowMs
+            );
+            if (errorCount > 0) {
+              const errorWeight = Math.max(
+                errorConfig.minWeight,
+                dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
+              );
+              currentEffectiveWeight = Math.min(currentEffectiveWeight, errorWeight);
+            }
+          }
 
-        for (const upstream of upstreams) {
-          if (upstream.id === existing.upstreamId) continue;
-          const count = routeRequestCounts?.get(upstream.id) ?? 0;
-          if (count < minRequestCount) {
-            minRequestCount = count;
-            minRequestUpstream = upstream;
+          // Apply latency-based weight penalty
+          const latencyWindowMs = 60000; // 1 minute
+          const avgLatency = getLatencyAvg(routeKey, existing.upstreamId, latencyWindowMs);
+          if (avgLatency > 0) {
+            // Find the fastest upstream's average latency
+            let fastestLatency = Infinity;
+            for (const u of upstreams) {
+              const uAvgLatency = getLatencyAvg(routeKey, u.id, latencyWindowMs);
+              if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
+                fastestLatency = uAvgLatency;
+              }
+            }
+
+            // Apply penalty if this upstream is significantly slower than fastest
+            if (
+              fastestLatency !== Infinity &&
+              avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
+            ) {
+              const latencyPenalty = Math.max(
+                1,
+                Math.floor((avgLatency / fastestLatency - 1) * 10)
+              );
+              currentEffectiveWeight = Math.max(1, currentEffectiveWeight - latencyPenalty);
+            }
           }
         }
 
-        // Switch if candidate has fewer requests than current
-        if (minRequestUpstream && minRequestCount < currentRequestCount) {
+        const currentScore = currentRequestCount / currentEffectiveWeight;
+
+        // Find candidate with lowest score (excluding current upstream)
+        let minScore = Infinity;
+        let minScoreUpstream = null;
+
+        for (const upstream of upstreams) {
+          if (upstream.id === existing.upstreamId) continue;
+
+          const requestCount = getUpstreamRequestCountInWindow(routeKey, upstream.id);
+          const staticWeight = upstream.weight ?? 1;
+          let effectiveWeight = staticWeight;
+
+          // Apply dynamic weight if enabled
+          if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
+            const dynWeight = getDynamicWeight(
+              routeKey,
+              upstream.id,
+              dynamicWeightConfig.initialWeight
+            );
+            effectiveWeight = Math.min(staticWeight, dynWeight);
+
+            // Apply error-based weight penalty if error reduction is enabled
+            const errorConfig = dynamicWeightConfig.errorWeightReduction;
+            if (errorConfig && errorConfig.enabled) {
+              const errorCount = getErrorRate(routeKey, upstream.id, errorConfig.errorWindowMs);
+              if (errorCount > 0) {
+                const errorWeight = Math.max(
+                  errorConfig.minWeight,
+                  dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
+                );
+                effectiveWeight = Math.min(effectiveWeight, errorWeight);
+              }
+            }
+
+            // Apply latency-based weight penalty
+            const latencyWindowMs = 60000; // 1 minute
+            const avgLatency = getLatencyAvg(routeKey, upstream.id, latencyWindowMs);
+            if (avgLatency > 0) {
+              // Find the fastest upstream's average latency
+              let fastestLatency = Infinity;
+              for (const u of upstreams) {
+                const uAvgLatency = getLatencyAvg(routeKey, u.id, latencyWindowMs);
+                if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
+                  fastestLatency = uAvgLatency;
+                }
+              }
+
+              // Apply penalty if this upstream is significantly slower than fastest
+              if (
+                fastestLatency !== Infinity &&
+                avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
+              ) {
+                const latencyPenalty = Math.max(
+                  1,
+                  Math.floor((avgLatency / fastestLatency - 1) * 10)
+                );
+                effectiveWeight = Math.max(1, effectiveWeight - latencyPenalty);
+              }
+            }
+          }
+
+          const score = requestCount / effectiveWeight;
+
+          if (score < minScore) {
+            minScore = score;
+            minScoreUpstream = upstream;
+          }
+        }
+
+        // Switch if candidate has lower score than current
+        if (minScoreUpstream && minScore < currentScore) {
           decrementSessionCount(routeKey, existing.upstreamId);
-          incrementSessionCount(routeKey, minRequestUpstream.id);
-          existing.upstreamId = minRequestUpstream.id;
+          incrementSessionCount(routeKey, minScoreUpstream.id);
+          existing.upstreamId = minScoreUpstream.id;
           existing.requestCount = 1; // Reset count after switch
         }
         // Otherwise keep accumulating requestCount

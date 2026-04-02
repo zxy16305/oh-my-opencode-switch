@@ -156,6 +156,14 @@ const latencyState = new Map();
 const upstreamRequestCounts = new Map();
 
 /**
+ * Upstream sliding window request counts
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: Array of {timestamp: number}
+ * @type {Map<string, Array<{timestamp: number}>>}
+ */
+const upstreamSlidingWindowCounts = new Map();
+
+/**
  * Recovery timers per route
  * Key: routeKey
  * Value: NodeJS.Timeout
@@ -271,6 +279,29 @@ export function getLatencyAvg(routeKey, upstreamId, windowMs = 600000) {
 
   const sum = state.latencies.reduce((acc, latency) => acc + latency.duration, 0);
   return sum / state.latencies.length;
+}
+
+/**
+ * Get request count for an upstream within a sliding time window
+ * @param {string} routeKey - The route key (virtual model name)
+ * @param {string} upstreamId - The upstream ID
+ * @param {number} windowMs - Sliding window size in milliseconds (default: 10 minutes)
+ * @returns {number} Number of requests within the window
+ */
+export function getUpstreamRequestCountInWindow(routeKey, upstreamId, windowMs = 600000) {
+  const key = `${routeKey}:${upstreamId}`;
+  const timestamps = upstreamSlidingWindowCounts.get(key);
+  if (!timestamps || timestamps.length === 0) {
+    return 0;
+  }
+
+  const now = Date.now();
+  const windowStart = now - windowMs;
+
+  const filtered = timestamps.filter((entry) => entry.timestamp >= windowStart);
+  upstreamSlidingWindowCounts.set(key, filtered);
+
+  return filtered.length;
 }
 
 /**
@@ -402,6 +433,12 @@ function getOrCreateRequestCountMap(routeKey) {
 function incrementUpstreamRequestCount(routeKey, upstreamId) {
   const countMap = getOrCreateRequestCountMap(routeKey);
   countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
+
+  const key = `${routeKey}:${upstreamId}`;
+  if (!upstreamSlidingWindowCounts.has(key)) {
+    upstreamSlidingWindowCounts.set(key, []);
+  }
+  upstreamSlidingWindowCounts.get(key).push({ timestamp: Date.now() });
 }
 
 /**
@@ -1126,6 +1163,14 @@ export function getUpstreamSessionCounts() {
  */
 export function getUpstreamRequestCounts() {
   return upstreamRequestCounts;
+}
+
+/**
+ * Get current upstream sliding window request counts (useful for testing/monitoring)
+ * @returns {Map<string, Array<{timestamp: number}>>}
+ */
+export function getUpstreamSlidingWindowCounts() {
+  return upstreamSlidingWindowCounts;
 }
 
 /**

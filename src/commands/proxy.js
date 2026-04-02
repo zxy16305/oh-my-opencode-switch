@@ -80,13 +80,53 @@ export async function startAction(options = {}) {
   // Resolve routes from opencode config (fill baseURL/apiKey if not specified)
   const routes = await configManager.resolveRoutes(config.routes || {});
 
-  // Validate resolved routes have required fields
+// Validate resolved routes have required fields
   for (const [routeName, route] of Object.entries(routes)) {
     for (const upstream of route.upstreams || []) {
       if (!upstream.baseURL) {
+        const provider = upstream.provider || 'unknown';
+        const suggestions = [];
+        const keywords = provider.toLowerCase().split(/[-_\s]+/);
+        
+        if (keywords.includes('kimi') || keywords.includes('moonshot')) {
+          suggestions.push('npm install -g @ai-sdk/moonshot');
+        }
+        if (keywords.includes('deepseek')) {
+          suggestions.push('npm install -g @ai-sdk/deepseek');
+        }
+        if (keywords.includes('zhipu') || keywords.includes('glm')) {
+          suggestions.push('npm install -g @ai-sdk/gateway');
+        }
+        
+        suggestions.push(`Add "baseURL" to upstream "${upstream.id}" in proxy-config.json`);
+        suggestions.push(`Or configure provider "${provider}" in opencode.json with baseURL`);
+        
         logger.error(
-          `Upstream "${upstream.id || upstream.provider}" in route "${routeName}" missing baseURL. ` +
-            `Add it to proxy-config.json or configure provider in opencode.json`
+          `Upstream "${upstream.id || upstream.provider}" in route "${routeName}" missing baseURL.\n` +
+          `Provider "${provider}" not found or not configured.\n\n` +
+          `Suggestions:\n` +
+          suggestions.map(s => `  • ${s}`).join('\n')
+        );
+        process.exit(1);
+      }
+    }
+  }
+        if (keywords.includes('deepseek')) {
+          suggestions.push('npm install -g @ai-sdk/deepseek');
+        }
+        if (keywords.includes('zhipu') || keywords.includes('glm')) {
+          suggestions.push('npm install -g @ai-sdk/gateway');
+        }
+
+        // Generic fallback
+        suggestions.push(`Add "baseURL" to upstream "${upstream.id}" in proxy-config.json`);
+        suggestions.push(`Or configure provider "${provider}" in opencode.json with baseURL`);
+
+        logger.error(
+          `Upstream "${upstream.id || upstream.provider}" in route "${routeName}" missing baseURL.\n` +
+            `Provider "${provider}" not found or not configured.\n\n` +
+            `Suggestions:\n` +
+            suggestions.map((s) => `  • ${s}`).join('\n')
         );
         process.exit(1);
       }

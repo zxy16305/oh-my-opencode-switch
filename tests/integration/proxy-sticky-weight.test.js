@@ -13,8 +13,6 @@ import assert from 'node:assert/strict';
 
 import {
   resetRoundRobinCounters,
-  getDynamicWeight,
-  setDynamicWeight,
   routeRequest,
   getUpstreamRequestCounts,
   getSessionUpstreamMap,
@@ -196,9 +194,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
 
     // Verify provider-b now gets more traffic (~50%)
     const phase2RecoveredPercentage = phase2Distribution['provider-b'];
-
-    // Calculate the increase in share
-    const shareIncrease = phase2RecoveredPercentage - phase1LowWeightPercentage;
 
     // After recovery, should see increased traffic (from ~7.4% to ~50%)
     assert.ok(

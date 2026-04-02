@@ -25,7 +25,6 @@ import {
   upstreamSchema,
   routeSchema,
   routesConfigSchema,
-  getDynamicWeight,
   setDynamicWeight,
   getUpstreamRequestCountInWindow,
   getUpstreamSlidingWindowCounts,

@@ -112,10 +112,6 @@ export class ProxyConfigManager {
   }
 
   _authKeyToProviderName(authKey) {
-    const parts = authKey.split('-');
-    if (parts.length > 0) {
-      return parts[0];
-    }
     return authKey;
   }
 

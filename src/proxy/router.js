@@ -148,6 +148,19 @@ const errorState = new Map();
 const latencyState = new Map();
 
 /**
+ * Statistics state per upstream per route
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: { ttfbs: Array<number>, durations: Array<number>, errorCount: number }
+ * @type {Map<string, { ttfbs: Array<number>, durations: Array<number>, errorCount: number }>}
+ */
+const statsState = new Map();
+
+/**
+ * Maximum number of samples to keep per upstream (sliding window)
+ */
+const MAX_SAMPLES = 1000;
+
+/**
  * Upstream request counts
  * Key: routeKey (virtual model name)
  * Value: Map<upstreamId, requestCount>
@@ -183,6 +196,10 @@ function getOrCreateCountMap(routeKey) {
  */
 export function recordUpstreamError(routeKey, upstreamId, statusCode) {
   const key = `${routeKey}:${upstreamId}`;
+  const entry = statsState.get(key) || { ttfbs: [], durations: [], errorCount: 0 };
+  entry.errorCount++;
+  statsState.set(key, entry);
+
   if (!errorState.has(key)) {
     errorState.set(key, { errors: [] });
   }
@@ -232,10 +249,25 @@ export function getErrorState() {
  * Record a latency measurement for an upstream
  * @param {string} routeKey - The route key (virtual model name)
  * @param {string} upstreamId - The upstream identifier
+ * @param {number} ttfb - Time to first byte in milliseconds
  * @param {number} duration - Request duration in milliseconds
  */
-export function recordUpstreamLatency(routeKey, upstreamId, duration) {
+export function recordUpstreamLatency(routeKey, upstreamId, ttfb, duration) {
   const key = `${routeKey}:${upstreamId}`;
+  const entry = statsState.get(key) || { ttfbs: [], durations: [], errorCount: 0 };
+
+  if (ttfb != null && duration != null) {
+    entry.ttfbs.push(ttfb);
+    entry.durations.push(duration);
+
+    if (entry.ttfbs.length > MAX_SAMPLES) {
+      entry.ttfbs.shift();
+      entry.durations.shift();
+    }
+  }
+
+  statsState.set(key, entry);
+
   if (!latencyState.has(key)) {
     latencyState.set(key, { latencies: [] });
   }
@@ -279,6 +311,58 @@ export function getLatencyAvg(routeKey, upstreamId, windowMs = 600000) {
  */
 export function getLatencyState() {
   return latencyState;
+}
+
+/**
+ * Calculate percentile value from a sorted array
+ * @param {Array<number>} sortedArray - Sorted array of numbers
+ * @param {number} percentile - Percentile to calculate (0-100)
+ * @returns {number} Calculated percentile value
+ */
+function calculatePercentile(sortedArray, percentile) {
+  if (sortedArray.length === 0) return 0;
+  if (sortedArray.length === 1) return sortedArray[0];
+
+  const index = (percentile / 100) * (sortedArray.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const fraction = index - lower;
+
+  if (lower === upper) return sortedArray[lower];
+  return sortedArray[lower] + fraction * (sortedArray[upper] - sortedArray[lower]);
+}
+
+/**
+ * Get aggregated upstream statistics
+ * @returns {Map<string, object>} Statistics per upstream key
+ */
+export function getUpstreamStats() {
+  const results = new Map();
+
+  for (const [key, entry] of statsState) {
+    const [routeName, upstreamId] = key.split(':');
+
+    const ttfbs = [...entry.ttfbs].sort((a, b) => a - b);
+    const durations = [...entry.durations].sort((a, b) => a - b);
+
+    results.set(key, {
+      routeName,
+      upstreamId,
+      avgTtfb: ttfbs.length > 0 ? Math.round(ttfbs.reduce((a, b) => a + b, 0) / ttfbs.length) : 0,
+      ttfbP95: calculatePercentile(ttfbs, 95),
+      ttfbP99: calculatePercentile(ttfbs, 99),
+      avgDuration:
+        durations.length > 0
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+          : 0,
+      durationP95: calculatePercentile(durations, 95),
+      durationP99: calculatePercentile(durations, 99),
+      sampleCount: ttfbs.length,
+      errorCount: entry.errorCount,
+    });
+  }
+
+  return results;
 }
 
 /**
@@ -1091,6 +1175,7 @@ export function resetRoundRobinCounters() {
   dynamicWeightState.clear();
   errorState.clear();
   latencyState.clear();
+  statsState.clear();
   recoveryTimers.forEach((timer) => clearInterval(timer));
   recoveryTimers.clear();
   stopSessionCleanup();

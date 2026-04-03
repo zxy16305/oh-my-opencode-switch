@@ -447,39 +447,6 @@ function calculatePercentile(sortedArray, percentile) {
 }
 
 /**
- * Get aggregated upstream statistics
- * @returns {Map<string, object>} Statistics per upstream key
- */
-export function getUpstreamStats() {
-  const results = new Map();
-
-  for (const [key, entry] of statsState) {
-    const [routeName, upstreamId] = key.split(':');
-
-    const ttfbs = [...entry.ttfbs].sort((a, b) => a - b);
-    const durations = [...entry.durations].sort((a, b) => a - b);
-
-    results.set(key, {
-      routeName,
-      upstreamId,
-      avgTtfb: ttfbs.length > 0 ? Math.round(ttfbs.reduce((a, b) => a + b, 0) / ttfbs.length) : 0,
-      ttfbP95: calculatePercentile(ttfbs, 95),
-      ttfbP99: calculatePercentile(ttfbs, 99),
-      avgDuration:
-        durations.length > 0
-          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-          : 0,
-      durationP95: calculatePercentile(durations, 95),
-      durationP99: calculatePercentile(durations, 99),
-      sampleCount: ttfbs.length,
-      errorCount: entry.errorCount,
-    });
-  }
-
-  return results;
-}
-
-/**
  * 选择负载最低的 upstream（考虑动态权重）
  * effectiveWeight = min(staticWeight, latencyWeight, errorWeight)
  * score = sessionCount / effectiveWeight（越低越好）

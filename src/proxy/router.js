@@ -623,3 +623,12 @@ export {
 } from './weight-manager.js';
 
 export { getUpstreamStats, recordUpstreamStats };
+
+export {
+  recordUpstreamError,
+  recordUpstreamLatency,
+  getUpstreamRequestCounts,
+  getUpstreamSlidingWindowCounts,
+} from './stats-collector.js';
+
+export { failoverStickySession } from './failover-handler.js';

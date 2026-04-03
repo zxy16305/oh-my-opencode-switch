@@ -185,19 +185,6 @@ const upstreamSlidingWindowCounts = new Map();
 const recoveryTimers = new Map();
 
 /**
- * Calculate percentile value from an array of numbers
- * @param {Array<number>} arr - Array of numeric values
- * @param {number} p - Percentile to calculate (0-100)
- * @returns {number} Calculated percentile value
- */
-function calculatePercentile(arr, p) {
-  if (!arr || arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const index = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, index)];
-}
-
-/**
  * Record upstream performance statistics (TTFB, duration, errors)
  * @param {string} routeKey - Virtual model/route key
  * @param {string} upstreamId - Upstream identifier

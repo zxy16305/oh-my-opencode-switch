@@ -29,6 +29,7 @@ import {
   getLatencyAvg,
   getUpstreamRequestCountInWindow,
   incrementUpstreamRequestCount,
+  resetStats,
 } from './stats-collector.js';
 
 /**
@@ -563,11 +564,7 @@ export function resetRoundRobinCounters() {
   sessionUpstreamMap.clear();
   upstreamSessionCounts.clear();
   dynamicWeightState.clear();
-  // TODO: Add these when stats module is created
-  // upstreamRequestCounts.clear();
-  // errorState.clear();
-  // latencyState.clear();
-  // statsState.clear();
+  resetStats();
   recoveryTimers.forEach((timer) => clearInterval(timer));
   recoveryTimers.clear();
   stopSessionCleanup();

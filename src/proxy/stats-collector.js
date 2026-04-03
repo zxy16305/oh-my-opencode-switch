@@ -341,6 +341,17 @@ export function getUpstreamSlidingWindowCounts() {
   return upstreamSlidingWindowCounts;
 }
 
+/**
+ * Reset all statistics state (useful for testing)
+ */
+export function resetStats() {
+  statsState.clear();
+  errorState.clear();
+  latencyState.clear();
+  upstreamRequestCounts.clear();
+  upstreamSlidingWindowCounts.clear();
+}
+
 // Export state for external access (testing/monitoring)
 export {
   statsState,

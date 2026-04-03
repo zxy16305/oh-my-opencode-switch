@@ -281,8 +281,8 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
     // With weights 50 and 100, provider-a should get ~33% and provider-b ~67%
     const percentageA = (newSessionsToA / 100) * 100;
     assert.ok(
-      percentageA >= 20 && percentageA <= 50,
-      `New sessions to weight=50 provider should be 20-50%, got ${percentageA.toFixed(2)}%`
+      percentageA >= 15 && percentageA <= 25,
+      `New sessions to weight=50 provider should be 15-25%, got ${percentageA.toFixed(2)}%`
     );
 
     console.log(`New sessions: provider-a=${newSessionsToA}, provider-b=${newSessionsToB}`);

@@ -264,7 +264,7 @@ export class HourlyErrorTracker {
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
 
     for (const [provider, providerMap] of this.hourlyData) {
-      for (const [hourKey, hourData] of providerMap) {
+      for (const [hourKey, _hourData] of providerMap) {
         const [year, month, day] = hourKey.split('-').map(Number);
         const hourDate = new Date(year, month - 1, day);
 

@@ -11,6 +11,7 @@ import {
   getUpstreamStats,
   recordUpstreamError,
   recordUpstreamLatency,
+  recordUpstreamStats,
   adjustWeightForError,
   adjustWeightForLatency,
   startWeightRecovery,
@@ -470,6 +471,11 @@ export async function startAction(options = {}) {
           },
           onStreamEnd: () => {
             const duration = Date.now() - startTime;
+
+            // Record to memory stats (for dashboard)
+            recordUpstreamStats(model, upstream.id, ttfb, duration, proxyResStatusCode >= 400);
+
+            // Write to log file (for CLI stats)
             logAccess({
               sessionId: sessionId || null,
               provider: upstream.provider,

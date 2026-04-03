@@ -189,6 +189,7 @@ export async function startAction(options = {}) {
     }
 
     const requestCounts = getUpstreamRequestCounts();
+    const slidingWindowCounts = getUpstreamSlidingWindowCounts();
     const sessionCounts = getUpstreamSessionCounts();
     const weightState = getDynamicWeightState();
     const sessionMap = getSessionUpstreamMap();
@@ -214,16 +215,26 @@ export async function startAction(options = {}) {
         upstreams: (route.upstreams || []).map((upstream) => {
           const key = `${routeName}:${upstream.id}`;
           const routeRequestCounts = requestCounts.get(routeName);
+          const routeSlidingCounts = slidingWindowCounts.get(key);
           const routeSessions = sessionCounts.get(routeName);
           const weightEntry = weightState.get(key);
+
+          // 计算最近10分钟请求数
+          const now = Date.now();
+          const windowMs = 10 * 60 * 1000;
+          const recentRequestCount = routeSlidingCounts
+            ? routeSlidingCounts.filter((entry) => now - entry.timestamp <= windowMs).length
+            : 0;
 
           return {
             id: upstream.id,
             provider: upstream.provider,
             model: upstream.model,
             requestCount: routeRequestCounts?.get(upstream.id) ?? 0,
+            recentRequestCount,
             sessionCount: routeSessions?.get(upstream.id) ?? 0,
-            currentWeight: weightEntry?.currentWeight ?? 100,
+            currentWeight: weightEntry?.currentWeight ?? upstream.weight ?? 100,
+            configuredWeight: upstream.weight ?? 100,
           };
         }),
       };

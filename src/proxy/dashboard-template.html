@@ -58,11 +58,13 @@
         min-width: 180px;
       }
       th:nth-child(4),
-      th:nth-child(5) {
+      th:nth-child(5),
+      th:nth-child(6) {
         text-align: right;
         width: 100px;
       }
-      th:nth-child(6) {
+      th:nth-child(7),
+      th:nth-child(8) {
         text-align: right;
         width: 80px;
       }
@@ -198,8 +200,10 @@
               <th>Provider</th>
               <th>Model</th>
               <th>Requests</th>
+              <th>最近10分钟</th>
               <th>Sessions</th>
-              <th>Weight</th>
+              <th>配置权重</th>
+              <th>当前权重</th>
             </tr>
           </thead>
           <tbody id="dataTable"></tbody>
@@ -280,7 +284,9 @@
               <td style="${groupBorderStyle}">${u.provider || '-'}</td>
               <td style="${groupBorderStyle}">${u.model || '-'}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
             `;
             } else {
@@ -288,7 +294,9 @@
               <td style="${groupBorderStyle}">${u.provider || '-'}</td>
               <td style="${groupBorderStyle}">${u.model || '-'}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
             `;
             }
@@ -333,7 +341,20 @@
             responsive: true,
             plugins: {
               legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } },
-              tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12 },
+              tooltip: {
+                backgroundColor: 'rgba(0,0,0,0.8)',
+                padding: 12,
+                callbacks: {
+                  label: function (context) {
+                    const u = upstreams[context.dataIndex];
+                    return [
+                      `${context.label}: ${context.parsed} 次请求`,
+                      `最近10分钟: ${u.recentRequestCount ?? 0} 次`,
+                      `权重: ${u.currentWeight}/${u.configuredWeight ?? u.currentWeight}`,
+                    ];
+                  },
+                },
+              },
             },
           },
         });

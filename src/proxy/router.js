@@ -185,14 +185,6 @@ const upstreamSlidingWindowCounts = new Map();
 const recoveryTimers = new Map();
 
 /**
- * Upstream performance statistics state
- * Key: `${routeKey}:${upstreamId}`
- * Value: { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }
- * @type {Map<string, { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }>}
- */
-const statsState = new Map();
-
-/**
  * Calculate percentile value from an array of numbers
  * @param {Array<number>} arr - Array of numeric values
  * @param {number} p - Percentile to calculate (0-100)

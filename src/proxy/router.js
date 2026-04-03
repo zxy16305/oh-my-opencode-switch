@@ -626,7 +626,13 @@ export { getUpstreamStats, recordUpstreamStats };
 
 export {
   recordUpstreamError,
+  getErrorRate,
+  getErrorState,
   recordUpstreamLatency,
+  getLatencyAvg,
+  getUpstreamRequestCountInWindow,
+  getLatencyState,
+  incrementUpstreamRequestCount,
   getUpstreamRequestCounts,
   getUpstreamSlidingWindowCounts,
 } from './stats-collector.js';

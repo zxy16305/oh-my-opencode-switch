@@ -741,6 +741,65 @@ export async function statsAction(options = {}) {
   }
 }
 
+/**
+ * Show time slot error rates and weight coefficients for providers
+ * @param {object} options - CLI options
+ * @param {string} [options.provider] - Filter by specific provider
+ */
+export async function timeSlotsAction(options = {}) {
+  try {
+    await timeSlotCalculator.load();
+
+    const tracker = timeSlotCalculator.getTracker();
+    let providers = tracker.getProviders();
+
+    if (options.provider) {
+      if (!providers.includes(options.provider)) {
+        logger.warn(`Provider "${options.provider}" not found in time slot data.`);
+        logger.info(`Available providers: ${providers.length > 0 ? providers.join(', ') : 'none'}`);
+        return;
+      }
+      providers = [options.provider];
+    }
+
+    if (providers.length === 0) {
+      logger.info('No time slot data available. Run the proxy server to collect data.');
+      return;
+    }
+
+    const currentHour = timeSlotCalculator.getCurrentHour();
+    const tableData = [];
+
+    for (const provider of providers) {
+      const totalStats = tracker.calculateTotalErrorRate(provider, 7);
+      const hourlyStats = tracker.calculateHourlyErrorRate(provider, currentHour, 7);
+      const currentWeight = timeSlotCalculator.getTimeSlotWeight(provider, currentHour);
+
+      tableData.push({
+        Provider: provider,
+        'Current Hour': currentHour,
+        'Hour Error Rate': hourlyStats.sufficientData
+          ? `${(hourlyStats.errorRate * 100).toFixed(2)}%`
+          : 'N/A (insufficient data)',
+        'Total Error Rate': totalStats.sufficientData
+          ? `${(totalStats.errorRate * 100).toFixed(2)}%`
+          : 'N/A (insufficient data)',
+        'Weight Coeff': currentWeight.toFixed(2),
+        'Data Days': `${hourlyStats.dataDays}/7`,
+      });
+    }
+
+    console.log('\nTime Slot Statistics\n');
+    console.table(tableData);
+    console.log(`\nCurrent hour: ${currentHour}:00`);
+    console.log('Weight coefficients: 0.5 (danger), 1.0 (neutral), 2.0 (good)');
+    console.log('Data based on last 7 days of statistics.\n');
+  } catch (error) {
+    logger.error(`Failed to load time slot data: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url)); // eslint-disable-line no-unused-vars
 
 export async function initAction(options = {}) {
@@ -796,6 +855,12 @@ export function registerProxyCommands(program) {
     .requiredOption('-l, --last <duration>', 'Time range (e.g., 1h, 24h, 7d, 30d)')
     .option('--json', 'Output as JSON')
     .action(statsAction);
+
+  proxy
+    .command('time-slots')
+    .description('Show time slot error rates and weight coefficients for providers')
+    .option('-p, --provider <name>', 'Filter by specific provider')
+    .action(timeSlotsAction);
 
   proxy
     .command('init')

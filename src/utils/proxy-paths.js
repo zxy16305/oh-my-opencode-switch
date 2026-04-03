@@ -30,3 +30,12 @@ export const getOpencodeAuthPath = () => {
   const homeDir = os.homedir();
   return path.join(homeDir, '.local', 'share', 'opencode', 'auth.json');
 };
+
+/**
+ * Get the path to the proxy time slots data file
+ * ~/.config/opencode/.oos/proxy-time-slots.json
+ * @returns {string} Path to proxy-time-slots.json
+ */
+export const getProxyTimeSlotsPath = () => {
+  return path.join(getOosDir(), 'proxy-time-slots.json');
+};

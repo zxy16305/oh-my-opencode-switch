@@ -1,5 +1,6 @@
 import { readJson, writeJson, ensureDir, exists } from './files.js';
-import { getProxyTimeSlotsPath, getOosDir } from './paths.js';
+import { getProxyTimeSlotsPath } from './proxy-paths.js';
+import { getOosDir } from './paths.js';
 
 /**
  * HourlyErrorTracker - Tracks provider request success/failure by hour

@@ -698,6 +698,8 @@ function adjustWeightForError(routeKey, upstreams, config, errorData) {
   if (!upstreams || upstreams.length === 0) return;
   if (!errorData || errorData.size === 0) return;
 
+  // Check original config before merging
+  if (!('errorWeightReduction' in config)) return;
   const mergedConfig = { ...DEFAULT_DYNAMIC_WEIGHT_CONFIG, ...config };
   const errorConfig = mergedConfig.errorWeightReduction;
   if (!errorConfig || !errorConfig.enabled) return;
@@ -728,7 +730,7 @@ function adjustWeightForError(routeKey, upstreams, config, errorData) {
  * @returns {NodeJS.Timeout} Timer ID for cleanup
  */
 function startWeightRecovery(routeKey, upstreams, config) {
-  if (!routeKey || !upstreams || upstreams.length === 0) {
+  if (!routeKey || !upstreams || upstreams.length === 0 || !config) {
     return null;
   }
 

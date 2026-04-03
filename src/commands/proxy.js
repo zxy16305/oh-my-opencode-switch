@@ -6,6 +6,7 @@ import {
   getDynamicWeightState,
   getUpstreamSessionCounts,
   getUpstreamRequestCounts,
+  getUpstreamSlidingWindowCounts,
   getSessionUpstreamMap,
   recordUpstreamError,
   recordUpstreamLatency,

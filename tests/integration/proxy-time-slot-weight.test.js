@@ -389,7 +389,7 @@ describe('Integration – Time Slot Weight Feature', () => {
       assert.strictEqual(result.data['lb-test'].timeSlotWeight.enabled, true);
     });
 
-    test('route config defaults timeSlotWeight.enabled to false', () => {
+    test('route config defaults timeSlotWeight.enabled to true', () => {
       const config = {
         'lb-test': {
           strategy: 'sticky',
@@ -399,7 +399,7 @@ describe('Integration – Time Slot Weight Feature', () => {
 
       const result = validateRoutesConfig(config);
       assert.ok(result.success);
-      assert.strictEqual(result.data['lb-test'].timeSlotWeight.enabled, false);
+      assert.strictEqual(result.data['lb-test'].timeSlotWeight.enabled, true);
     });
   });
 

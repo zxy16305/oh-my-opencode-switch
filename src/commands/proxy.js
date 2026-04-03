@@ -27,6 +27,7 @@ import { logAccess, readLogs, getLogPath, clearLogs, onLogAdded } from '../utils
 import { logBuffer } from '../utils/log-buffer.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { parseTimeRange, generateStats } from '../utils/stats.js';
+import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
@@ -41,7 +42,9 @@ let activeServer = null;
 let activePort = null;
 let circuitBreaker = null;
 let periodicWeightAdjustTimer = null;
+let timeSlotSaveTimer = null;
 const routeRecoveryTimers = new Map();
+const timeSlotCalculator = createTimeSlotWeightCalculator();
 
 /**
  * Start the proxy server
@@ -462,11 +465,17 @@ export async function startAction(options = {}) {
               recordUpstreamError(model, upstream.id, proxyRes.statusCode);
               const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
               adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
+              if (config.timeSlotWeight?.enabled) {
+                timeSlotCalculator.recordFailure(upstream.provider);
+              }
             } else {
               circuitBreaker.recordSuccess(upstream.id);
               recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
               const latencyData = new Map([[upstream.id, { avgDuration: Date.now() - startTime }]]);
               adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
+              if (config.timeSlotWeight?.enabled) {
+                timeSlotCalculator.recordSuccess(upstream.provider);
+              }
             }
           },
           onStreamEnd: () => {
@@ -493,6 +502,9 @@ export async function startAction(options = {}) {
             const errorData = new Map([[upstream.id, [502]]]);
             adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
             logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
+            if (config.timeSlotWeight?.enabled) {
+              timeSlotCalculator.recordFailure(upstream.provider);
+            }
             logAccess({
               sessionId: sessionId || null,
               provider: upstream.provider,
@@ -545,6 +557,16 @@ export async function startAction(options = {}) {
       }
     }
 
+    if (config.timeSlotWeight?.enabled) {
+      await timeSlotCalculator.load();
+      const HOUR_MS = 60 * 60 * 1000;
+      timeSlotSaveTimer = setInterval(async () => {
+        await timeSlotCalculator.save().catch((err) => {
+          logger.error(`Failed to persist time slot data: ${err.message}`);
+        });
+      }, HOUR_MS);
+    }
+
     // Handle graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down proxy server...');
@@ -552,6 +574,14 @@ export async function startAction(options = {}) {
       if (periodicWeightAdjustTimer) {
         clearInterval(periodicWeightAdjustTimer);
         periodicWeightAdjustTimer = null;
+      }
+
+      if (timeSlotSaveTimer) {
+        clearInterval(timeSlotSaveTimer);
+        timeSlotSaveTimer = null;
+        await timeSlotCalculator.save().catch((err) => {
+          logger.error(`Failed to persist time slot data on shutdown: ${err.message}`);
+        });
       }
 
       for (const [routeKey] of routeRecoveryTimers) {
@@ -586,6 +616,14 @@ export async function stopAction() {
     if (periodicWeightAdjustTimer) {
       clearInterval(periodicWeightAdjustTimer);
       periodicWeightAdjustTimer = null;
+    }
+
+    if (timeSlotSaveTimer) {
+      clearInterval(timeSlotSaveTimer);
+      timeSlotSaveTimer = null;
+      await timeSlotCalculator.save().catch((err) => {
+        logger.error(`Failed to persist time slot data on stop: ${err.message}`);
+      });
     }
 
     for (const [routeKey] of routeRecoveryTimers) {
@@ -709,6 +747,65 @@ export async function statsAction(options = {}) {
   }
 }
 
+/**
+ * Show time slot error rates and weight coefficients for providers
+ * @param {object} options - CLI options
+ * @param {string} [options.provider] - Filter by specific provider
+ */
+export async function timeSlotsAction(options = {}) {
+  try {
+    await timeSlotCalculator.load();
+
+    const tracker = timeSlotCalculator.getTracker();
+    let providers = tracker.getProviders();
+
+    if (options.provider) {
+      if (!providers.includes(options.provider)) {
+        logger.warn(`Provider "${options.provider}" not found in time slot data.`);
+        logger.info(`Available providers: ${providers.length > 0 ? providers.join(', ') : 'none'}`);
+        return;
+      }
+      providers = [options.provider];
+    }
+
+    if (providers.length === 0) {
+      logger.info('No time slot data available. Run the proxy server to collect data.');
+      return;
+    }
+
+    const currentHour = timeSlotCalculator.getCurrentHour();
+    const tableData = [];
+
+    for (const provider of providers) {
+      const totalStats = tracker.calculateTotalErrorRate(provider, 7);
+      const hourlyStats = tracker.calculateHourlyErrorRate(provider, currentHour, 7);
+      const currentWeight = timeSlotCalculator.getTimeSlotWeight(provider, currentHour);
+
+      tableData.push({
+        Provider: provider,
+        'Current Hour': currentHour,
+        'Hour Error Rate': hourlyStats.sufficientData
+          ? `${(hourlyStats.errorRate * 100).toFixed(2)}%`
+          : 'N/A (insufficient data)',
+        'Total Error Rate': totalStats.sufficientData
+          ? `${(totalStats.errorRate * 100).toFixed(2)}%`
+          : 'N/A (insufficient data)',
+        'Weight Coeff': currentWeight.toFixed(2),
+        'Data Days': `${hourlyStats.dataDays}/7`,
+      });
+    }
+
+    console.log('\nTime Slot Statistics\n');
+    console.table(tableData);
+    console.log(`\nCurrent hour: ${currentHour}:00`);
+    console.log('Weight coefficients: 0.5 (danger), 1.0 (neutral), 2.0 (good)');
+    console.log('Data based on last 7 days of statistics.\n');
+  } catch (error) {
+    logger.error(`Failed to load time slot data: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url)); // eslint-disable-line no-unused-vars
 
 export async function initAction(options = {}) {
@@ -764,6 +861,12 @@ export function registerProxyCommands(program) {
     .requiredOption('-l, --last <duration>', 'Time range (e.g., 1h, 24h, 7d, 30d)')
     .option('--json', 'Output as JSON')
     .action(statsAction);
+
+  proxy
+    .command('time-slots')
+    .description('Show time slot error rates and weight coefficients for providers')
+    .option('-p, --provider <name>', 'Filter by specific provider')
+    .action(timeSlotsAction);
 
   proxy
     .command('init')

@@ -92,3 +92,11 @@ export const hasVariables = async (profileName) => {
 export const getBackupDir = () => {
   return path.join(getOosDir(), 'backup');
 };
+
+/**
+ * Path to proxy time slots data file
+ * ~/.config/opencode/.oos/proxy-time-slots.json
+ */
+export const getProxyTimeSlotsPath = () => {
+  return path.join(getOosDir(), 'proxy-time-slots.json');
+};

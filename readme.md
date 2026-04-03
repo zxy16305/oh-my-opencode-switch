@@ -179,6 +179,7 @@ oos setup-completion powershell
 - **路由策略**：`sticky`（会话粘滞）、`round-robin`（轮询）、`weighted`（加权）、`random`（随机）
 - **故障转移**：自动检测失败并切换到备用上游
 - **熔断保护**：防止级联故障
+- **实时监控**：Dashboard 可视化 + 性能统计（TTFB、Duration、错误率）
 
 **配置示例** (`~/.config/opencode/.oos/proxy-config.json`)：
 
@@ -240,6 +241,14 @@ oos proxy install -p 3000  # 指定服务端口
 # 卸载 Windows 服务（需管理员权限）
 oos proxy uninstall
 ```
+
+**Dashboard**：
+
+访问 `http://localhost:PORT/_internal/dashboard` 可查看实时监控面板：
+
+- **上游数据表格**：Requests、Sessions、Errors、TTFB 统计（Avg/P95/P99）、Duration 统计（Avg/P95/P99）、权重
+- **访问日志**：实时 SSE 推送最近 50 条请求日志
+- **自动刷新**：10 秒轮询更新
 
 **stats 输出示例**：
 

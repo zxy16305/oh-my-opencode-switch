@@ -297,12 +297,12 @@
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${errorCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? avgTtfb + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? ttfbP95 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? ttfbP99 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? avgDuration + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? durationP95 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? durationP99 + 'ms' : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
             `;
@@ -314,12 +314,12 @@
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${errorCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? avgTtfb + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? ttfbP95 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? ttfbP99 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? avgDuration + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? durationP95 + 'ms' : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? durationP99 + 'ms' : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
               <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
             `;
@@ -361,7 +361,11 @@
 
       function formatDuration(ms) {
         if (ms === undefined || ms === null) return '-';
-        return `${ms}ms`;
+        const rounded = Math.round(ms);
+        if (rounded >= 1000) {
+          return (rounded / 1000).toFixed(1) + 's';
+        }
+        return rounded + 'ms';
       }
 
       function formatTimestamp(isoString) {

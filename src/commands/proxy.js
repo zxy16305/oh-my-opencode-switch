@@ -8,6 +8,7 @@ import {
   getUpstreamRequestCounts,
   getUpstreamSlidingWindowCounts,
   getSessionUpstreamMap,
+  getUpstreamStats,
   recordUpstreamError,
   recordUpstreamLatency,
   adjustWeightForError,
@@ -219,8 +220,8 @@ export async function startAction(options = {}) {
           const routeSlidingCounts = slidingWindowCounts.get(key);
           const routeSessions = sessionCounts.get(routeName);
           const weightEntry = weightState.get(key);
+          const stats = getUpstreamStats(routeName, upstream.id);
 
-          // 计算最近10分钟请求数
           const now = Date.now();
           const windowMs = 10 * 60 * 1000;
           const recentRequestCount = routeSlidingCounts
@@ -234,6 +235,14 @@ export async function startAction(options = {}) {
             requestCount: routeRequestCounts?.get(upstream.id) ?? 0,
             recentRequestCount,
             sessionCount: routeSessions?.get(upstream.id) ?? 0,
+            errorCount: stats.errorCount,
+            avgTtfb: stats.avgTtfb,
+            ttfbP95: stats.ttfbP95,
+            ttfbP99: stats.ttfbP99,
+            avgDuration: stats.avgDuration,
+            durationP95: stats.durationP95,
+            durationP99: stats.durationP99,
+            sampleCount: stats.sampleCount,
             currentWeight: weightEntry?.currentWeight ?? upstream.weight ?? 100,
             configuredWeight: upstream.weight ?? 100,
           };

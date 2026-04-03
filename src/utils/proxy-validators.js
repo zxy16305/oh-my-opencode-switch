@@ -25,6 +25,24 @@ export const routeSchema = z.object({
       recoveryAmount: z.number().int().positive().default(1),
     })
     .optional(),
+  timeSlotWeight: z
+    .object({
+      enabled: z.boolean().default(false),
+      totalErrorThreshold: z.number().positive().default(0.01),
+      dangerSlotThreshold: z.number().positive().default(0.05),
+      dangerMultiplier: z.number().positive().default(0.5),
+      normalMultiplier: z.number().positive().default(2.0),
+      lookbackDays: z.number().int().positive().default(7),
+    })
+    .optional()
+    .default({
+      enabled: false,
+      totalErrorThreshold: 0.01,
+      dangerSlotThreshold: 0.05,
+      dangerMultiplier: 0.5,
+      normalMultiplier: 2.0,
+      lookbackDays: 7,
+    }),
 });
 
 export const routesSchema = z.record(z.string(), routeSchema);

@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
+import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 
 /**
  * Upstream configuration schema
@@ -70,6 +71,24 @@ export const routeSchema = z.object({
         minWeight: 5,
         errorWindowMs: 600000,
       },
+    }),
+  timeSlotWeight: z
+    .object({
+      enabled: z.boolean().default(false),
+      totalErrorThreshold: z.number().positive().default(0.01),
+      dangerSlotThreshold: z.number().positive().default(0.05),
+      dangerMultiplier: z.number().positive().default(0.5),
+      normalMultiplier: z.number().positive().default(2.0),
+      lookbackDays: z.number().int().positive().default(7),
+    })
+    .optional()
+    .default({
+      enabled: false,
+      totalErrorThreshold: 0.01,
+      dangerSlotThreshold: 0.05,
+      dangerMultiplier: 0.5,
+      normalMultiplier: 2.0,
+      lookbackDays: 7,
     }),
 });
 
@@ -178,6 +197,13 @@ const recoveryTimers = new Map();
  * @type {Map<string, { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }>}
  */
 const statsState = new Map();
+
+/**
+ * Global time slot weight calculator instance
+ * Used for time-based weight adjustments based on historical error patterns
+ * @type {import('../utils/time-slot-stats.js').TimeSlotWeightCalculator | null}
+ */
+let timeSlotCalculator = null;
 
 /**
  * Calculate percentile value from an array of numbers
@@ -423,9 +449,15 @@ export function getLatencyState() {
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
  * @param {object} [dynamicWeightConfig] - Optional dynamic weight config
+ * @param {object} [timeSlotWeightConfig] - Optional time slot weight config
  * @returns {Upstream}
  */
-function selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig = null) {
+function selectLeastLoadedUpstream(
+  upstreams,
+  routeKey,
+  dynamicWeightConfig = null,
+  timeSlotWeightConfig = null
+) {
   const countMap = getOrCreateCountMap(routeKey);
 
   let bestScore = Infinity;
@@ -433,7 +465,25 @@ function selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig = nu
 
   for (const upstream of upstreams) {
     const sessionCount = countMap.get(upstream.id) ?? 0;
-    const staticWeight = upstream.weight ?? 1;
+    let staticWeight = upstream.weight ?? 1;
+
+    // Apply time slot weight if enabled (before dynamic weight)
+    if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
+      if (!timeSlotCalculator) {
+        timeSlotCalculator = createTimeSlotWeightCalculator();
+      }
+      const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
+        upstream.provider,
+        null,
+        {
+          totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
+          dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
+          dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
+          normalMultiplier: timeSlotWeightConfig.normalMultiplier,
+        }
+      );
+      staticWeight = staticWeight * timeSlotWeightMultiplier;
+    }
 
     let effectiveWeight = staticWeight;
 
@@ -956,6 +1006,7 @@ function stopSessionCleanup() {
  * @param {number} [threshold=10] - Request count threshold for load-aware reassignment (0 to disable)
  * @param {number} [minGap=2] - Minimum load difference to trigger reassignment
  * @param {object} [dynamicWeightConfig] - Dynamic weight configuration
+ * @param {object} [timeSlotWeightConfig] - Time slot weight configuration
  * @returns {Upstream} Selected upstream
  */
 export function selectUpstreamSticky(
@@ -965,7 +1016,8 @@ export function selectUpstreamSticky(
   model,
   _threshold = 10,
   _minGap = 2,
-  dynamicWeightConfig = null
+  dynamicWeightConfig = null,
+  timeSlotWeightConfig = null
 ) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
@@ -994,7 +1046,26 @@ export function selectUpstreamSticky(
       if (existing.requestCount % 10 === 0) {
         // Calculate current upstream's score using sliding window count and effectiveWeight
         const currentRequestCount = getUpstreamRequestCountInWindow(routeKey, existing.upstreamId);
-        const currentStaticWeight = mapped.weight ?? 1;
+        let currentStaticWeight = mapped.weight ?? 1;
+
+        // Apply time slot weight for current upstream if enabled
+        if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
+          if (!timeSlotCalculator) {
+            timeSlotCalculator = createTimeSlotWeightCalculator();
+          }
+          const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
+            mapped.provider,
+            null,
+            {
+              totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
+              dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
+              dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
+              normalMultiplier: timeSlotWeightConfig.normalMultiplier,
+            }
+          );
+          currentStaticWeight = currentStaticWeight * timeSlotWeightMultiplier;
+        }
+
         let currentEffectiveWeight = currentStaticWeight;
 
         // Apply dynamic weight for current upstream if enabled
@@ -1060,7 +1131,26 @@ export function selectUpstreamSticky(
           if (upstream.id === existing.upstreamId) continue;
 
           const requestCount = getUpstreamRequestCountInWindow(routeKey, upstream.id);
-          const staticWeight = upstream.weight ?? 1;
+          let staticWeight = upstream.weight ?? 1;
+
+          // Apply time slot weight for candidate upstream if enabled
+          if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
+            if (!timeSlotCalculator) {
+              timeSlotCalculator = createTimeSlotWeightCalculator();
+            }
+            const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
+              upstream.provider,
+              null,
+              {
+                totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
+                dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
+                dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
+                normalMultiplier: timeSlotWeightConfig.normalMultiplier,
+              }
+            );
+            staticWeight = staticWeight * timeSlotWeightMultiplier;
+          }
+
           let effectiveWeight = staticWeight;
 
           // Apply dynamic weight if enabled
@@ -1134,7 +1224,12 @@ export function selectUpstreamSticky(
     }
   }
 
-  const selected = selectLeastLoadedUpstream(upstreams, routeKey, dynamicWeightConfig);
+  const selected = selectLeastLoadedUpstream(
+    upstreams,
+    routeKey,
+    dynamicWeightConfig,
+    timeSlotWeightConfig
+  );
   incrementSessionCount(routeKey, selected.id);
   incrementUpstreamRequestCount(routeKey, selected.id);
 
@@ -1249,8 +1344,14 @@ export function routeRequest(model, config, request, body = null) {
   }
 
   const validatedRoute = validationResult.data;
-  const { upstreams, strategy, stickyReassignThreshold, stickyReassignMinGap, dynamicWeight } =
-    validatedRoute;
+  const {
+    upstreams,
+    strategy,
+    stickyReassignThreshold,
+    stickyReassignMinGap,
+    dynamicWeight,
+    timeSlotWeight,
+  } = validatedRoute;
   let selectedUpstream;
   let sessionId;
 
@@ -1264,7 +1365,8 @@ export function routeRequest(model, config, request, body = null) {
         model,
         stickyReassignThreshold,
         stickyReassignMinGap,
-        dynamicWeight
+        dynamicWeight,
+        timeSlotWeight
       );
       break;
     case 'round-robin':

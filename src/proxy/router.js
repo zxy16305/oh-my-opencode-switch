@@ -204,15 +204,10 @@ const upstreamSlidingWindowCounts = new Map();
 const recoveryTimers = new Map();
 
 /**
-<<<<<<< HEAD
-=======
- * Upstream performance statistics state
- * Key: `${routeKey}:${upstreamId}`
- * Value: { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }
- * @type {Map<string, { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }>}
+ * Global time slot weight calculator instance
+ * Used for time-based weight adjustments based on historical error patterns
+ * @type {import('../utils/time-slot-stats.js').TimeSlotWeightCalculator | null}
  */
-const statsState = new Map();
-
 /**
  * Global time slot weight calculator instance
  * Used for time-based weight adjustments based on historical error patterns
@@ -234,7 +229,6 @@ function calculatePercentile(arr, p) {
 }
 
 /**
->>>>>>> feature/time-slot-weight-balancing
  * Record upstream performance statistics (TTFB, duration, errors)
  * @param {string} routeKey - Virtual model/route key
  * @param {string} upstreamId - Upstream identifier
@@ -480,25 +474,6 @@ export function getUpstreamRequestCountInWindow(routeKey, upstreamId, windowMs =
  */
 export function getLatencyState() {
   return latencyState;
-}
-
-/**
- * Calculate percentile value from a sorted array
- * @param {Array<number>} sortedArray - Sorted array of numbers
- * @param {number} percentile - Percentile to calculate (0-100)
- * @returns {number} Calculated percentile value
- */
-function calculatePercentile(sortedArray, percentile) {
-  if (sortedArray.length === 0) return 0;
-  if (sortedArray.length === 1) return sortedArray[0];
-
-  const index = (percentile / 100) * (sortedArray.length - 1);
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const fraction = index - lower;
-
-  if (lower === upper) return sortedArray[lower];
-  return sortedArray[lower] + fraction * (sortedArray[upper] - sortedArray[lower]);
 }
 
 /**

@@ -71,6 +71,24 @@ export const routeSchema = z.object({
         errorWindowMs: 600000,
       },
     }),
+  timeSlotWeight: z
+    .object({
+      enabled: z.boolean().default(true),
+      totalErrorThreshold: z.number().positive().default(0.01),
+      dangerSlotThreshold: z.number().positive().default(0.05),
+      dangerMultiplier: z.number().positive().default(0.5),
+      normalMultiplier: z.number().positive().default(2.0),
+      lookbackDays: z.number().int().positive().default(7),
+    })
+    .optional()
+    .default({
+      enabled: true,
+      totalErrorThreshold: 0.01,
+      dangerSlotThreshold: 0.05,
+      dangerMultiplier: 0.5,
+      normalMultiplier: 2.0,
+      lookbackDays: 7,
+    }),
 });
 
 /**

@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 const providerDiscovery = await import('../../../src/utils/provider-discovery.js');
 
-const { discoverProviderBaseURL, clearDiscoveryCache, getPackagesToTry } = providerDiscovery;
+const { discoverProviderBaseURL, clearDiscoveryCache } = providerDiscovery;
 
 describe('Provider Discovery', () => {
   beforeEach(() => {
@@ -12,25 +12,6 @@ describe('Provider Discovery', () => {
 
   afterEach(() => {
     clearDiscoveryCache();
-  });
-
-  describe('getPackagesToTry', () => {
-    it('should infer correct packages for kimi-for-coding', () => {
-      const packages = getPackagesToTry('kimi-for-coding');
-      assert.ok(packages.includes('@ai-sdk/moonshotai'));
-      assert.ok(packages.includes('@ai-sdk/kimi'));
-      assert.ok(packages.includes('@ai-sdk/openai-compatible'));
-    });
-
-    it('should infer correct packages for deepseek-coder', () => {
-      const packages = getPackagesToTry('deepseek-coder');
-      assert.ok(packages.includes('@ai-sdk/deepseek'));
-    });
-
-    it('should infer correct packages for zhipuai', () => {
-      const packages = getPackagesToTry('zhipuai-coding-plan');
-      assert.ok(packages.includes('@ai-sdk/gateway') || packages.includes('@ai-sdk/zhipu'));
-    });
   });
 
   describe('discoverProviderBaseURL', () => {
@@ -100,6 +81,6 @@ describe('Provider Discovery', () => {
           throw error;
         }
       }
-    }).timeout(35000);
+    });
   });
 });

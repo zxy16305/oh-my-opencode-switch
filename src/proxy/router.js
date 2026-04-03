@@ -668,6 +668,7 @@ const DEFAULT_DYNAMIC_WEIGHT_CONFIG = {
 
 function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
   if (!upstreams || upstreams.length <= 1) return;
+  if (!config) return;
 
   const { minWeight, latencyThreshold, initialWeight } = {
     ...DEFAULT_DYNAMIC_WEIGHT_CONFIG,
@@ -715,6 +716,7 @@ function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
 function adjustWeightForError(routeKey, upstreams, config, errorData) {
   if (!upstreams || upstreams.length === 0) return;
   if (!errorData || errorData.size === 0) return;
+  if (!config) return;
 
   // Check original config before merging
   if (!('errorWeightReduction' in config)) return;

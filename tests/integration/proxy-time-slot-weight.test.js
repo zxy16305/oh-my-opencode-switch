@@ -514,7 +514,7 @@ describe('Integration – Time Slot Weight Feature', () => {
 
       // Cleanup the persisted file
       const { exists } = await import('../../src/utils/files.js');
-      const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+      const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
       const fs = await import('node:fs/promises');
       const path = getProxyTimeSlotsPath();
       if (await exists(path)) {
@@ -659,7 +659,7 @@ describe('Integration – Time Slot Weight Feature', () => {
 
         // Cleanup the persisted file
         const { exists } = await import('../../src/utils/files.js');
-        const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+        const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
         const fs = await import('node:fs/promises');
         const path = getProxyTimeSlotsPath();
         if (await exists(path)) {
@@ -696,7 +696,7 @@ describe('Integration – Time Slot Weight Feature', () => {
         console.table = originalTable;
 
         const { exists } = await import('../../src/utils/files.js');
-        const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+        const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
         const fs = await import('node:fs/promises');
         const path = getProxyTimeSlotsPath();
         if (await exists(path)) {
@@ -708,7 +708,7 @@ describe('Integration – Time Slot Weight Feature', () => {
     test('CLI handles no data gracefully', async () => {
       // Clean up any existing data before test
       const { exists } = await import('../../src/utils/files.js');
-      const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+      const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
       const fs = await import('node:fs/promises');
       const dataPath = getProxyTimeSlotsPath();
       if (await exists(dataPath)) {
@@ -752,7 +752,7 @@ describe('Integration – Time Slot Weight Feature', () => {
     test('CLI handles nonexistent provider filter gracefully', async () => {
       // Clean up any existing data before test
       const { exists } = await import('../../src/utils/files.js');
-      const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+      const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
       const fs = await import('node:fs/promises');
       const dataPath = getProxyTimeSlotsPath();
       if (await exists(dataPath)) {
@@ -798,7 +798,7 @@ describe('Integration – Time Slot Weight Feature', () => {
         logger.silent = originalSilent;
 
         const { exists } = await import('../../src/utils/files.js');
-        const { getProxyTimeSlotsPath } = await import('../../src/utils/paths.js');
+        const { getProxyTimeSlotsPath } = await import('../../src/utils/proxy-paths.js');
         const fs = await import('node:fs/promises');
         const path = getProxyTimeSlotsPath();
         if (await exists(path)) {

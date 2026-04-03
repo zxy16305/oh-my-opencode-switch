@@ -26,6 +26,7 @@ import { logAccess, readLogs, getLogPath, clearLogs, onLogAdded } from '../utils
 import { logBuffer } from '../utils/log-buffer.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { parseTimeRange, generateStats } from '../utils/stats.js';
+import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
@@ -40,7 +41,9 @@ let activeServer = null;
 let activePort = null;
 let circuitBreaker = null;
 let periodicWeightAdjustTimer = null;
+let timeSlotSaveTimer = null;
 const routeRecoveryTimers = new Map();
+const timeSlotCalculator = createTimeSlotWeightCalculator();
 
 /**
  * Start the proxy server
@@ -461,11 +464,17 @@ export async function startAction(options = {}) {
               recordUpstreamError(model, upstream.id, proxyRes.statusCode);
               const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
               adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
+              if (config.timeSlotWeight?.enabled) {
+                timeSlotCalculator.recordFailure(upstream.provider);
+              }
             } else {
               circuitBreaker.recordSuccess(upstream.id);
               recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
               const latencyData = new Map([[upstream.id, { avgDuration: Date.now() - startTime }]]);
               adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
+              if (config.timeSlotWeight?.enabled) {
+                timeSlotCalculator.recordSuccess(upstream.provider);
+              }
             }
           },
           onStreamEnd: () => {
@@ -487,6 +496,9 @@ export async function startAction(options = {}) {
             const errorData = new Map([[upstream.id, [502]]]);
             adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
             logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
+            if (config.timeSlotWeight?.enabled) {
+              timeSlotCalculator.recordFailure(upstream.provider);
+            }
             logAccess({
               sessionId: sessionId || null,
               provider: upstream.provider,
@@ -539,6 +551,16 @@ export async function startAction(options = {}) {
       }
     }
 
+    if (config.timeSlotWeight?.enabled) {
+      await timeSlotCalculator.load();
+      const HOUR_MS = 60 * 60 * 1000;
+      timeSlotSaveTimer = setInterval(async () => {
+        await timeSlotCalculator.save().catch((err) => {
+          logger.error(`Failed to persist time slot data: ${err.message}`);
+        });
+      }, HOUR_MS);
+    }
+
     // Handle graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down proxy server...');
@@ -546,6 +568,14 @@ export async function startAction(options = {}) {
       if (periodicWeightAdjustTimer) {
         clearInterval(periodicWeightAdjustTimer);
         periodicWeightAdjustTimer = null;
+      }
+
+      if (timeSlotSaveTimer) {
+        clearInterval(timeSlotSaveTimer);
+        timeSlotSaveTimer = null;
+        await timeSlotCalculator.save().catch((err) => {
+          logger.error(`Failed to persist time slot data on shutdown: ${err.message}`);
+        });
       }
 
       for (const [routeKey] of routeRecoveryTimers) {
@@ -580,6 +610,14 @@ export async function stopAction() {
     if (periodicWeightAdjustTimer) {
       clearInterval(periodicWeightAdjustTimer);
       periodicWeightAdjustTimer = null;
+    }
+
+    if (timeSlotSaveTimer) {
+      clearInterval(timeSlotSaveTimer);
+      timeSlotSaveTimer = null;
+      await timeSlotCalculator.save().catch((err) => {
+        logger.error(`Failed to persist time slot data on stop: ${err.message}`);
+      });
     }
 
     for (const [routeKey] of routeRecoveryTimers) {

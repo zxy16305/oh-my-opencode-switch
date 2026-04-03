@@ -172,6 +172,110 @@ const upstreamSlidingWindowCounts = new Map();
 const recoveryTimers = new Map();
 
 /**
+ * Upstream performance statistics state
+ * Key: `${routeKey}:${upstreamId}`
+ * Value: { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }
+ * @type {Map<string, { ttfbSamples: Array<number>, durationSamples: Array<number>, errorCount: number }>}
+ */
+const statsState = new Map();
+
+/**
+ * Calculate percentile value from an array of numbers
+ * @param {Array<number>} arr - Array of numeric values
+ * @param {number} p - Percentile to calculate (0-100)
+ * @returns {number} Calculated percentile value
+ */
+function calculatePercentile(arr, p) {
+  if (!arr || arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const index = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, index)];
+}
+
+/**
+ * Record upstream performance statistics (TTFB, duration, errors)
+ * @param {string} routeKey - Virtual model/route key
+ * @param {string} upstreamId - Upstream identifier
+ * @param {number} [ttfb] - Time to first byte in milliseconds
+ * @param {number} [duration] - Total request duration in milliseconds
+ * @param {boolean} [isError=false] - Whether this request resulted in an error
+ */
+function recordUpstreamStats(routeKey, upstreamId, ttfb, duration, isError = false) {
+  const key = `${routeKey}:${upstreamId}`;
+  if (!statsState.has(key)) {
+    statsState.set(key, {
+      ttfbSamples: [],
+      durationSamples: [],
+      errorCount: 0,
+    });
+  }
+
+  const stats = statsState.get(key);
+
+  if (isError) {
+    stats.errorCount++;
+  } else {
+    // Only record timing metrics for successful requests
+    if (ttfb != null) {
+      stats.ttfbSamples.push(ttfb);
+      if (stats.ttfbSamples.length > 1000) {
+        stats.ttfbSamples.shift(); // Maintain sliding window of 1000 samples
+      }
+    }
+    if (duration != null) {
+      stats.durationSamples.push(duration);
+      if (stats.durationSamples.length > 1000) {
+        stats.durationSamples.shift();
+      }
+    }
+  }
+}
+
+/**
+ * Get upstream performance statistics including TTFB and Duration percentiles
+ * @param {string} routeKey - Virtual model/route key
+ * @param {string} upstreamId - Upstream identifier
+ * @returns {{ errorCount: number, avgTtfb: number, ttfbP95: number, ttfbP99: number, avgDuration: number, durationP95: number, durationP99: number, sampleCount: number }}
+ */
+function getUpstreamStats(routeKey, upstreamId) {
+  const key = `${routeKey}:${upstreamId}`;
+  const stats = statsState.get(key);
+
+  if (!stats) {
+    return {
+      errorCount: 0,
+      avgTtfb: 0,
+      ttfbP95: 0,
+      ttfbP99: 0,
+      avgDuration: 0,
+      durationP95: 0,
+      durationP99: 0,
+      sampleCount: 0,
+    };
+  }
+
+  const ttfbSamples = stats.ttfbSamples;
+  const durationSamples = stats.durationSamples;
+
+  return {
+    errorCount: stats.errorCount,
+    avgTtfb:
+      ttfbSamples.length > 0
+        ? Math.round(ttfbSamples.reduce((a, b) => a + b, 0) / ttfbSamples.length)
+        : 0,
+    ttfbP95: calculatePercentile(ttfbSamples, 95),
+    ttfbP99: calculatePercentile(ttfbSamples, 99),
+    avgDuration:
+      durationSamples.length > 0
+        ? Math.round(durationSamples.reduce((a, b) => a + b, 0) / durationSamples.length)
+        : 0,
+    durationP95: calculatePercentile(durationSamples, 95),
+    durationP99: calculatePercentile(durationSamples, 99),
+    sampleCount: ttfbSamples.length,
+  };
+}
+
+/**
  * 获取或创建 routeKey 的计数映射
  * @param {string} routeKey
  * @returns {Map<string, number>}
@@ -1305,4 +1409,6 @@ export {
   adjustWeightForError,
   startWeightRecovery,
   stopWeightRecovery,
+  getUpstreamStats,
+  recordUpstreamStats,
 };

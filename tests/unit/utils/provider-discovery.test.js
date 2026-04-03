@@ -1,12 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const providerDiscovery = await import(join(__dirname, '../../../src/utils/provider-discovery.js'));
+const providerDiscovery = await import('../../../src/utils/provider-discovery.js');
 
 const { discoverProviderBaseURL, clearDiscoveryCache, getPackagesToTry } = providerDiscovery;
 

@@ -204,6 +204,11 @@ function recordUpstreamStats(routeKey, upstreamId, ttfb, duration, isError = fal
 
   const stats = statsState.get(key);
 
+  // Ensure structure compatibility (merge may have created entries with different field names)
+  if (!stats.ttfbSamples) stats.ttfbSamples = [];
+  if (!stats.durationSamples) stats.durationSamples = [];
+  if (stats.errorCount == null) stats.errorCount = 0;
+
   if (isError) {
     stats.errorCount++;
   } else {
@@ -287,7 +292,7 @@ function getOrCreateCountMap(routeKey) {
  */
 export function recordUpstreamError(routeKey, upstreamId, statusCode) {
   const key = `${routeKey}:${upstreamId}`;
-  const entry = statsState.get(key) || { ttfbs: [], durations: [], errorCount: 0 };
+  const entry = statsState.get(key) || { ttfbSamples: [], durationSamples: [], errorCount: 0 };
   entry.errorCount++;
   statsState.set(key, entry);
 
@@ -345,15 +350,15 @@ export function getErrorState() {
  */
 export function recordUpstreamLatency(routeKey, upstreamId, ttfb, duration) {
   const key = `${routeKey}:${upstreamId}`;
-  const entry = statsState.get(key) || { ttfbs: [], durations: [], errorCount: 0 };
+  const entry = statsState.get(key) || { ttfbSamples: [], durationSamples: [], errorCount: 0 };
 
   if (ttfb != null && duration != null) {
-    entry.ttfbs.push(ttfb);
-    entry.durations.push(duration);
+    entry.ttfbSamples.push(ttfb);
+    entry.durationSamples.push(duration);
 
-    if (entry.ttfbs.length > MAX_SAMPLES) {
-      entry.ttfbs.shift();
-      entry.durations.shift();
+    if (entry.ttfbSamples.length > MAX_SAMPLES) {
+      entry.ttfbSamples.shift();
+      entry.durationSamples.shift();
     }
   }
 

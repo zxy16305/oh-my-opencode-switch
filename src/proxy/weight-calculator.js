@@ -17,7 +17,10 @@ import {
  * 1. Time slot weight multiplier (if enabled)
  * 2. Dynamic weight (if enabled)
  * 3. Error-based weight penalty (if enabled)
- * 4. Latency-based weight penalty (if enabled)
+ *
+ * Note: Latency-based weight penalty has been removed. Latency adjustments
+ * should only happen via adjustWeightForLatency() (periodic), not in this
+ * function which is called on every request.
  *
  * @param {Object} params - Calculation parameters
  * @param {StateManager} params.sm - State manager instance
@@ -85,27 +88,10 @@ export function calculateEffectiveWeight(params) {
       }
     }
 
-    // Apply latency-based weight penalty
-    const avgLatency = _getLatencyAvg(sm, routeKey, upstream.id, latencyWindowMs);
-    if (avgLatency > 0) {
-      // Find the fastest upstream's average latency
-      let fastestLatency = Infinity;
-      for (const u of upstreams) {
-        const uAvgLatency = _getLatencyAvg(sm, routeKey, u.id, latencyWindowMs);
-        if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
-          fastestLatency = uAvgLatency;
-        }
-      }
-
-      // Apply penalty if this upstream is significantly slower than fastest
-      if (
-        fastestLatency !== Infinity &&
-        avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
-      ) {
-        const latencyPenalty = Math.max(1, Math.floor((avgLatency / fastestLatency - 1) * 10));
-        effectiveWeight = Math.max(1, effectiveWeight - latencyPenalty);
-      }
-    }
+    // Latency-based weight penalty has been removed from this function.
+    // Latency adjustments should only happen via adjustWeightForLatency() (periodic),
+    // not in calculateEffectiveWeight() which is called on every request.
+    // Previously, this caused cumulative weight decrease leading to weight=1.
   }
 
   // Ensure effective weight is at least 1

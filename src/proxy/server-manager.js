@@ -108,34 +108,31 @@ export class ProxyServerManager {
     const routes = await configManager.resolveRoutes(config.routes || {});
 
     for (const [routeName, route] of Object.entries(routes)) {
+      const validUpstreams = [];
       for (const upstream of route.upstreams || []) {
         if (!upstream.baseURL) {
           const provider = upstream.provider || 'unknown';
-          const suggestions = [];
-          const keywords = provider.toLowerCase().split(/[-_\s]+/);
-
-          if (keywords.includes('kimi') || keywords.includes('moonshot')) {
-            suggestions.push('npm install -g @ai-sdk/moonshotai');
-          }
-          if (keywords.includes('deepseek')) {
-            suggestions.push('npm install -g @ai-sdk/deepseek');
-          }
-          if (keywords.includes('zhipu') || keywords.includes('glm')) {
-            suggestions.push('npm install -g @ai-sdk/gateway');
-          }
-
-          suggestions.push(`Add "baseURL" to upstream "${upstream.id}" in proxy-config.json`);
-          suggestions.push(`Or configure provider "${provider}" in opencode.json with baseURL`);
-
-          logger.error(
-            `Upstream "${upstream.id || upstream.provider}" in route "${routeName}" missing baseURL.\n` +
-              `Provider "${provider}" not found or not configured.\n\n` +
-              `Suggestions:\n` +
-              suggestions.map((s) => `  • ${s}`).join('\n')
+          logger.warn(
+            `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
+              `provider "${provider}" has no baseURL (not in opencode.json and models.dev unreachable).`
           );
-          process.exit(1);
+          continue;
         }
+        validUpstreams.push(upstream);
       }
+      if (validUpstreams.length === 0 && (route.upstreams || []).length > 0) {
+        logger.warn(
+          `Route "${routeName}" has no valid upstreams after baseURL resolution, removing route.`
+        );
+        delete routes[routeName];
+      } else if (validUpstreams.length < (route.upstreams || []).length) {
+        route.upstreams = validUpstreams;
+      }
+    }
+
+    if (Object.keys(routes).length === 0) {
+      logger.error('No routes have valid upstreams. Cannot start proxy.');
+      process.exit(1);
     }
 
     inst.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);

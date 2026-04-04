@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 const providerDiscovery = await import('../../../src/utils/provider-discovery.js');
 
-const { discoverProviderBaseURL, clearDiscoveryCache } = providerDiscovery;
+const { discoverProviderBaseURL, getModelLimit, clearDiscoveryCache } = providerDiscovery;
 
 describe('Provider Discovery', () => {
   beforeEach(() => {
@@ -80,6 +80,58 @@ describe('Provider Discovery', () => {
         } else {
           throw error;
         }
+      }
+    });
+  });
+
+  describe('getModelLimit', () => {
+    it('should get model limits for openai gpt-4', async () => {
+      const limit = await getModelLimit('openai', 'gpt-4');
+
+      console.log('GPT-4 limits:', limit);
+
+      if (limit) {
+        assert.ok(typeof limit.context === 'number' || limit.context === null);
+        assert.ok(typeof limit.output === 'number' || limit.output === null);
+      } else {
+        console.log('getModelLimit returned null (network may be unavailable)');
+      }
+    });
+
+    it('should return null for unknown provider', async () => {
+      const limit = await getModelLimit('unknown-provider-xyz', 'some-model');
+      assert.strictEqual(limit, null);
+    });
+
+    it('should return null for unknown model', async () => {
+      const limit = await getModelLimit('openai', 'unknown-model-xyz');
+      assert.strictEqual(limit, null);
+    });
+
+    it('should validate input parameters', async () => {
+      // Test null/undefined provider
+      assert.strictEqual(await getModelLimit(null, 'gpt-4'), null);
+      assert.strictEqual(await getModelLimit(undefined, 'gpt-4'), null);
+      assert.strictEqual(await getModelLimit('', 'gpt-4'), null);
+
+      // Test null/undefined model
+      assert.strictEqual(await getModelLimit('openai', null), null);
+      assert.strictEqual(await getModelLimit('openai', undefined), null);
+      assert.strictEqual(await getModelLimit('openai', ''), null);
+    });
+
+    it('should use cached data', async () => {
+      // First call loads data
+      const firstResult = await getModelLimit('openai', 'gpt-4');
+      console.log('First call result:', firstResult);
+
+      // Second call should use cache
+      const secondResult = await getModelLimit('openai', 'gpt-4');
+      console.log('Second call result:', secondResult);
+
+      // Results should be consistent
+      if (firstResult && secondResult) {
+        assert.deepStrictEqual(firstResult, secondResult);
       }
     });
   });

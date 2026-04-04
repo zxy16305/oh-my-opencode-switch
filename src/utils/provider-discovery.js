@@ -84,6 +84,34 @@ export async function discoverProviderBaseURL(providerName, options = {}) {
   return null;
 }
 
+export async function getModelLimit(providerName, modelName) {
+  if (!providerName || typeof providerName !== 'string') {
+    return null;
+  }
+
+  if (!modelName || typeof modelName !== 'string') {
+    return null;
+  }
+
+  const data = await loadModelsDev();
+  if (!data) {
+    logger.debug(`No models.dev data available for ${providerName}/${modelName}`);
+    return null;
+  }
+
+  const provider = data[providerName];
+  if (!provider?.models?.[modelName]?.limit) {
+    logger.debug(`Model limit not found for ${providerName}/${modelName}`);
+    return null;
+  }
+
+  const limit = provider.models[modelName].limit;
+  return {
+    context: limit.context || null,
+    output: limit.output || null,
+  };
+}
+
 export function clearDiscoveryCache() {
   memoryCache = null;
   try {
@@ -106,6 +134,7 @@ export function getDiscoveryCacheStats() {
 
 export default {
   discoverProviderBaseURL,
+  getModelLimit,
   clearDiscoveryCache,
   getDiscoveryCacheStats,
 };

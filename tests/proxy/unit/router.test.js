@@ -30,28 +30,7 @@ import {
   getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    apiKey: overrides.apiKey || 'key-123',
-    ...overrides,
-  };
-}
-
-function makeRoute(upstreams, strategy = 'round-robin') {
-  return { strategy, upstreams };
-}
-
-function makeConfig(routeKey = 'test-model', upstreams, strategy) {
-  return { [routeKey]: makeRoute(upstreams || [makeUpstream()], strategy) };
-}
+import { makeUpstream, makeRoute, makeConfig } from '../../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests

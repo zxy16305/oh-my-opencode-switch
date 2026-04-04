@@ -19,19 +19,7 @@ import {
   routeSchema,
 } from '../../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    ...overrides,
-  };
-}
+import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests

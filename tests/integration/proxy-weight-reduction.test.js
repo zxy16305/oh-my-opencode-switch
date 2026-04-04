@@ -21,36 +21,7 @@ import {
   getErrorRate,
 } from '../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    ...overrides,
-  };
-}
-
-function makeConfig(overrides = {}) {
-  return {
-    enabled: true,
-    initialWeight: 100,
-    minWeight: 10,
-    errorWeightReduction: {
-      enabled: true,
-      errorCodes: [429, 500, 502, 503, 504],
-      reductionAmount: 5,
-      minWeight: 5,
-      errorWindowMs: 3600000,
-      ...(overrides.errorWeightReduction || {}),
-    },
-    ...overrides,
-  };
-}
+import { makeUpstream, makeDynamicWeightConfig as makeConfig } from '../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests

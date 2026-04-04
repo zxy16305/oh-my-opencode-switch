@@ -18,71 +18,13 @@ import {
   getSessionUpstreamMap,
 } from '../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    weight: overrides.weight ?? 100,
-    ...overrides,
-  };
-}
-
-function makeRoute(upstreams, overrides = {}) {
-  return {
-    strategy: 'sticky',
-    upstreams,
-    stickyReassignThreshold: 10,
-    stickyReassignMinGap: 2,
-    dynamicWeight: {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      checkInterval: 10,
-      latencyThreshold: 1.5,
-      recoveryInterval: 300000,
-      recoveryAmount: 1,
-      errorWeightReduction: {
-        enabled: true,
-        errorCodes: [429, 500, 502, 503, 504],
-        reductionAmount: 10,
-        minWeight: 5,
-        errorWindowMs: 3600000,
-      },
-    },
-    ...overrides,
-  };
-}
-
-function makeConfig(routes) {
-  return routes;
-}
-
-// Helper to create mock request
-function makeMockRequest(sessionId) {
-  return {
-    headers: {
-      'x-opencode-session': sessionId,
-    },
-    socket: {
-      remoteAddress: '127.0.0.1',
-    },
-  };
-}
-
-// Helper to calculate traffic distribution percentage
-function calculateDistribution(requestCounts, totalRequests) {
-  const distribution = {};
-  for (const [upstreamId, count] of requestCounts.entries()) {
-    distribution[upstreamId] = (count / totalRequests) * 100;
-  }
-  return distribution;
-}
+import {
+  makeUpstream,
+  makeRoute,
+  makeConfig,
+  makeMockRequest,
+  calculateDistribution,
+} from '../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests

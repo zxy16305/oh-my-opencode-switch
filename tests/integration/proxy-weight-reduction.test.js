@@ -45,7 +45,7 @@ function makeConfig(overrides = {}) {
       errorCodes: [429, 500, 502, 503, 504],
       reductionAmount: 5,
       minWeight: 5,
-      errorWindowMs: 600000,
+      errorWindowMs: 3600000,
       ...(overrides.errorWeightReduction || {}),
     },
     ...overrides,
@@ -68,7 +68,7 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     recordUpstreamError('test-route', 'rate-limited', 429);
 
     // Verify error rate is 1
-    const errorRate = getErrorRate('test-route', 'rate-limited', 600000);
+    const errorRate = getErrorRate('test-route', 'rate-limited', 3600000);
     assert.strictEqual(errorRate, 1, 'Expected error rate to be 1 after one 429');
 
     // Adjust weights based on errors
@@ -93,7 +93,7 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     recordUpstreamError('test-route', 'persistently-limited', 429);
 
     // Verify error rate
-    const errorRate = getErrorRate('test-route', 'persistently-limited', 600000);
+    const errorRate = getErrorRate('test-route', 'persistently-limited', 3600000);
     assert.strictEqual(errorRate, 3, 'Expected error rate to be 3 after three 429s');
 
     // Each error triggers a weight reduction
@@ -112,7 +112,7 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     recordUpstreamError('test-route', 'mixed-errors', 503);
     recordUpstreamError('test-route', 'mixed-errors', 400); // 400 should be counted in error storage, but not trigger reduction
 
-    const errorRate = getErrorRate('test-route', 'mixed-errors', 600000);
+    const errorRate = getErrorRate('test-route', 'mixed-errors', 3600000);
     assert.strictEqual(errorRate, 4, 'Expected all errors to be counted regardless of code');
   });
 
@@ -150,7 +150,7 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
         errorCodes: [429, 500, 502, 503, 504],
         reductionAmount: 20,
         minWeight: 5,
-        errorWindowMs: 600000,
+        errorWindowMs: 3600000,
       },
     };
 

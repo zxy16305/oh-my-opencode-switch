@@ -460,8 +460,8 @@ describe('Router – selectUpstreamSticky()', () => {
       makeUpstream({ id: 'b', weight: 8 }),
     ];
 
-    // Simulate old requests (manually add timestamps > 10 minutes ago)
-    const oldTimestamp = Date.now() - 700000; // 11+ minutes ago
+    // Simulate old requests (manually add timestamps > 1 hour ago)
+    const oldTimestamp = Date.now() - 3700000; // 1+ hour ago
     const slidingCounts = getUpstreamSlidingWindowCounts();
 
     // Add old requests for upstream 'a'

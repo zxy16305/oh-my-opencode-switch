@@ -40,7 +40,7 @@ function makeConfig(overrides = {}) {
       errorCodes: [429, 500, 502, 503, 504],
       reductionAmount: 5,
       minWeight: 5,
-      errorWindowMs: 600000,
+      errorWindowMs: 3600000,
       ...(overrides.errorWeightReduction || {}),
     },
   };
@@ -231,12 +231,12 @@ describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
 
   test('recordUpstreamError records an error', () => {
     recordUpstreamError('route1', 'upstream1', 500);
-    const rate = getErrorRate('route1', 'upstream1', 600000);
+    const rate = getErrorRate('route1', 'upstream1', 3600000);
     assert.strictEqual(rate, 1);
   });
 
   test('getErrorRate returns 0 for no errors', () => {
-    const rate = getErrorRate('route1', 'upstream1', 600000);
+    const rate = getErrorRate('route1', 'upstream1', 3600000);
     assert.strictEqual(rate, 0);
   });
 
@@ -244,14 +244,14 @@ describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
     recordUpstreamError('route1', 'upstream1', 500);
 
     const config = {
-      errorWeightReduction: { errorWindowMs: 600000 },
+      errorWeightReduction: { errorWindowMs: 3600000 },
     };
 
     const rate = getErrorRate('route1', 'upstream1', config);
     assert.strictEqual(rate, 1);
   });
 
-  test('getErrorRate defaults to 600000ms when config has no errorWindowMs', () => {
+  test('getErrorRate defaults to 3600000ms when config has no errorWindowMs', () => {
     recordUpstreamError('route1', 'upstream1', 500);
 
     const rate = getErrorRate('route1', 'upstream1', {});
@@ -263,7 +263,7 @@ describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
     recordUpstreamError('route1', 'upstream1', 502);
     recordUpstreamError('route1', 'upstream1', 503);
 
-    const rate = getErrorRate('route1', 'upstream1', 600000);
+    const rate = getErrorRate('route1', 'upstream1', 3600000);
     assert.strictEqual(rate, 3);
   });
 });

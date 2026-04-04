@@ -1,0 +1,267 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/user/oh-my-opencode-switch/schemas/proxy-config.schema.json",
+  "title": "Proxy Configuration",
+  "description": "Configuration schema for the oh-my-opencode proxy server with load balancing support",
+  "type": "object",
+  "properties": {
+    "version": {
+      "$ref": "#/definitions/version"
+    },
+    "port": {
+      "$ref": "#/definitions/port"
+    },
+    "routes": {
+      "$ref": "#/definitions/routes"
+    },
+    "auth": {
+      "$ref": "#/definitions/auth"
+    }
+  },
+  "definitions": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration schema version, currently fixed at 1"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3000,
+      "description": "Port number for the proxy server to listen on"
+    },
+    "upstream": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique identifier for this upstream (optional, auto-generated if not provided)"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider name (e.g., 'ali', 'baidu', 'openai')"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model name to use from this provider"
+        },
+        "baseURL": {
+          "type": "string",
+          "format": "uri",
+          "description": "Custom base URL for the provider API (optional)"
+        },
+        "apiKey": {
+          "type": ["string", "null"],
+          "description": "API key for authentication (optional, can be null)"
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "description": "Weight for weighted load balancing strategy (positive number)"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Additional metadata for this upstream"
+        }
+      },
+      "required": ["provider", "model"],
+      "additionalProperties": false,
+      "description": "Upstream configuration representing a backend model provider"
+    },
+    "dynamicWeight": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable dynamic weight adjustment based on latency"
+        },
+        "initialWeight": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100,
+          "description": "Initial weight value for new upstreams"
+        },
+        "minWeight": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Minimum weight value to prevent complete traffic cutoff"
+        },
+        "checkInterval": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Interval in seconds between weight adjustment checks"
+        },
+        "latencyThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "default": 1.5,
+          "description": "Latency multiplier threshold above which weight is reduced"
+        },
+        "recoveryInterval": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 300000,
+          "description": "Interval in milliseconds between weight recovery steps"
+        },
+        "recoveryAmount": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Amount to increase weight during each recovery step"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Dynamic weight adjustment configuration for latency-based load balancing"
+    },
+    "timeSlotWeight": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable time-slot based weight adjustment"
+        },
+        "totalErrorThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "default": 0.01,
+          "description": "Total error rate threshold for triggering weight adjustment"
+        },
+        "dangerSlotThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "default": 0.05,
+          "description": "Error rate threshold for marking a time slot as dangerous"
+        },
+        "dangerMultiplier": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "default": 0.5,
+          "description": "Weight multiplier for dangerous time slots"
+        },
+        "normalMultiplier": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMinimum": 0,
+          "default": 2.0,
+          "description": "Weight multiplier for normal time slots"
+        },
+        "lookbackDays": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 7,
+          "description": "Number of days to look back for error rate calculation"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Time-slot based weight adjustment configuration for historical error patterns",
+      "default": {
+        "enabled": true,
+        "totalErrorThreshold": 0.01,
+        "dangerSlotThreshold": 0.05,
+        "dangerMultiplier": 0.5,
+        "normalMultiplier": 2.0,
+        "lookbackDays": 7
+      }
+    },
+    "route": {
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["round-robin", "random", "weighted", "sticky"],
+          "default": "round-robin",
+          "description": "Load balancing strategy: round-robin (轮询), random (随机), weighted (加权), sticky (会话粘滞)"
+        },
+        "upstreams": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/upstream"
+          },
+          "description": "List of upstream providers for this route"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Additional metadata for this route"
+        },
+        "dynamicWeight": {
+          "$ref": "#/definitions/dynamicWeight"
+        },
+        "timeSlotWeight": {
+          "$ref": "#/definitions/timeSlotWeight"
+        }
+      },
+      "required": ["upstreams"],
+      "additionalProperties": false,
+      "description": "Route configuration defining a virtual model and its upstreams"
+    },
+    "routes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/route"
+      },
+      "default": {},
+      "description": "Map of route names to route configurations. Route names become virtual model names."
+    },
+    "authKey": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "API key string for authentication"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable name for this API key"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this API key is currently active"
+        }
+      },
+      "required": ["key", "name"],
+      "additionalProperties": false,
+      "description": "Single API key configuration for proxy authentication"
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable API key authentication for the proxy"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/authKey"
+          },
+          "default": [],
+          "description": "List of API keys for authentication"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Authentication configuration for the proxy server"
+    }
+  }
+}

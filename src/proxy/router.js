@@ -70,7 +70,7 @@ export const routeSchema = z.object({
           errorCodes: z.array(z.number()).default([429, 500, 502, 503, 504]),
           reductionAmount: z.number().int().positive().default(10),
           minWeight: z.number().int().positive().default(5),
-          errorWindowMs: z.number().int().positive().default(600000),
+          errorWindowMs: z.number().int().positive().default(3600000),
         })
         .optional()
         .default({
@@ -78,7 +78,7 @@ export const routeSchema = z.object({
           errorCodes: [429, 500, 502, 503, 504],
           reductionAmount: 10,
           minWeight: 5,
-          errorWindowMs: 600000,
+          errorWindowMs: 3600000,
         }),
     })
     .optional()
@@ -95,7 +95,7 @@ export const routeSchema = z.object({
         errorCodes: [429, 500, 502, 503, 504],
         reductionAmount: 10,
         minWeight: 5,
-        errorWindowMs: 600000,
+        errorWindowMs: 3600000,
       },
     }),
   timeSlotWeight: z

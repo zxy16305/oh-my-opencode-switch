@@ -149,7 +149,7 @@ export function handleStats(req, res, routes, circuitBreaker) {
         const stats = getUpstreamStats(routeName, upstream.id);
 
         const now = Date.now();
-        const windowMs = 10 * 60 * 1000;
+        const windowMs = 60 * 60 * 1000;
         const recentRequestCount = routeSlidingCounts
           ? routeSlidingCounts.filter((entry) => now - entry.timestamp <= windowMs).length
           : 0;

@@ -181,7 +181,7 @@ export function recordUpstreamError(routeKey, upstreamId, statusCode) {
 export function getErrorRate(routeKey, upstreamId, windowMsOrConfig) {
   const windowMs =
     typeof windowMsOrConfig === 'object'
-      ? (windowMsOrConfig?.errorWeightReduction?.errorWindowMs ?? 600000)
+      ? (windowMsOrConfig?.errorWeightReduction?.errorWindowMs ?? 3600000)
       : windowMsOrConfig;
 
   const key = `${routeKey}:${upstreamId}`;
@@ -246,7 +246,7 @@ export function recordUpstreamLatency(routeKey, upstreamId, ttfb, duration) {
  * @param {number} windowMs - Time window in milliseconds
  * @returns {number} Average latency in milliseconds, or 0 if no latencies in window
  */
-export function getLatencyAvg(routeKey, upstreamId, windowMs = 600000) {
+export function getLatencyAvg(routeKey, upstreamId, windowMs = 3600000) {
   const key = `${routeKey}:${upstreamId}`;
   const state = latencyState.get(key);
   if (!state || state.latencies.length === 0) {
@@ -273,7 +273,7 @@ export function getLatencyAvg(routeKey, upstreamId, windowMs = 600000) {
  * @param {number} windowMs - Sliding window size in milliseconds (default: 10 minutes)
  * @returns {number} Number of requests within the window
  */
-export function getUpstreamRequestCountInWindow(routeKey, upstreamId, windowMs = 600000) {
+export function getUpstreamRequestCountInWindow(routeKey, upstreamId, windowMs = 3600000) {
   const key = `${routeKey}:${upstreamId}`;
   const timestamps = upstreamSlidingWindowCounts.get(key);
   if (!timestamps || timestamps.length === 0) {

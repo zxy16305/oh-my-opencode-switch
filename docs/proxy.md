@@ -327,7 +327,7 @@ oos proxy start -c ./custom-config.json
 | Provider     | 提供商                               |
 | Model        | 模型名称                             |
 | Requests     | 全局累计请求数                       |
-| 最近10分钟   | 最近 10 分钟请求数（滑动窗口）       |
+| 最近1小时    | 最近 1 小时请求数（滑动窗口）        |
 | Sessions     | 活跃会话数                           |
 | Errors       | 错误计数                             |
 | Avg TTFB     | 平均首字节时间（Time To First Byte） |

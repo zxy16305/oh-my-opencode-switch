@@ -35,7 +35,7 @@ const DEFAULT_DYNAMIC_WEIGHT_CONFIG = {
     errorCodes: [429, 500, 502, 503, 504],
     reductionAmount: 10,
     minWeight: 5,
-    errorWindowMs: 600000,
+    errorWindowMs: 3600000,
   },
 };
 

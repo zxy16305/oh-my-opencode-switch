@@ -8,40 +8,27 @@ import { parseTimeRange, generateStats } from '../utils/stats.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { ProxyServerManager } from '../proxy/server-manager.js';
 
-// Singleton instance of ProxyServerManager
 const serverManager = new ProxyServerManager();
 
-// Time slot calculator for time-slots command
 const timeSlotCalculator = createTimeSlotWeightCalculator();
 
-/**
- * Start the proxy server
- * @param {object} options - CLI options
- * @param {number} [options.port] - Port to listen on
- * @param {string} [options.config] - Path to config file
- */
 export async function startAction(options = {}) {
   await serverManager.start(options);
 }
 
-/**
- * Stop the proxy server
- */
-export async function stopAction() {
-  await serverManager.stop();
+export async function stopAction(options = {}) {
+  await serverManager.stop(options.name);
 }
 
-/**
- * Show proxy server status
- */
-export async function statusAction() {
+export async function statusAction(options = {}) {
   const configManager = new ProxyConfigManager();
   const config = await configManager.readConfig();
   const configPath = getProxyConfigPath();
-  const status = serverManager.getStatus();
+  const name = options.name || 'default';
+  const status = serverManager.getStatus(name);
 
   console.log('');
-  console.log('Proxy Server Status');
+  console.log(`Proxy Server Status [${name}]`);
   console.log('===================');
 
   if (status.running) {
@@ -243,11 +230,20 @@ export function registerProxyCommands(program) {
     .description('Start the proxy server')
     .option('-p, --port <port>', 'Port to listen on (overrides config file)')
     .option('-c, --config <path>', 'Path to config file')
+    .option('-n, --name <name>', 'Instance name (default: "default")')
     .action(startAction);
 
-  proxy.command('stop').description('Stop the proxy server').action(stopAction);
+  proxy
+    .command('stop')
+    .description('Stop the proxy server')
+    .option('-n, --name <name>', 'Instance name (default: "default")')
+    .action(stopAction);
 
-  proxy.command('status').description('Show proxy server status').action(statusAction);
+  proxy
+    .command('status')
+    .description('Show proxy server status')
+    .option('-n, --name <name>', 'Instance name (default: "default")')
+    .action(statusAction);
 
   proxy
     .command('logs')

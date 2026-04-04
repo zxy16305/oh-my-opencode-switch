@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 
 import {
   routeRequest,
-  resetRoundRobinCounters,
+  resetAllState,
   failoverStickySession,
   getSessionUpstreamMap,
 } from '../../src/proxy/router.js';
@@ -62,7 +62,7 @@ const createTestRoutes = (upstreams) => ({
 
 describe('Failover with Circuit Breaker', () => {
   beforeEach(() => {
-    resetRoundRobinCounters();
+    resetAllState();
   });
 
   it('should fail over to circuit-available provider when baidu fails', () => {

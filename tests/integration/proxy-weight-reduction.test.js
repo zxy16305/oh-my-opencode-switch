@@ -13,7 +13,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForError,
@@ -21,44 +21,15 @@ import {
   getErrorRate,
 } from '../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    ...overrides,
-  };
-}
-
-function makeConfig(overrides = {}) {
-  return {
-    enabled: true,
-    initialWeight: 100,
-    minWeight: 10,
-    errorWeightReduction: {
-      enabled: true,
-      errorCodes: [429, 500, 502, 503, 504],
-      reductionAmount: 5,
-      minWeight: 5,
-      errorWindowMs: 3600000,
-      ...(overrides.errorWeightReduction || {}),
-    },
-    ...overrides,
-  };
-}
+import { makeUpstream, makeDynamicWeightConfig as makeConfig } from '../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests
 // ===========================================================================
 
 describe('Integration – Weight Reduction on 429 Errors', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('single 429 error reduces weight by configured reduction amount', () => {
     const upstreams = [makeUpstream({ id: 'rate-limited' }), makeUpstream({ id: 'healthy' })];

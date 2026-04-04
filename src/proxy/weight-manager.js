@@ -3,21 +3,7 @@
  * @module proxy/weight-manager
  */
 
-/**
- * Dynamic weight state per upstream per route
- * Key: `${routeKey}:${upstreamId}`
- * Value: { currentWeight: number, lastAdjustment: number, requestCount: number }
- * @type {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
- */
-const dynamicWeightState = new Map();
-
-/**
- * Recovery timers per route
- * Key: routeKey
- * Value: NodeJS.Timeout
- * @type {Map<string, NodeJS.Timeout>}
- */
-const recoveryTimers = new Map();
+import { StateManager } from './state-manager.js';
 
 /**
  * Default dynamic weight configuration
@@ -41,15 +27,17 @@ const DEFAULT_DYNAMIC_WEIGHT_CONFIG = {
 
 /**
  * Get or initialize dynamic weight for an upstream
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  * @param {string} upstreamId
  * @param {number} initialWeight
  * @returns {number} Current weight
  */
-function getDynamicWeight(routeKey, upstreamId, initialWeight = 100) {
+function getDynamicWeight(state, routeKey, upstreamId, initialWeight = 100) {
   const key = `${routeKey}:${upstreamId}`;
-  const state = dynamicWeightState.get(key);
-  if (!state) {
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  if (!weightState) {
     dynamicWeightState.set(key, {
       currentWeight: initialWeight,
       lastAdjustment: Date.now(),
@@ -57,21 +45,23 @@ function getDynamicWeight(routeKey, upstreamId, initialWeight = 100) {
     });
     return initialWeight;
   }
-  return state.currentWeight;
+  return weightState.currentWeight;
 }
 
 /**
  * Set dynamic weight for an upstream
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  * @param {string} upstreamId
  * @param {number} weight
  */
-function setDynamicWeight(routeKey, upstreamId, weight) {
+function setDynamicWeight(state, routeKey, upstreamId, weight) {
   const key = `${routeKey}:${upstreamId}`;
-  const state = dynamicWeightState.get(key);
-  if (state) {
-    state.currentWeight = weight;
-    state.lastAdjustment = Date.now();
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  if (weightState) {
+    weightState.currentWeight = weight;
+    weightState.lastAdjustment = Date.now();
   } else {
     dynamicWeightState.set(key, {
       currentWeight: weight,
@@ -85,12 +75,13 @@ function setDynamicWeight(routeKey, upstreamId, weight) {
  * Adjust weights based on latency comparison
  * Compares each upstream's avgDuration to the fastest upstream
  * Decreases weight by 1 if latency > fastest * latencyThreshold
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  * @param {Upstream[]} upstreams
  * @param {object} config - dynamicWeight config
  * @param {Map<string, {avgDuration: number}>} latencyData - upstream latency data
  */
-function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
+function adjustWeightForLatency(state, routeKey, upstreams, config, latencyData) {
   if (!upstreams || upstreams.length <= 1) return;
   if (!config) return;
 
@@ -116,14 +107,14 @@ function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
     const data = latencyData.get(upstream.id);
     if (!data || !data.avgDuration) continue;
 
-    const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
 
     // Skip if already at min weight
     if (currentWeight <= minWeight) continue;
 
     // Decrease weight if latency exceeds threshold
     if (data.avgDuration > fastestDuration * latencyThreshold) {
-      setDynamicWeight(routeKey, upstream.id, Math.max(minWeight, currentWeight - 1));
+      setDynamicWeight(state, routeKey, upstream.id, Math.max(minWeight, currentWeight - 1));
     }
   }
 }
@@ -132,12 +123,13 @@ function adjustWeightForLatency(routeKey, upstreams, config, latencyData) {
  * Adjust weights based on error data
  * For each upstream with matching error codes in errorData, reduce weight by reductionAmount
  * Weight is never reduced below the configured minWeight
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  * @param {Upstream[]} upstreams
  * @param {object} config - dynamicWeight config
  * @param {Map<string, number[]>} errorData - Map of upstreamId to array of error status codes
  */
-function adjustWeightForError(routeKey, upstreams, config, errorData) {
+function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
   if (!upstreams || upstreams.length === 0) return;
   if (!errorData || errorData.size === 0) return;
   if (!config) return;
@@ -158,22 +150,28 @@ function adjustWeightForError(routeKey, upstreams, config, errorData) {
     const hasMatchingError = codes.some((code) => errorCodes.includes(code));
     if (!hasMatchingError) continue;
 
-    const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
 
     if (currentWeight <= minWeight) continue;
 
-    setDynamicWeight(routeKey, upstream.id, Math.max(minWeight, currentWeight - reductionAmount));
+    setDynamicWeight(
+      state,
+      routeKey,
+      upstream.id,
+      Math.max(minWeight, currentWeight - reductionAmount)
+    );
   }
 }
 
 /**
  * Start periodic weight recovery for a route
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  * @param {Upstream[]} upstreams
  * @param {object} config - dynamicWeight config
  * @returns {NodeJS.Timeout} Timer ID for cleanup
  */
-function startWeightRecovery(routeKey, upstreams, config) {
+function startWeightRecovery(state, routeKey, upstreams, config) {
   if (!routeKey || !upstreams || upstreams.length === 0 || !config) {
     return null;
   }
@@ -188,15 +186,16 @@ function startWeightRecovery(routeKey, upstreams, config) {
     return null;
   }
 
-  stopWeightRecovery(routeKey);
+  stopWeightRecovery(state, routeKey);
 
   const { recoveryInterval, recoveryAmount, initialWeight } = mergedConfig;
 
   const timer = setInterval(() => {
     for (const upstream of upstreams) {
-      const currentWeight = getDynamicWeight(routeKey, upstream.id, initialWeight);
+      const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
       if (currentWeight < initialWeight) {
         setDynamicWeight(
+          state,
           routeKey,
           upstream.id,
           Math.min(initialWeight, currentWeight + recoveryAmount)
@@ -206,7 +205,7 @@ function startWeightRecovery(routeKey, upstreams, config) {
   }, recoveryInterval);
 
   // Store timer for cleanup
-  recoveryTimers.set(routeKey, timer);
+  state.addRecoveryTimer(routeKey, timer);
 
   // Unref to allow process exit
   if (timer.unref) {
@@ -218,36 +217,15 @@ function startWeightRecovery(routeKey, upstreams, config) {
 
 /**
  * Stop weight recovery timer for a route
+ * @param {StateManager} state - State manager instance
  * @param {string} routeKey
  */
-function stopWeightRecovery(routeKey) {
-  const timer = recoveryTimers.get(routeKey);
-  if (timer) {
-    clearInterval(timer);
-    recoveryTimers.delete(routeKey);
-  }
+function stopWeightRecovery(state, routeKey) {
+  state.removeRecoveryTimer(routeKey);
 }
 
-/**
- * Get dynamic weight state map
- * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
- */
-function getDynamicWeightState() {
-  return dynamicWeightState;
-}
-
-/**
- * Get recovery timers map
- * @returns {Map<string, NodeJS.Timeout>}
- */
-function getRecoveryTimers() {
-  return recoveryTimers;
-}
-
-// Export all functions and state
+// Export all functions and config
 export {
-  dynamicWeightState,
-  recoveryTimers,
   DEFAULT_DYNAMIC_WEIGHT_CONFIG,
   getDynamicWeight,
   setDynamicWeight,
@@ -255,6 +233,4 @@ export {
   adjustWeightForError,
   startWeightRecovery,
   stopWeightRecovery,
-  getDynamicWeightState,
-  getRecoveryTimers,
 };

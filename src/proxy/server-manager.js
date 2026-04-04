@@ -40,42 +40,52 @@ import {
 } from './internal-endpoints.js';
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_INSTANCE_NAME = 'default';
 const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
   allowedFails: 3,
   cooldownTimeMs: 60000,
 };
 
-/**
- * ProxyServerManager - Manages proxy server lifecycle and state
- */
+function createInstanceState() {
+  return {
+    server: null,
+    port: null,
+    circuitBreaker: null,
+    periodicWeightAdjustTimer: null,
+    timeSlotSaveTimer: null,
+    routeRecoveryTimers: new Map(),
+    sseClients: new Set(),
+    timeSlotCalculator: createTimeSlotWeightCalculator(),
+  };
+}
+
 export class ProxyServerManager {
   constructor() {
-    this.activeServer = null;
-    this.activePort = null;
-    this.circuitBreaker = null;
-    this.periodicWeightAdjustTimer = null;
-    this.timeSlotSaveTimer = null;
-    this.routeRecoveryTimers = new Map();
-    this.sseClients = new Set();
-    this.timeSlotCalculator = createTimeSlotWeightCalculator();
+    this.instances = new Map();
   }
 
-  /**
-   * Start the proxy server
-   * @param {object} options - CLI options
-   * @param {number} [options.port] - Port to listen on
-   * @param {string} [options.config] - Path to config file
-   */
+  _getOrCreateInstance(name) {
+    if (!this.instances.has(name)) {
+      this.instances.set(name, createInstanceState());
+    }
+    return this.instances.get(name);
+  }
+
+  _getInstance(name) {
+    return this.instances.get(name);
+  }
+
   async start(options = {}) {
+    const instanceName = options.name || DEFAULT_INSTANCE_NAME;
     const configPath = options.config || getProxyConfigPath();
 
-    // Check if server is already running
-    if (this.activeServer && this.activeServer.listening) {
-      logger.warn(`Proxy server is already running on port ${this.activePort}`);
+    const inst = this._getOrCreateInstance(instanceName);
+
+    if (inst.server && inst.server.listening) {
+      logger.warn(`[${instanceName}] Proxy server is already running on port ${inst.port}`);
       return;
     }
 
-    // Load config first to get port from config file
     const configManager = new ProxyConfigManager();
     let config = await configManager.readConfig();
 
@@ -87,20 +97,16 @@ export class ProxyServerManager {
       config = { routes: {} };
     }
 
-    // Port priority: CLI option > config.port > DEFAULT_PORT
     const port = parseInt(options.port, 10) || config.port || DEFAULT_PORT;
 
-    // Check port availability
     const available = await isPortAvailable(port);
     if (!available) {
       logger.error(`Port ${port} is already in use. Please choose a different port.`);
       process.exit(1);
     }
 
-    // Resolve routes from opencode config (fill baseURL/apiKey if not specified)
     const routes = await configManager.resolveRoutes(config.routes || {});
 
-    // Validate resolved routes have required fields
     for (const [routeName, route] of Object.entries(routes)) {
       for (const upstream of route.upstreams || []) {
         if (!upstream.baseURL) {
@@ -132,19 +138,19 @@ export class ProxyServerManager {
       }
     }
 
-    this.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
+    inst.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
 
-    // Get auth config for request authentication
     const auth = config.auth;
 
-    // Setup SSE log callback
-    setupSSELogCallback(this.sseClients);
+    setupSSELogCallback(inst.sseClients);
 
-    // Create request handler
+    const circuitBreaker = inst.circuitBreaker;
+    const sseClients = inst.sseClients;
+    const timeSlotCalculator = inst.timeSlotCalculator;
+
     const requestHandler = async (req, res) => {
-      // Handle SSE endpoint immediately (before waiting for request body)
       if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
-        handleLogsStream(req, res, this.sseClients);
+        handleLogsStream(req, res, sseClients);
         return;
       }
 
@@ -155,25 +161,21 @@ export class ProxyServerManager {
 
       req.on('end', async () => {
         try {
-          // Debug endpoint - no auth required, localhost only
           if (req.url === '/_internal/debug' && req.method === 'GET') {
-            handleDebug(req, res, routes, this.circuitBreaker);
+            handleDebug(req, res, routes, circuitBreaker);
             return;
           }
 
-          // Dashboard endpoint - no auth required, localhost only
           if (req.url === '/_internal/dashboard' && req.method === 'GET') {
             handleDashboard(req, res);
             return;
           }
 
-          // Stats endpoint - no auth required, localhost only
           if (req.url === '/_internal/stats' && req.method === 'GET') {
-            handleStats(req, res, routes, this.circuitBreaker);
+            handleStats(req, res, routes, circuitBreaker);
             return;
           }
 
-          // Authentication check
           const apiKey = extractApiKey(req);
           const authResult = authenticate(apiKey, auth);
           if (!authResult.valid) {
@@ -183,7 +185,6 @@ export class ProxyServerManager {
             return;
           }
 
-          // Parse request body to get model
           let requestBody;
           try {
             requestBody = JSON.parse(body);
@@ -203,7 +204,7 @@ export class ProxyServerManager {
           const route = routes[model];
           let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
 
-          if (!this.circuitBreaker.isAvailable(upstream.id)) {
+          if (!circuitBreaker.isAvailable(upstream.id)) {
             if (sessionId && route.upstreams.length > 1) {
               const nextUpstream = failoverStickySession(
                 sessionId,
@@ -211,9 +212,9 @@ export class ProxyServerManager {
                 route.upstreams,
                 routeKey,
                 model,
-                (id) => this.circuitBreaker.isAvailable(id)
+                (id) => circuitBreaker.isAvailable(id)
               );
-              if (nextUpstream && this.circuitBreaker.isAvailable(nextUpstream.id)) {
+              if (nextUpstream && circuitBreaker.isAvailable(nextUpstream.id)) {
                 upstream = nextUpstream;
                 logger.warn(
                   `Circuit breaker OPEN for ${upstream.id}, failed over to ${nextUpstream.id}`
@@ -261,32 +262,30 @@ export class ProxyServerManager {
                 proxyRes.headers['x-session-id'] = sessionId;
               }
               if (proxyRes.statusCode >= 400) {
-                this.circuitBreaker.recordFailure(upstream.id);
+                circuitBreaker.recordFailure(upstream.id);
                 recordUpstreamError(model, upstream.id, proxyRes.statusCode);
                 const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
                 adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
                 if (config.timeSlotWeight?.enabled) {
-                  this.timeSlotCalculator.recordFailure(upstream.provider);
+                  timeSlotCalculator.recordFailure(upstream.provider);
                 }
               } else {
-                this.circuitBreaker.recordSuccess(upstream.id);
+                circuitBreaker.recordSuccess(upstream.id);
                 recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
                 const latencyData = new Map([
                   [upstream.id, { avgDuration: Date.now() - startTime }],
                 ]);
                 adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
                 if (config.timeSlotWeight?.enabled) {
-                  this.timeSlotCalculator.recordSuccess(upstream.provider);
+                  timeSlotCalculator.recordSuccess(upstream.provider);
                 }
               }
             },
             onStreamEnd: () => {
               const duration = Date.now() - startTime;
 
-              // Record to memory stats (for dashboard)
               recordUpstreamStats(model, upstream.id, ttfb, duration, proxyResStatusCode >= 400);
 
-              // Write to log file (for CLI stats)
               logAccess({
                 sessionId: sessionId || null,
                 provider: upstream.provider,
@@ -299,13 +298,13 @@ export class ProxyServerManager {
               }).catch(() => {});
             },
             onError: (err) => {
-              this.circuitBreaker.recordFailure(upstream.id);
+              circuitBreaker.recordFailure(upstream.id);
               recordUpstreamError(model, upstream.id, 502);
               const errorData = new Map([[upstream.id, [502]]]);
               adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
               logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
               if (config.timeSlotWeight?.enabled) {
-                this.timeSlotCalculator.recordFailure(upstream.provider);
+                timeSlotCalculator.recordFailure(upstream.provider);
               }
               logAccess({
                 sessionId: sessionId || null,
@@ -340,10 +339,10 @@ export class ProxyServerManager {
 
     try {
       const { server } = await createServer({ port, requestHandler });
-      this.activeServer = server;
-      this.activePort = port;
+      inst.server = server;
+      inst.port = port;
 
-      logger.success(`Proxy server started on port ${port}`);
+      logger.success(`[${instanceName}] Proxy server started on port ${port}`);
       logger.info(`Config: ${configPath}`);
 
       if (Object.keys(routes).length > 0) {
@@ -355,57 +354,31 @@ export class ProxyServerManager {
       for (const [routeKey, route] of Object.entries(routes)) {
         const recoveryTimer = startWeightRecovery(routeKey, route.upstreams, route.dynamicWeight);
         if (recoveryTimer) {
-          this.routeRecoveryTimers.set(routeKey, recoveryTimer);
+          inst.routeRecoveryTimers.set(routeKey, recoveryTimer);
         }
       }
 
       if (config.timeSlotWeight?.enabled) {
-        await this.timeSlotCalculator.load();
+        await inst.timeSlotCalculator.load();
         const HOUR_MS = 60 * 60 * 1000;
-        this.timeSlotSaveTimer = setInterval(async () => {
-          await this.timeSlotCalculator.save().catch((err) => {
-            logger.error(`Failed to persist time slot data: ${err.message}`);
+        inst.timeSlotSaveTimer = setInterval(async () => {
+          await inst.timeSlotCalculator.save().catch((err) => {
+            logger.error(`[${instanceName}] Failed to persist time slot data: ${err.message}`);
           });
         }, HOUR_MS);
       }
 
-      // Handle graceful shutdown
-      this.setupGracefulShutdown(config);
+      this.setupGracefulShutdown(config, instanceName);
     } catch (error) {
-      logger.error(`Failed to start proxy server: ${error.message}`);
+      logger.error(`[${instanceName}] Failed to start proxy server: ${error.message}`);
       process.exit(1);
     }
   }
 
-  /**
-   * Setup graceful shutdown handlers
-   * @param {object} config - Proxy configuration
-   */
-  setupGracefulShutdown(config) {
+  setupGracefulShutdown(config, instanceName) {
     const shutdown = async () => {
-      logger.info('Shutting down proxy server...');
-
-      if (this.periodicWeightAdjustTimer) {
-        clearInterval(this.periodicWeightAdjustTimer);
-        this.periodicWeightAdjustTimer = null;
-      }
-
-      if (this.timeSlotSaveTimer) {
-        clearInterval(this.timeSlotSaveTimer);
-        this.timeSlotSaveTimer = null;
-        await this.timeSlotCalculator.save().catch((err) => {
-          logger.error(`Failed to persist time slot data on shutdown: ${err.message}`);
-        });
-      }
-
-      for (const [routeKey] of this.routeRecoveryTimers) {
-        stopWeightRecovery(routeKey);
-      }
-      this.routeRecoveryTimers.clear();
-
-      await shutdownServer(this.activeServer);
-      this.activeServer = null;
-      this.activePort = null;
+      logger.info(`[${instanceName}] Shutting down proxy server...`);
+      await this._shutdownInstance(instanceName);
       process.exit(0);
     };
 
@@ -413,53 +386,112 @@ export class ProxyServerManager {
     process.on('SIGTERM', shutdown);
   }
 
-  /**
-   * Stop the proxy server
-   */
-  async stop() {
-    if (!this.activeServer || !this.activeServer.listening) {
-      logger.warn('No proxy server is currently running');
+  async _shutdownInstance(instanceName) {
+    const inst = this._getInstance(instanceName);
+    if (!inst) return;
+
+    if (inst.periodicWeightAdjustTimer) {
+      clearInterval(inst.periodicWeightAdjustTimer);
+      inst.periodicWeightAdjustTimer = null;
+    }
+
+    if (inst.timeSlotSaveTimer) {
+      clearInterval(inst.timeSlotSaveTimer);
+      inst.timeSlotSaveTimer = null;
+      await inst.timeSlotCalculator.save().catch((err) => {
+        logger.error(
+          `[${instanceName}] Failed to persist time slot data on shutdown: ${err.message}`
+        );
+      });
+    }
+
+    for (const [routeKey] of inst.routeRecoveryTimers) {
+      stopWeightRecovery(routeKey);
+    }
+    inst.routeRecoveryTimers.clear();
+
+    if (inst.server) {
+      await shutdownServer(inst.server);
+    }
+    inst.server = null;
+    inst.port = null;
+  }
+
+  async stop(instanceName) {
+    const name = instanceName || DEFAULT_INSTANCE_NAME;
+    const inst = this._getInstance(name);
+
+    if (!inst || !inst.server || !inst.server.listening) {
+      logger.warn(`[${name}] No proxy server is currently running`);
       return;
     }
 
     try {
-      if (this.periodicWeightAdjustTimer) {
-        clearInterval(this.periodicWeightAdjustTimer);
-        this.periodicWeightAdjustTimer = null;
+      if (inst.periodicWeightAdjustTimer) {
+        clearInterval(inst.periodicWeightAdjustTimer);
+        inst.periodicWeightAdjustTimer = null;
       }
 
-      if (this.timeSlotSaveTimer) {
-        clearInterval(this.timeSlotSaveTimer);
-        this.timeSlotSaveTimer = null;
-        await this.timeSlotCalculator.save().catch((err) => {
-          logger.error(`Failed to persist time slot data on stop: ${err.message}`);
+      if (inst.timeSlotSaveTimer) {
+        clearInterval(inst.timeSlotSaveTimer);
+        inst.timeSlotSaveTimer = null;
+        await inst.timeSlotCalculator.save().catch((err) => {
+          logger.error(`[${name}] Failed to persist time slot data on stop: ${err.message}`);
         });
       }
 
-      for (const [routeKey] of this.routeRecoveryTimers) {
+      for (const [routeKey] of inst.routeRecoveryTimers) {
         stopWeightRecovery(routeKey);
       }
-      this.routeRecoveryTimers.clear();
+      inst.routeRecoveryTimers.clear();
 
-      await shutdownServer(this.activeServer);
-      logger.success(`Proxy server stopped (was on port ${this.activePort})`);
-      this.activeServer = null;
-      this.activePort = null;
+      await shutdownServer(inst.server);
+      logger.success(`[${name}] Proxy server stopped (was on port ${inst.port})`);
+      inst.server = null;
+      inst.port = null;
     } catch (error) {
-      logger.error(`Failed to stop proxy server: ${error.message}`);
+      logger.error(`[${name}] Failed to stop proxy server: ${error.message}`);
       process.exit(1);
     }
   }
 
-  /**
-   * Get current server status
-   * @returns {object} Status information
-   */
-  getStatus() {
+  async stopAll() {
+    const names = [...this.instances.keys()];
+    for (const name of names) {
+      await this.stop(name);
+    }
+  }
+
+  getStatus(instanceName) {
+    const name = instanceName || DEFAULT_INSTANCE_NAME;
+    const inst = this._getInstance(name);
+
+    if (!inst) {
+      return {
+        name,
+        running: false,
+        port: null,
+        pid: undefined,
+      };
+    }
+
     return {
-      running: this.activeServer !== null && this.activeServer.listening,
-      port: this.activePort,
-      pid: this.activeServer ? process.pid : undefined,
+      name,
+      running: inst.server !== null && inst.server.listening,
+      port: inst.port,
+      pid: inst.server ? process.pid : undefined,
     };
+  }
+
+  getAllStatuses() {
+    const statuses = [];
+    for (const name of this.instances.keys()) {
+      statuses.push(this.getStatus(name));
+    }
+    return statuses;
+  }
+
+  listInstances() {
+    return [...this.instances.keys()];
   }
 }

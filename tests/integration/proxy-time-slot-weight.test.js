@@ -13,7 +13,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   routeRequest,
   getUpstreamRequestCounts,
   validateRoutesConfig,
@@ -24,20 +24,16 @@ import {
   createTimeSlotWeightCalculator,
 } from '../../src/utils/time-slot-stats.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
+import { makeUpstream, makeMockRequest } from '../helpers/proxy-fixtures.js';
 
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    weight: overrides.weight ?? 100,
-    ...overrides,
-  };
-}
+const defaultTimeSlotWeightConfig = {
+  enabled: false,
+  totalErrorThreshold: 0.01,
+  dangerSlotThreshold: 0.05,
+  dangerMultiplier: 0.5,
+  normalMultiplier: 2.0,
+  lookbackDays: 7,
+};
 
 function makeRoute(upstreams, overrides = {}) {
   return {
@@ -62,21 +58,10 @@ function makeRoute(upstreams, overrides = {}) {
       },
     },
     timeSlotWeight: {
-      enabled: false,
-      totalErrorThreshold: 0.01,
-      dangerSlotThreshold: 0.05,
-      dangerMultiplier: 0.5,
-      normalMultiplier: 2.0,
-      lookbackDays: 7,
+      ...defaultTimeSlotWeightConfig,
+      ...(overrides.timeSlotWeight || {}),
     },
     ...overrides,
-  };
-}
-
-function makeMockRequest(sessionId) {
-  return {
-    headers: { 'x-opencode-session': sessionId },
-    socket: { remoteAddress: '127.0.0.1' },
   };
 }
 
@@ -114,8 +99,8 @@ const normalHours =
 // ===========================================================================
 
 describe('Integration – Time Slot Weight Feature', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   // -----------------------------------------------------------------------
   // 1. Calculator + Tracker pipeline

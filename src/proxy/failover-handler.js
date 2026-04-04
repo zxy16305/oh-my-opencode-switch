@@ -4,11 +4,8 @@
  */
 
 import { logger } from '../utils/logger.js';
-import {
-  sessionUpstreamMap,
-  incrementSessionCount,
-  decrementSessionCount,
-} from './session-manager.js';
+import { stateManager } from './state-manager.js';
+import { incrementSessionCount, decrementSessionCount } from './session-manager.js';
 import { selectLeastLoadedUpstream } from './route-strategy.js';
 
 /**
@@ -20,6 +17,7 @@ import { selectLeastLoadedUpstream } from './route-strategy.js';
  * @param {string} routeKey
  * @param {string} [model] - Model name for session key (optional, for consistency with selectUpstreamSticky)
  * @param {Function} [isAvailable] - Optional callback to check if an upstream is available (returns boolean)
+ * @param {import('./state-manager.js').StateManager} [state] - Optional state manager instance
  * @returns {Upstream | null} Next available upstream, or null if none
  */
 export function failoverStickySession(
@@ -28,8 +26,11 @@ export function failoverStickySession(
   upstreams,
   routeKey,
   model,
-  isAvailable
+  isAvailable,
+  state = null
 ) {
+  const sm = state ?? stateManager;
+
   if (!upstreams || upstreams.length === 0) return null;
 
   const failedProvider = upstreams.find((u) => u.id === failedUpstreamId);
@@ -51,7 +52,7 @@ export function failoverStickySession(
   if (available.length === 0) {
     logger.warn(`All upstreams filtered out, falling back to failed provider: ${failedUpstreamId}`);
     const sessionKey = model ? `${sessionId}:${model}` : sessionId;
-    sessionUpstreamMap.set(sessionKey, {
+    sm.getSessionUpstreamMap().set(sessionKey, {
       upstreamId: failedProvider.id,
       routeKey,
       timestamp: Date.now(),
@@ -60,13 +61,13 @@ export function failoverStickySession(
     return failedProvider;
   }
 
-  decrementSessionCount(routeKey, failedUpstreamId);
+  decrementSessionCount(sm, routeKey, failedUpstreamId);
 
-  const next = selectLeastLoadedUpstream(available, routeKey, null);
-  incrementSessionCount(routeKey, next.id);
+  const next = selectLeastLoadedUpstream(sm, available, routeKey, null);
+  incrementSessionCount(sm, routeKey, next.id);
 
   const sessionKey = model ? `${sessionId}:${model}` : sessionId;
-  sessionUpstreamMap.set(sessionKey, {
+  sm.getSessionUpstreamMap().set(sessionKey, {
     upstreamId: next.id,
     routeKey,
     timestamp: Date.now(),

@@ -18,7 +18,7 @@ import {
   validateRoutesConfig,
   hashSessionToBackend,
   failoverStickySession,
-  resetRoundRobinCounters,
+  resetAllState,
   getSessionMapSize,
   getUpstreamSessionCounts,
   RouterError,
@@ -30,28 +30,7 @@ import {
   getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    apiKey: overrides.apiKey || 'key-123',
-    ...overrides,
-  };
-}
-
-function makeRoute(upstreams, strategy = 'round-robin') {
-  return { strategy, upstreams };
-}
-
-function makeConfig(routeKey = 'test-model', upstreams, strategy) {
-  return { [routeKey]: makeRoute(upstreams || [makeUpstream()], strategy) };
-}
+import { makeUpstream, makeRoute, makeConfig } from '../../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests
@@ -109,8 +88,8 @@ describe('Router – getRouteForModel()', () => {
 });
 
 describe('Router – selectUpstreamRoundRobin()', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('cycles through upstreams in order', () => {
     const upstreams = [
@@ -273,8 +252,8 @@ describe('Router – selectUpstreamWeighted()', () => {
 });
 
 describe('Router – selectUpstreamSticky()', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('returns consistent upstream for same session', () => {
     const upstreams = [makeUpstream({ id: 'sa' }), makeUpstream({ id: 'sb' })];
@@ -437,7 +416,7 @@ describe('Router – selectUpstreamSticky()', () => {
     ];
 
     // Reset sliding window to simulate time passage
-    resetRoundRobinCounters();
+    resetAllState();
 
     // Distribute new sessions with equal weights
     const phase2Counts = { main: 0, recovering: 0 };
@@ -487,7 +466,7 @@ describe('Router – selectUpstreamSticky()', () => {
     assert.equal(countB, 1, 'Recent requests should remain in sliding window');
 
     // New session selection should favor 'a' (since it has fewer recent requests)
-    resetRoundRobinCounters();
+    resetAllState();
     const selected = selectUpstreamSticky(upstreams, 'window-route', 'new-session');
     assert.equal(
       selected.id,
@@ -538,8 +517,8 @@ describe('Router – selectUpstreamSticky()', () => {
 });
 
 describe('Router – failoverStickySession()', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('returns another upstream when failed one is excluded', () => {
     const upstreams = [makeUpstream({ id: 'fa' }), makeUpstream({ id: 'fb' })];
@@ -739,8 +718,8 @@ describe('Router – hashSessionToBackend()', () => {
 });
 
 describe('Router – routeRequest()', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('routes to valid model with round-robin', () => {
     const config = makeConfig(
@@ -1018,7 +997,7 @@ describe('Router – RouterError', () => {
   });
 });
 
-describe('Router – resetRoundRobinCounters()', () => {
+describe('Router – resetAllState()', () => {
   test('clears session map and counters', () => {
     const config = makeConfig(
       'reset-test',
@@ -1030,7 +1009,7 @@ describe('Router – resetRoundRobinCounters()', () => {
     routeRequest('reset-test', config, req);
     assert.ok(getSessionMapSize() > 0);
 
-    resetRoundRobinCounters();
+    resetAllState();
     assert.equal(getSessionMapSize(), 0);
   });
 });

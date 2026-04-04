@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   recordUpstreamStats,
   getUpstreamStats,
-  resetRoundRobinCounters,
+  resetAllState,
 } from '../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
@@ -17,8 +17,8 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('Dashboard Memory Statistics', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   it('should record TTFB and duration for successful requests', () => {
     const routeKey = 'test-model';

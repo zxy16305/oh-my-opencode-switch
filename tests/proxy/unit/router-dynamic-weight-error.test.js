@@ -7,7 +7,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForError,
@@ -15,44 +15,18 @@ import {
   getErrorRate,
 } from '../../../src/proxy/router.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeUpstream(overrides = {}) {
-  return {
-    id: overrides.id || 'u1',
-    provider: overrides.provider || 'test-provider',
-    model: overrides.model || 'test-model',
-    baseURL: overrides.baseURL || 'http://localhost:8001',
-    ...overrides,
-  };
-}
-
-function makeConfig(overrides = {}) {
-  return {
-    enabled: true,
-    initialWeight: 100,
-    minWeight: 10,
-    ...overrides,
-    errorWeightReduction: {
-      enabled: true,
-      errorCodes: [429, 500, 502, 503, 504],
-      reductionAmount: 5,
-      minWeight: 5,
-      errorWindowMs: 3600000,
-      ...(overrides.errorWeightReduction || {}),
-    },
-  };
-}
+import {
+  makeUpstream,
+  makeDynamicWeightConfig as makeConfig,
+} from '../../helpers/proxy-fixtures.js';
 
 // ===========================================================================
 // Tests
 // ===========================================================================
 
 describe('Dynamic Weight – adjustWeightForError', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('Single error reduces weight for the failed upstream', () => {
     const upstreams = [makeUpstream({ id: 'good' }), makeUpstream({ id: 'failed' })];
@@ -226,8 +200,8 @@ describe('Dynamic Weight – adjustWeightForError', () => {
 });
 
 describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('recordUpstreamError records an error', () => {
     recordUpstreamError('route1', 'upstream1', 500);

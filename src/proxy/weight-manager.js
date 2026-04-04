@@ -107,7 +107,10 @@ function adjustWeightForLatency(state, routeKey, upstreams, config, latencyData)
     const data = latencyData.get(upstream.id);
     if (!data || !data.avgDuration) continue;
 
-    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
+    // Use configured weight (upstream.weight) as baseline for initialization
+    // This ensures custom weights (e.g., 200) are respected during weight adjustments
+    const configuredWeight = upstream.weight ?? 100;
+    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, configuredWeight);
 
     // Skip if already at min weight
     if (currentWeight <= minWeight) continue;
@@ -192,13 +195,16 @@ function startWeightRecovery(state, routeKey, upstreams, config) {
 
   const timer = setInterval(() => {
     for (const upstream of upstreams) {
-      const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
-      if (currentWeight < initialWeight) {
+      // Use configured weight (upstream.weight) as recovery target
+      // This ensures custom weights (e.g., 200) are respected during recovery
+      const configuredWeight = upstream.weight ?? 100;
+      const currentWeight = getDynamicWeight(state, routeKey, upstream.id, configuredWeight);
+      if (currentWeight < configuredWeight) {
         setDynamicWeight(
           state,
           routeKey,
           upstream.id,
-          Math.min(initialWeight, currentWeight + recoveryAmount)
+          Math.min(configuredWeight, currentWeight + recoveryAmount)
         );
       }
     }

@@ -86,7 +86,7 @@ function selectLeastLoadedUpstream(
       }
 
       // Apply latency-based weight penalty
-      const latencyWindowMs = 3600000; // 10 minutes
+      const latencyWindowMs = 3600000; // 1 hour
       const avgLatency = getLatencyAvg(routeKey, upstream.id, latencyWindowMs);
       if (avgLatency > 0) {
         // Find the fastest upstream's average latency

@@ -62,11 +62,13 @@ export function calculateEffectiveWeight(params) {
 
   // Apply dynamic weight if enabled
   if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
+    // Use configured weight (staticWeight) as initial value for dynamic weight
+    // This ensures custom weights (e.g., 200) are respected while allowing dynamic adjustments
     const dynWeight = _getDynamicWeight(
       sm,
       routeKey,
       upstream.id,
-      dynamicWeightConfig.initialWeight
+      staticWeight // Use configured weight as initial value
     );
     effectiveWeight = Math.min(effectiveWeight, dynWeight);
 

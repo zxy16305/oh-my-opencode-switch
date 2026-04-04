@@ -7,6 +7,7 @@ import { StateManager, stateManager } from './state-manager.js';
 import { RouterError } from './errors.js';
 import { getOrCreateCountMap as _getOrCreateCountMap } from './session-manager.js';
 import { calculateEffectiveWeight } from './weight-calculator.js';
+import { getUpstreamRequestCountInWindow as _getUpstreamRequestCountInWindow } from './stats-collector.js';
 
 /**
  * Get the StateManager instance to use (provided or singleton)
@@ -20,7 +21,8 @@ function getState(state) {
 /**
  * 选择负载最低的 upstream（考虑动态权重）
  * effectiveWeight = min(staticWeight, latencyWeight, errorWeight)
- * score = sessionCount / effectiveWeight（越低越好）
+ * score = (requestCount + 1) / effectiveWeight（越低越好）
+ * 使用滑动窗口请求计数，避免长期运行后权重被稀释
  * @param {StateManager} [state] - State manager instance
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
@@ -36,13 +38,12 @@ function selectLeastLoadedUpstream(
   timeSlotWeightConfig = null
 ) {
   const sm = getState(state);
-  const countMap = _getOrCreateCountMap(sm, routeKey);
 
   let bestScore = Infinity;
-  let bestUpstream = upstreams[0];
+  const candidates = [];
 
   for (const upstream of upstreams) {
-    const sessionCount = countMap.get(upstream.id) ?? 0;
+    const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
     const staticWeight = upstream.weight ?? 1;
 
     const effectiveWeight = calculateEffectiveWeight({
@@ -56,15 +57,33 @@ function selectLeastLoadedUpstream(
       latencyWindowMs: 3600000,
     });
 
-    const score = sessionCount / effectiveWeight;
+    const score = (requestCount + 1) / effectiveWeight;
 
     if (score < bestScore) {
       bestScore = score;
-      bestUpstream = upstream;
+      candidates.length = 0;
+      candidates.push(upstream);
+    } else if (score === bestScore) {
+      candidates.push(upstream);
     }
   }
 
-  return bestUpstream;
+  // Tie-breaking: use weighted random selection among candidates
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const totalWeight = candidates.reduce((sum, u) => sum + (u.weight ?? 1), 0);
+  let random = Math.random() * totalWeight;
+
+  for (const candidate of candidates) {
+    random -= candidate.weight ?? 1;
+    if (random <= 0) {
+      return candidate;
+    }
+  }
+
+  return candidates[candidates.length - 1];
 }
 
 /**

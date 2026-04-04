@@ -453,7 +453,7 @@ export function selectUpstreamSticky(
           timeSlotWeightConfig,
           upstreams,
         });
-        const currentScore = currentRequestCount / currentEffectiveWeight;
+        const currentScore = (currentRequestCount + 1) / currentEffectiveWeight;
 
         // Find candidate with lowest score (excluding current upstream)
         let minScore = Infinity;
@@ -472,7 +472,7 @@ export function selectUpstreamSticky(
             timeSlotWeightConfig,
             upstreams,
           });
-          const score = requestCount / effectiveWeight;
+          const score = (requestCount + 1) / effectiveWeight;
 
           if (score < minScore) {
             minScore = score;

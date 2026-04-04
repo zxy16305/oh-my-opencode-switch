@@ -7,7 +7,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForError,
@@ -25,8 +25,8 @@ import {
 // ===========================================================================
 
 describe('Dynamic Weight – adjustWeightForError', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('Single error reduces weight for the failed upstream', () => {
     const upstreams = [makeUpstream({ id: 'good' }), makeUpstream({ id: 'failed' })];
@@ -200,8 +200,8 @@ describe('Dynamic Weight – adjustWeightForError', () => {
 });
 
 describe('Dynamic Weight – recordUpstreamError and getErrorRate', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('recordUpstreamError records an error', () => {
     recordUpstreamError('route1', 'upstream1', 500);

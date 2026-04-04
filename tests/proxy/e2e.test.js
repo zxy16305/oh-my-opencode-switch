@@ -24,7 +24,7 @@ import {
   getRouteForModel,
   getSessionId,
   getAvailableModels,
-  resetRoundRobinCounters,
+  resetAllState,
   RouterError,
 } from '../../src/proxy/router.js';
 import {
@@ -448,7 +448,7 @@ describe('E2E – Proxy Server', () => {
       await shutdownServer(proxy.server);
       await stopMock(upstreamA);
       await stopMock(upstreamB);
-      resetRoundRobinCounters();
+      resetAllState();
     });
 
     test('5 requests with same session header hit the same upstream', async () => {
@@ -855,11 +855,11 @@ describe('E2E – Proxy Server', () => {
   // -------------------------------------------------------------------------
   describe('Router integration', () => {
     beforeEach(() => {
-      resetRoundRobinCounters();
+      resetAllState();
     });
 
     afterEach(() => {
-      resetRoundRobinCounters();
+      resetAllState();
     });
 
     test('getRouteForModel returns null for empty model', () => {

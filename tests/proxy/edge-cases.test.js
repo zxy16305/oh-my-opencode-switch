@@ -27,7 +27,7 @@ import {
 import {
   routeRequest,
   getAvailableModels,
-  resetRoundRobinCounters,
+  resetAllState,
   validateRoutesConfig,
   RouterError,
 } from '../../src/proxy/router.js';
@@ -299,7 +299,7 @@ describe('Edge Cases – Proxy', () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream1);
       await stopMock(upstream2);
-      resetRoundRobinCounters();
+      resetAllState();
     });
 
     test('returns 503 when all upstreams are circuit-broken', async () => {
@@ -947,7 +947,7 @@ describe('Edge Cases – Proxy', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
-      resetRoundRobinCounters();
+      resetAllState();
     });
 
     test('handles 10 concurrent requests correctly', async () => {

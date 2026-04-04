@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 
 import {
   failoverStickySession,
-  resetRoundRobinCounters,
+  resetAllState,
   getSessionUpstreamMap,
 } from '../../src/proxy/router.js';
 
@@ -51,7 +51,7 @@ const createTestUpstreams = () => [
 
 describe('failoverStickySession Filter', () => {
   beforeEach(() => {
-    resetRoundRobinCounters();
+    resetAllState();
   });
 
   it('should filter out circuit-broken upstreams when isAvailable provided', () => {

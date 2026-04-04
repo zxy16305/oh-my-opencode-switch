@@ -12,7 +12,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   routeRequest,
   getUpstreamRequestCounts,
   getSessionUpstreamMap,
@@ -31,8 +31,8 @@ import {
 // ===========================================================================
 
 describe('Integration – Sticky Strategy Weight Distribution', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('real user scenario: weight=100, 100, 95, 8 distributes traffic correctly', () => {
     // This reproduces the exact user-reported scenario

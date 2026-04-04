@@ -7,7 +7,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   getDynamicWeightState,
   getRecoveryTimers,
   getDynamicWeight,
@@ -26,8 +26,8 @@ import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 // ===========================================================================
 
 describe('Dynamic Weight – State Management', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('getDynamicWeight returns initial weight for new upstream', () => {
     const weight = getDynamicWeight('route1', 'upstream1', 100);
@@ -54,7 +54,7 @@ describe('Dynamic Weight – State Management', () => {
 
   test('getDynamicWeightState is empty after reset', () => {
     getDynamicWeight('route1', 'upstream1', 100);
-    resetRoundRobinCounters();
+    resetAllState();
     const state = getDynamicWeightState();
     assert.strictEqual(state.size, 0);
   });
@@ -73,8 +73,8 @@ describe('Dynamic Weight – State Management', () => {
 });
 
 describe('Dynamic Weight – adjustWeightForLatency', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('decreases weight for high latency upstream', () => {
     const upstreams = [makeUpstream({ id: 'fast' }), makeUpstream({ id: 'slow' })];
@@ -231,8 +231,8 @@ describe('Dynamic Weight – adjustWeightForLatency', () => {
 });
 
 describe('Dynamic Weight – Recovery', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('startWeightRecovery returns null for invalid parameters', () => {
     const result = startWeightRecovery(null, [], {});
@@ -374,7 +374,7 @@ describe('Dynamic Weight – Recovery', () => {
     assert.strictEqual(result, null);
   });
 
-  test('resetRoundRobinCounters clears all recovery timers', () => {
+  test('resetAllState clears all recovery timers', () => {
     const upstreams = [makeUpstream({ id: 'a' })];
     const config = {
       enabled: true,
@@ -388,15 +388,15 @@ describe('Dynamic Weight – Recovery', () => {
 
     assert.strictEqual(getRecoveryTimers().size, 2);
 
-    resetRoundRobinCounters();
+    resetAllState();
 
     assert.strictEqual(getRecoveryTimers().size, 0);
   });
 });
 
 describe('Dynamic Weight – Integration with selectUpstreamSticky', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('dynamic weight affects upstream selection', () => {
     const upstreams = [makeUpstream({ id: 'heavy' }), makeUpstream({ id: 'light' })];

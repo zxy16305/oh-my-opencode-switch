@@ -13,7 +13,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   routeRequest,
   getUpstreamRequestCounts,
   validateRoutesConfig,
@@ -99,8 +99,8 @@ const normalHours =
 // ===========================================================================
 
 describe('Integration – Time Slot Weight Feature', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   // -----------------------------------------------------------------------
   // 1. Calculator + Tracker pipeline

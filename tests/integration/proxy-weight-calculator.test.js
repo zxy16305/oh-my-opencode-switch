@@ -6,7 +6,7 @@
 import { describe, test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { calculateEffectiveWeight, resetRoundRobinCounters } from '../../src/proxy/router.js';
+import { calculateEffectiveWeight, resetAllState } from '../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -27,7 +27,7 @@ function makeTestUpstream(id, overrides = {}) {
 // ===========================================================================
 
 describe('Weight Calculator – calculateEffectiveWeight', () => {
-  beforeEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
 
   test('1. Dynamic weight: returns base weight when no penalties apply', () => {
     const upstream = makeTestUpstream('u1');

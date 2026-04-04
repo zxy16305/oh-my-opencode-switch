@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   routeRequest,
-  resetRoundRobinCounters,
+  resetAllState,
   getUpstreamRequestCounts,
   getUpstreamSessionCounts,
 } from '../../src/proxy/router.js';
@@ -58,7 +58,7 @@ const createTestRoutes = (upstreams) => ({
 
 describe('Upstream Request Count Tracking', () => {
   beforeEach(() => {
-    resetRoundRobinCounters();
+    resetAllState();
   });
 
   it('should increment request count on each routeRequest()', () => {
@@ -97,7 +97,7 @@ describe('Upstream Request Count Tracking', () => {
     assert.ok(routeCounts.size > 0, 'Should have at least one upstream with counts');
   });
 
-  it('should reset counts on resetRoundRobinCounters()', () => {
+  it('should reset counts on resetAllState()', () => {
     const upstreams = createTestUpstreams([3001, 3002, 3003]);
     const routes = createTestRoutes(upstreams);
 
@@ -107,7 +107,7 @@ describe('Upstream Request Count Tracking', () => {
     }
 
     // Reset
-    resetRoundRobinCounters();
+    resetAllState();
 
     const requestCounts = getUpstreamRequestCounts();
     assert.equal(requestCounts.size, 0, 'Request counts should be empty after reset');
@@ -116,7 +116,7 @@ describe('Upstream Request Count Tracking', () => {
 
 describe('Sticky Session Soft Rotation', () => {
   beforeEach(() => {
-    resetRoundRobinCounters();
+    resetAllState();
   });
 
   it('should keep session on same upstream before 10 requests', () => {
@@ -193,7 +193,7 @@ describe('Sticky Session Soft Rotation', () => {
 
 describe('Session Count Tracking', () => {
   beforeEach(() => {
-    resetRoundRobinCounters();
+    resetAllState();
   });
 
   it('should track session counts per upstream', () => {

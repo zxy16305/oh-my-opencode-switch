@@ -13,7 +13,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  resetRoundRobinCounters,
+  resetAllState,
   getDynamicWeight,
   setDynamicWeight,
   adjustWeightForError,
@@ -28,8 +28,8 @@ import { makeUpstream, makeDynamicWeightConfig as makeConfig } from '../helpers/
 // ===========================================================================
 
 describe('Integration – Weight Reduction on 429 Errors', () => {
-  beforeEach(() => resetRoundRobinCounters());
-  afterEach(() => resetRoundRobinCounters());
+  beforeEach(() => resetAllState());
+  afterEach(() => resetAllState());
 
   test('single 429 error reduces weight by configured reduction amount', () => {
     const upstreams = [makeUpstream({ id: 'rate-limited' }), makeUpstream({ id: 'healthy' })];

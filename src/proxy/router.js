@@ -30,11 +30,12 @@ import {
 
 // Import internal versions of route-strategy functions (with _ prefix)
 import {
+  selectLeastLoadedUpstream as _selectLeastLoadedUpstream,
   selectUpstreamRoundRobin as _selectUpstreamRoundRobin,
   selectUpstreamRandom as _selectUpstreamRandom,
   selectUpstreamWeighted as _selectUpstreamWeighted,
-  selectLeastLoadedUpstream as _selectLeastLoadedUpstream,
 } from './route-strategy.js';
+import { calculateEffectiveWeight } from './weight-calculator.js';
 
 // Import internal versions of stats-collector functions (with _ prefix)
 import {
@@ -153,13 +154,6 @@ export const routesConfigSchema = z.record(z.string(), routeSchema);
  */
 
 export { RouterError } from './errors.js';
-
-/**
- * Global time slot weight calculator instance
- * Used for time-based weight adjustments based on historical error patterns
- * @type {import('../utils/time-slot-stats.js').TimeSlotWeightCalculator | null}
- */
-let timeSlotCalculator = null;
 
 /**
  * Get route configuration for a given model name
@@ -545,83 +539,15 @@ export function selectUpstreamSticky(
           routeKey,
           existing.upstreamId
         );
-        let currentStaticWeight = mapped.weight ?? 1;
-
-        // Apply time slot weight for current upstream if enabled
-        if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
-          if (!timeSlotCalculator) {
-            timeSlotCalculator = createTimeSlotWeightCalculator();
-          }
-          const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
-            mapped.provider,
-            null,
-            {
-              totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
-              dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
-              dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
-              normalMultiplier: timeSlotWeightConfig.normalMultiplier,
-            }
-          );
-          currentStaticWeight = currentStaticWeight * timeSlotWeightMultiplier;
-        }
-
-        let currentEffectiveWeight = currentStaticWeight;
-
-        // Apply dynamic weight for current upstream if enabled
-        if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
-          const dynWeight = _getDynamicWeight(
-            sm,
-            routeKey,
-            existing.upstreamId,
-            dynamicWeightConfig.initialWeight
-          );
-          currentEffectiveWeight = Math.min(currentStaticWeight, dynWeight);
-
-          // Apply error-based weight penalty if error reduction is enabled
-          const errorConfig = dynamicWeightConfig.errorWeightReduction;
-          if (errorConfig && errorConfig.enabled) {
-            const errorCount = _getErrorRate(
-              sm,
-              routeKey,
-              existing.upstreamId,
-              errorConfig.errorWindowMs
-            );
-            if (errorCount > 0) {
-              const errorWeight = Math.max(
-                errorConfig.minWeight,
-                dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
-              );
-              currentEffectiveWeight = Math.min(currentEffectiveWeight, errorWeight);
-            }
-          }
-
-          // Apply latency-based weight penalty
-          const latencyWindowMs = 60000; // 1 minute
-          const avgLatency = _getLatencyAvg(sm, routeKey, existing.upstreamId, latencyWindowMs);
-          if (avgLatency > 0) {
-            // Find the fastest upstream's average latency
-            let fastestLatency = Infinity;
-            for (const u of upstreams) {
-              const uAvgLatency = _getLatencyAvg(sm, routeKey, u.id, latencyWindowMs);
-              if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
-                fastestLatency = uAvgLatency;
-              }
-            }
-
-            // Apply penalty if this upstream is significantly slower than fastest
-            if (
-              fastestLatency !== Infinity &&
-              avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
-            ) {
-              const latencyPenalty = Math.max(
-                1,
-                Math.floor((avgLatency / fastestLatency - 1) * 10)
-              );
-              currentEffectiveWeight = Math.max(1, currentEffectiveWeight - latencyPenalty);
-            }
-          }
-        }
-
+        const currentEffectiveWeight = calculateEffectiveWeight({
+          sm,
+          routeKey,
+          upstream: mapped,
+          staticWeight: mapped.weight ?? 1,
+          dynamicWeightConfig,
+          timeSlotWeightConfig,
+          upstreams,
+        });
         const currentScore = currentRequestCount / currentEffectiveWeight;
 
         // Find candidate with lowest score (excluding current upstream)
@@ -632,83 +558,15 @@ export function selectUpstreamSticky(
           if (upstream.id === existing.upstreamId) continue;
 
           const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
-          let staticWeight = upstream.weight ?? 1;
-
-          // Apply time slot weight for candidate upstream if enabled
-          if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
-            if (!timeSlotCalculator) {
-              timeSlotCalculator = createTimeSlotWeightCalculator();
-            }
-            const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
-              upstream.provider,
-              null,
-              {
-                totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
-                dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
-                dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
-                normalMultiplier: timeSlotWeightConfig.normalMultiplier,
-              }
-            );
-            staticWeight = staticWeight * timeSlotWeightMultiplier;
-          }
-
-          let effectiveWeight = staticWeight;
-
-          // Apply dynamic weight if enabled
-          if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
-            const dynWeight = _getDynamicWeight(
-              sm,
-              routeKey,
-              upstream.id,
-              dynamicWeightConfig.initialWeight
-            );
-            effectiveWeight = Math.min(staticWeight, dynWeight);
-
-            // Apply error-based weight penalty if error reduction is enabled
-            const errorConfig = dynamicWeightConfig.errorWeightReduction;
-            if (errorConfig && errorConfig.enabled) {
-              const errorCount = _getErrorRate(
-                sm,
-                routeKey,
-                upstream.id,
-                errorConfig.errorWindowMs
-              );
-              if (errorCount > 0) {
-                const errorWeight = Math.max(
-                  errorConfig.minWeight,
-                  dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
-                );
-                effectiveWeight = Math.min(effectiveWeight, errorWeight);
-              }
-            }
-
-            // Apply latency-based weight penalty
-            const latencyWindowMs = 60000; // 1 minute
-            const avgLatency = _getLatencyAvg(sm, routeKey, upstream.id, latencyWindowMs);
-            if (avgLatency > 0) {
-              // Find the fastest upstream's average latency
-              let fastestLatency = Infinity;
-              for (const u of upstreams) {
-                const uAvgLatency = _getLatencyAvg(sm, routeKey, u.id, latencyWindowMs);
-                if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
-                  fastestLatency = uAvgLatency;
-                }
-              }
-
-              // Apply penalty if this upstream is significantly slower than fastest
-              if (
-                fastestLatency !== Infinity &&
-                avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
-              ) {
-                const latencyPenalty = Math.max(
-                  1,
-                  Math.floor((avgLatency / fastestLatency - 1) * 10)
-                );
-                effectiveWeight = Math.max(1, effectiveWeight - latencyPenalty);
-              }
-            }
-          }
-
+          const effectiveWeight = calculateEffectiveWeight({
+            sm,
+            routeKey,
+            upstream,
+            staticWeight: upstream.weight ?? 1,
+            dynamicWeightConfig,
+            timeSlotWeightConfig,
+            upstreams,
+          });
           const score = requestCount / effectiveWeight;
 
           if (score < minScore) {
@@ -957,5 +815,3 @@ export function failoverStickySession(
     sm
   );
 }
-
-export { timeSlotCalculator };

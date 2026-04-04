@@ -4,14 +4,9 @@
  */
 
 import { StateManager, stateManager } from './state-manager.js';
-import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { RouterError } from './errors.js';
-import {
-  getErrorRate as _getErrorRate,
-  getLatencyAvg as _getLatencyAvg,
-} from './stats-collector.js';
-import { getDynamicWeight as _getDynamicWeight } from './weight-manager.js';
 import { getOrCreateCountMap as _getOrCreateCountMap } from './session-manager.js';
+import { calculateEffectiveWeight } from './weight-calculator.js';
 
 /**
  * Get the StateManager instance to use (provided or singleton)
@@ -48,70 +43,18 @@ function selectLeastLoadedUpstream(
 
   for (const upstream of upstreams) {
     const sessionCount = countMap.get(upstream.id) ?? 0;
-    let staticWeight = upstream.weight ?? 1;
+    const staticWeight = upstream.weight ?? 1;
 
-    if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
-      let timeSlotCalculator = sm.getTimeSlotCalculator();
-      if (!timeSlotCalculator) {
-        timeSlotCalculator = createTimeSlotWeightCalculator();
-        sm.setTimeSlotCalculator(timeSlotCalculator);
-      }
-      const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(
-        upstream.provider,
-        null,
-        {
-          totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
-          dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
-          dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
-          normalMultiplier: timeSlotWeightConfig.normalMultiplier,
-        }
-      );
-      staticWeight = staticWeight * timeSlotWeightMultiplier;
-    }
-
-    let effectiveWeight = staticWeight;
-
-    if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
-      const dynWeight = _getDynamicWeight(
-        sm,
-        routeKey,
-        upstream.id,
-        dynamicWeightConfig.initialWeight
-      );
-      effectiveWeight = Math.min(staticWeight, dynWeight);
-
-      const errorConfig = dynamicWeightConfig.errorWeightReduction;
-      if (errorConfig && errorConfig.enabled) {
-        const errorCount = _getErrorRate(sm, routeKey, upstream.id, errorConfig.errorWindowMs);
-        if (errorCount > 0) {
-          const errorWeight = Math.max(
-            errorConfig.minWeight,
-            dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
-          );
-          effectiveWeight = Math.min(effectiveWeight, errorWeight);
-        }
-      }
-
-      const latencyWindowMs = 3600000;
-      const avgLatency = _getLatencyAvg(sm, routeKey, upstream.id, latencyWindowMs);
-      if (avgLatency > 0) {
-        let fastestLatency = Infinity;
-        for (const u of upstreams) {
-          const uAvgLatency = _getLatencyAvg(sm, routeKey, u.id, latencyWindowMs);
-          if (uAvgLatency > 0 && uAvgLatency < fastestLatency) {
-            fastestLatency = uAvgLatency;
-          }
-        }
-
-        if (
-          fastestLatency !== Infinity &&
-          avgLatency > fastestLatency * dynamicWeightConfig.latencyThreshold
-        ) {
-          const latencyPenalty = Math.max(1, Math.floor((avgLatency / fastestLatency - 1) * 10));
-          effectiveWeight = Math.max(1, effectiveWeight - latencyPenalty);
-        }
-      }
-    }
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey,
+      upstream,
+      staticWeight,
+      dynamicWeightConfig,
+      timeSlotWeightConfig,
+      upstreams,
+      latencyWindowMs: 3600000,
+    });
 
     const score = sessionCount / effectiveWeight;
 

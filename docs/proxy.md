@@ -175,6 +175,48 @@ oos proxy start -c ./custom-config.json
 }
 ```
 
+### 内置提供商支持
+
+除了手动配置提供商外，代理还支持使用通过 `opencode auth login` 命令配置的内置提供商。
+
+**什么是内置提供商**：
+
+- 通过 `opencode auth login` 命令登录并保存 API 密钥的提供商
+- 认证信息存储在 `~/.local/share/opencode/auth.json`
+- 无需在 `opencode.json` 中手动配置 `baseURL` 和 `apiKey`
+
+**使用示例**：
+
+```json
+{
+  "port": 3000,
+  "routes": {
+    "lb-gpt": {
+      "strategy": "round-robin",
+      "upstreams": [
+        { "provider": "openai", "model": "gpt-4" },
+        { "provider": "azure", "model": "gpt-4" }
+      ]
+    }
+  }
+}
+```
+
+即使 `openai` 和 `azure` 没有在 `opencode.json` 的 provider 部分定义，只要通过 `opencode auth login` 登录过，代理就能自动读取它们的认证信息并正常工作。
+
+**模型限制（Limit）计算优先级**：
+
+当使用内置提供商时，模型的限制（context limit）按以下优先级确定：
+
+1. **opencode.json 中显式配置的限制**（最高优先级）
+   - 如果在 `opencode.json` 的 provider 定义中指定了 `limit` 字段，优先使用
+2. **从 models.dev API 自动获取**（中等优先级）
+   - 如果未在 opencode.json 中指定，代理会从 models.dev API 查询该模型的默认限制
+3. **默认值 Infinity**（最低优先级）
+   - 如果以上都没有，使用无限制（Infinity）
+
+这种设计确保了灵活性和便利性的平衡：你可以手动覆盖任何模型的限制，同时享受自动获取默认值的便利。
+
 ## 路由策略
 
 ### sticky（粘滞会话）

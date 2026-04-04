@@ -3,33 +3,29 @@
  * @module proxy/session-manager
  */
 
+import { StateManager, stateManager } from './state-manager.js';
+
 /** Default TTL for session mappings (30 minutes) */
-const SESSION_MAP_TTL_MS = 30 * 60 * 1000;
-
-/** Interval for cleaning expired session mappings */
-let cleanupInterval = null;
+export const SESSION_MAP_TTL_MS = 30 * 60 * 1000;
 
 /**
- * Route → Upstream → SessionCount 映射
- * Key: routeKey, Value: Map<upstreamId, sessionCount>
- * @type {Map<string, Map<string, number>>}
+ * Get the StateManager instance to use (provided or singleton)
+ * @param {StateManager} [state] - Optional state manager instance
+ * @returns {StateManager}
  */
-const upstreamSessionCounts = new Map();
-
-/**
- * Session → upstream mapping for sticky sessions
- * Key: `${sessionId}:${model}` or `sessionId` (legacy, when model not provided)
- * Value: { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }
- * @type {Map<string, { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }>}
- */
-const sessionUpstreamMap = new Map();
+function getState(state) {
+  return state ?? stateManager;
+}
 
 /**
  * 获取或创建 routeKey 的计数映射
+ * @param {StateManager} [state] - State manager instance
  * @param {string} routeKey
  * @returns {Map<string, number>}
  */
-function getOrCreateCountMap(routeKey) {
+export function getOrCreateCountMap(state, routeKey) {
+  const sm = getState(state);
+  const upstreamSessionCounts = sm.getUpstreamSessionCounts();
   if (!upstreamSessionCounts.has(routeKey)) {
     upstreamSessionCounts.set(routeKey, new Map());
   }
@@ -38,21 +34,25 @@ function getOrCreateCountMap(routeKey) {
 
 /**
  * 增加 session 计数
+ * @param {StateManager} [state] - State manager instance
  * @param {string} routeKey
  * @param {string} upstreamId
  */
-function incrementSessionCount(routeKey, upstreamId) {
-  const countMap = getOrCreateCountMap(routeKey);
+export function incrementSessionCount(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  const countMap = getOrCreateCountMap(sm, routeKey);
   countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
 }
 
 /**
  * 减少 session 计数
+ * @param {StateManager} [state] - State manager instance
  * @param {string} routeKey
  * @param {string} upstreamId
  */
-function decrementSessionCount(routeKey, upstreamId) {
-  const countMap = getOrCreateCountMap(routeKey);
+export function decrementSessionCount(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  const countMap = getOrCreateCountMap(sm, routeKey);
   const current = countMap.get(upstreamId) ?? 0;
   if (current > 0) {
     countMap.set(upstreamId, current - 1);
@@ -105,7 +105,7 @@ export function getSessionId(request, body = null) {
  * @param {string} str
  * @returns {string}
  */
-function simpleHash(str) {
+export function simpleHash(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = (hash << 5) - hash + str.charCodeAt(i);
@@ -132,44 +132,45 @@ export function hashSessionToBackend(sessionId, backendCount) {
 
 /**
  * Start periodic cleanup of expired session mappings
+ * @param {StateManager} [state] - State manager instance
  * @param {number} [intervalMs=60000] - Cleanup interval
  */
-function startSessionCleanup(intervalMs = 60_000) {
-  if (cleanupInterval) return;
-  cleanupInterval = setInterval(() => {
+export function startSessionCleanup(state, intervalMs = 60_000) {
+  const sm = getState(state);
+  if (sm.getCleanupInterval()) return;
+
+  const interval = setInterval(() => {
     const now = Date.now();
+    const sessionUpstreamMap = sm.getSessionUpstreamMap();
     for (const [sessionId, entry] of sessionUpstreamMap) {
       if (now - entry.timestamp > SESSION_MAP_TTL_MS) {
-        decrementSessionCount(entry.routeKey, entry.upstreamId);
+        decrementSessionCount(sm, entry.routeKey, entry.upstreamId);
         sessionUpstreamMap.delete(sessionId);
       }
     }
   }, intervalMs);
-  if (cleanupInterval.unref) {
-    cleanupInterval.unref();
+
+  if (interval.unref) {
+    interval.unref();
   }
+
+  sm.setCleanupInterval(interval);
 }
 
 /**
  * Stop session cleanup timer
+ * @param {StateManager} [state] - State manager instance
  */
-function stopSessionCleanup() {
-  if (cleanupInterval) {
-    clearInterval(cleanupInterval);
-    cleanupInterval = null;
+export function stopSessionCleanup(state) {
+  const sm = getState(state);
+  const interval = sm.getCleanupInterval();
+  if (interval) {
+    clearInterval(interval);
+    sm.setCleanupInterval(null);
   }
 }
 
-// Export all functions and state
-export {
-  SESSION_MAP_TTL_MS,
-  cleanupInterval,
-  upstreamSessionCounts,
-  sessionUpstreamMap,
-  getOrCreateCountMap,
-  incrementSessionCount,
-  decrementSessionCount,
-  simpleHash,
-  startSessionCleanup,
-  stopSessionCleanup,
-};
+// Backward compatibility: export singleton's maps directly
+// These reference the singleton instance's maps for legacy code
+export const sessionUpstreamMap = stateManager.getSessionUpstreamMap();
+export const upstreamSessionCounts = stateManager.getUpstreamSessionCounts();

@@ -7,20 +7,18 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'os';
 import path from 'path';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
 
 import { registerAction } from '../../src/commands/proxy-register.js';
 import { ProxyConfigManager } from '../../src/core/ProxyConfigManager.js';
 import { clearDiscoveryCache } from '../../src/utils/provider-discovery.js';
 
 // ---------------------------------------------------------------------------
-// Paths
+// Isolated temp directory — never touch real opencode config
 // ---------------------------------------------------------------------------
 
-const HOME_DIR = os.homedir();
-const CONFIG_DIR = path.join(HOME_DIR, '.config', 'opencode');
-const OPENCODE_PATH = path.join(CONFIG_DIR, 'opencode.json');
-const BACKUP_PATH = OPENCODE_PATH + '.oos-test-bak';
+const TEST_DIR = path.join(os.tmpdir(), 'oos-test-proxy-register');
+const OPENCODE_PATH = path.join(TEST_DIR, 'opencode.json');
 const CACHE_FILE = path.join(os.tmpdir(), 'oos-models-dev-cache.json');
 const CACHE_BACKUP = CACHE_FILE + '.oos-test-bak';
 
@@ -47,26 +45,6 @@ const MODELS_DEV_DATA = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function backupFile(filePath, backupPath) {
-  if (existsSync(filePath)) {
-    renameSync(filePath, backupPath);
-  }
-}
-
-function restoreFile(backupPath, filePath) {
-  if (existsSync(backupPath)) {
-    renameSync(backupPath, filePath);
-  }
-}
-
-function removeFile(filePath) {
-  try {
-    if (existsSync(filePath)) unlinkSync(filePath);
-  } catch {
-    // best-effort
-  }
-}
-
 function writeJson(filePath, data) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -85,9 +63,11 @@ let originalProcessExit;
 let originalReadConfig;
 
 beforeEach(() => {
-  backupFile(OPENCODE_PATH, BACKUP_PATH);
-  backupFile(CACHE_FILE, CACHE_BACKUP);
+  mkdirSync(TEST_DIR, { recursive: true });
 
+  if (existsSync(CACHE_FILE)) {
+    writeFileSync(CACHE_BACKUP, readFileSync(CACHE_FILE));
+  }
   clearDiscoveryCache();
   seedModelsDevCache(MODELS_DEV_DATA);
 
@@ -103,10 +83,12 @@ afterEach(() => {
   ProxyConfigManager.prototype.readConfig = originalReadConfig;
   process.exit = originalProcessExit;
 
-  restoreFile(BACKUP_PATH, OPENCODE_PATH);
-  restoreFile(CACHE_BACKUP, CACHE_FILE);
+  if (existsSync(CACHE_BACKUP)) {
+    writeFileSync(CACHE_FILE, readFileSync(CACHE_BACKUP));
+    rmSync(CACHE_BACKUP, { force: true });
+  }
 
-  removeFile(OPENCODE_PATH + '.bak');
+  rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
 // ===========================================================================
@@ -134,7 +116,7 @@ describe('Proxy Register - registerAction', () => {
       return proxyConfig;
     };
 
-    await registerAction({});
+    await registerAction({ opencodePath: OPENCODE_PATH });
 
     const result = readJson(OPENCODE_PATH);
     const proxyProvider = result.provider['opencode-proxy'];
@@ -178,7 +160,7 @@ describe('Proxy Register - registerAction', () => {
       return proxyConfig;
     };
 
-    await registerAction({});
+    await registerAction({ opencodePath: OPENCODE_PATH });
 
     const result = readJson(OPENCODE_PATH);
     const proxyProvider = result.provider['opencode-proxy'];

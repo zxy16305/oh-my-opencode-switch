@@ -29,7 +29,7 @@ export async function registerAction(options = {}) {
   const port = parseInt(options.port, 10) || proxyConfig.port || DEFAULT_PROXY_PORT;
 
   // 2. Read opencode config
-  const opencodePath = getOpencodeConfigPath();
+  const opencodePath = options.opencodePath || getOpencodeConfigPath();
   if (!(await exists(opencodePath))) {
     logger.error('opencode.json not found');
     logger.info('Make sure OpenCode is initialized and has a configuration file.');
@@ -217,8 +217,8 @@ export async function registerAction(options = {}) {
  * Unregister proxy provider from opencode.json
  * Removes the "proxy" provider entry
  */
-export async function unregisterAction() {
-  const opencodePath = getOpencodeConfigPath();
+export async function unregisterAction(options = {}) {
+  const opencodePath = options.opencodePath || getOpencodeConfigPath();
 
   // 1. Check opencode.json exists
   if (!(await exists(opencodePath))) {

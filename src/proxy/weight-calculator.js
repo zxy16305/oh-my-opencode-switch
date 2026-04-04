@@ -106,5 +106,6 @@ export function calculateEffectiveWeight(params) {
     }
   }
 
-  return effectiveWeight;
+  // Ensure effective weight is at least 1
+  return Math.max(1, effectiveWeight);
 }

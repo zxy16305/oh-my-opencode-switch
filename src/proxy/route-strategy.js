@@ -39,13 +39,10 @@ function selectLeastLoadedUpstream(
 ) {
   const sm = getState(state);
 
-  let bestScore = Infinity;
-  const candidates = [];
-
+  // Filter out upstreams with effective weight <= 0
+  const validUpstreams = [];
   for (const upstream of upstreams) {
-    const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
     const staticWeight = upstream.weight ?? 1;
-
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
@@ -56,6 +53,20 @@ function selectLeastLoadedUpstream(
       upstreams,
       latencyWindowMs: 3600000,
     });
+    if (effectiveWeight > 0) {
+      validUpstreams.push({ upstream, effectiveWeight });
+    }
+  }
+
+  if (validUpstreams.length === 0) {
+    throw new RouterError('No valid upstreams available', 'NO_VALID_UPSTREAMS');
+  }
+
+  let bestScore = Infinity;
+  const candidates = [];
+
+  for (const { upstream, effectiveWeight } of validUpstreams) {
+    const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
 
     const score = (requestCount + 1) / effectiveWeight;
 

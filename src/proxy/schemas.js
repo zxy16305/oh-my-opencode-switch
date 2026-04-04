@@ -14,7 +14,7 @@ export const upstreamSchema = z.object({
   model: z.string().min(1, 'Model name is required'),
   baseURL: z.string().url('Base URL must be a valid URL'),
   apiKey: z.string().optional(),
-  weight: z.number().positive().optional(),
+  weight: z.number().int().min(1).max(1000).optional().default(1),
   metadata: z.record(z.unknown()).optional(),
 });
 

@@ -99,13 +99,18 @@ export function makeRoute(upstreams, overridesOrStrategy = {}) {
 
 /**
  * Create a routes configuration object.
- * @param {string} routeKey - The route key (model name)
- * @param {Array} upstreams - Array of upstream objects
- * @param {string} strategy - Routing strategy
+ * @param {string|Object} routeKeyOrRoutes - Either a route key (string) or a routes object
+ * @param {Array} [upstreams] - Array of upstream objects (used when first param is string)
+ * @param {string} [strategy] - Routing strategy (used when first param is string)
  * @returns {Object} Routes configuration object
  */
-export function makeConfig(routeKey = 'test-model', upstreams, strategy) {
-  return { [routeKey]: makeRoute(upstreams || [makeUpstream()], strategy) };
+export function makeConfig(routeKeyOrRoutes = 'test-model', upstreams, strategy) {
+  // Support object parameter: makeConfig({ 'lb-test': route })
+  if (typeof routeKeyOrRoutes === 'object' && routeKeyOrRoutes !== null) {
+    return routeKeyOrRoutes;
+  }
+  // Support traditional parameters: makeConfig('test-model', upstreams, 'sticky')
+  return { [routeKeyOrRoutes]: makeRoute(upstreams || [makeUpstream()], strategy) };
 }
 
 /**

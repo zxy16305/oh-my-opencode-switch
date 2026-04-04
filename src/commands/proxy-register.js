@@ -3,6 +3,7 @@ import { getOpencodeConfigPath } from '../utils/proxy-paths.js';
 import { readJson, writeJson, exists, copyFile } from '../utils/files.js';
 import { logger } from '../utils/logger.js';
 import { ConfigError } from '../utils/errors.js';
+import { getModelLimit } from '../utils/provider-discovery.js';
 
 const DEFAULT_PROXY_PORT = 3000;
 const PROVIDER_ID = 'opencode-proxy';
@@ -89,24 +90,50 @@ export async function registerAction(options = {}) {
         continue;
       }
 
+      let limit = null;
+      let modelMetadata = null;
+
       const providerConfig = opencodeConfig.provider?.[providerName];
       if (!providerConfig) {
-        logger.warn(
-          `Provider "${providerName}" not found in opencode.json for route "${virtualModel}".`
+        logger.debug(
+          `Provider "${providerName}" not found in opencode.json for route "${virtualModel}", checking models.dev...`
         );
-        continue;
+        // Try to get limit from models.dev API
+        try {
+          const apiLimit = await getModelLimit(providerName, originalModelName);
+          if (apiLimit) {
+            limit = apiLimit;
+            logger.debug(
+              `Got limit from models.dev for ${providerName}/${originalModelName}:`,
+              limit
+            );
+          } else {
+            logger.debug(
+              `No limit found in models.dev for ${providerName}/${originalModelName}, using default`
+            );
+          }
+        } catch (error) {
+          logger.debug(
+            `Failed to get limit from models.dev for ${providerName}/${originalModelName}: ${error.message}`
+          );
+        }
+      } else {
+        const originalModel = providerConfig.models?.[originalModelName];
+        if (!originalModel) {
+          logger.warn(
+            `Model "${originalModelName}" not found in provider "${providerName}" for route "${virtualModel}".`
+          );
+          continue;
+        }
+        modelMetadata = originalModel;
+        // Use explicit limit from opencode.json if available
+        limit = originalModel.limit || null;
       }
 
-      const originalModel = providerConfig.models?.[originalModelName];
-      if (!originalModel) {
-        logger.warn(
-          `Model "${originalModelName}" not found in provider "${providerName}" for route "${virtualModel}".`
-        );
-        continue;
+      // Fallback to default Infinity if no limit found
+      if (!limit) {
+        limit = { context: Infinity, output: Infinity };
       }
-
-      // Collect limit from this upstream
-      const limit = originalModel.limit || { context: Infinity, output: Infinity };
       limits.push({
         context: limit.context ?? Infinity,
         output: limit.output ?? Infinity,
@@ -114,8 +141,12 @@ export async function registerAction(options = {}) {
 
       // Use first upstream's modalities and name
       if (!modalities) {
-        modalities = originalModel.modalities || null;
-        modelName = originalModel.name || virtualModel;
+        if (modelMetadata) {
+          modalities = modelMetadata.modalities || null;
+          modelName = modelMetadata.name || virtualModel;
+        } else {
+          modelName = virtualModel;
+        }
       }
     }
 

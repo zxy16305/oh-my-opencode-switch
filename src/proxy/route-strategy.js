@@ -4,7 +4,7 @@
  */
 
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
-import { RouterError } from './router.js';
+import { RouterError } from './errors.js';
 import { getErrorRate, getLatencyAvg } from './stats-collector.js';
 import { getDynamicWeight } from './weight-manager.js';
 import { getOrCreateCountMap } from './session-manager.js';

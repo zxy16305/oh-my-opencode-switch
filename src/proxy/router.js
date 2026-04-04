@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
+import { RouterError } from './errors.js';
 import { getDynamicWeight, dynamicWeightState, recoveryTimers } from './weight-manager.js';
 import {
   getSessionId,
@@ -128,23 +129,7 @@ export const routesConfigSchema = z.record(z.string(), routeSchema);
  * @typedef {z.infer<typeof routesConfigSchema>} RoutesConfig
  */
 
-/**
- * Router error for invalid model or routing failures
- */
-export class RouterError extends Error {
-  /**
-   * @param {string} message - Error message
-   * @param {string} code - Error code
-   * @param {Object} [details] - Additional details
-   */
-  constructor(message, code, details = {}) {
-    super(message);
-    this.name = 'RouterError';
-    this.code = code;
-    this.details = details;
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
+export { RouterError } from './errors.js';
 
 /**
  * Global time slot weight calculator instance

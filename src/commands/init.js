@@ -10,142 +10,15 @@ import {
 import { exists, writeJson, ensureDir } from '../utils/files.js';
 import { logger } from '../utils/logger.js';
 import { ProfileManager } from '../core/ProfileManager.js';
+import { DEFAULT_TEMPLATE_JSON } from '../core/ProfileRenderer.js';
+
+export { DEFAULT_TEMPLATE_JSON } from '../core/ProfileRenderer.js';
 
 const DEFAULT_CONFIG_TEMPLATE = {
   $schema:
     'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
   agents: {},
   categories: {},
-};
-
-export const DEFAULT_TEMPLATE_JSON = {
-  $schema:
-    'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
-  oosVersionTag: 'default:1.1',
-
-  agents: {
-    Sisyphus: {
-      model: '{{MODEL_ORCHESTRATOR}}',
-      ultrawork: {
-        model: '{{MODEL_ULTRAWORK}}',
-      },
-    },
-    'orchestrator-sisyphus': {
-      model: '{{MODEL_ORCHESTRATOR}}',
-    },
-    atlas: {
-      model: '{{MODEL_ORCHESTRATOR}}',
-    },
-
-    'Prometheus (Planner)': {
-      model: '{{MODEL_PLANNER}}',
-    },
-    'Metis (Plan Consultant)': {
-      model: '{{MODEL_PLANNER}}',
-    },
-    'Momus (Plan Reviewer)': {
-      model: '{{MODEL_REVIEWER}}',
-    },
-
-    oracle: {
-      model: '{{MODEL_ORACLE}}',
-    },
-
-    build: {
-      model: '{{MODEL_EXECUTOR}}',
-    },
-    'OpenCode-Builder': {
-      model: '{{MODEL_EXECUTOR_DEEP}}',
-    },
-
-    librarian: {
-      model: '{{MODEL_LIGHT}}',
-    },
-    explore: {
-      model: '{{MODEL_LIGHT}}',
-    },
-
-    'multimodal-looker': {
-      model: '{{MODEL_VISUAL}}',
-    },
-    'frontend-ui-ux-engineer': {
-      model: '{{MODEL_VISUAL}}',
-    },
-    'document-writer': {
-      model: '{{MODEL_ORACLE}}',
-    },
-  },
-
-  categories: {
-    ultrabrain: {
-      model: '{{MODEL_EXECUTOR_DEEP}}',
-      reasoningEffort: 'high',
-    },
-    deep: {
-      model: '{{MODEL_EXECUTOR_DEEP}}',
-    },
-    quick: {
-      model: '{{MODEL_EXECUTOR}}',
-    },
-    'visual-engineering': {
-      model: '{{MODEL_VISUAL}}',
-    },
-    artistry: {
-      model: '{{MODEL_ORACLE}}',
-    },
-    writing: {
-      model: '{{MODEL_ORACLE}}',
-    },
-    'unspecified-low': {
-      model: '{{MODEL_ORCHESTRATOR}}',
-    },
-    'unspecified-high': {
-      model: '{{MODEL_ULTRAWORK}}',
-    },
-  },
-
-  experimental: {
-    aggressive_truncation: false,
-    dynamic_context_pruning: {
-      enabled: true,
-      notification: 'detailed',
-      turn_protection: {
-        enabled: true,
-        turns: 7,
-      },
-      protected_tools: [
-        'task',
-        'todowrite',
-        'todoread',
-        'lsp_rename',
-        'session_read',
-        'session_write',
-        'session_search',
-      ],
-      strategies: {
-        deduplication: {
-          enabled: true,
-        },
-        supersede_writes: {
-          enabled: true,
-          aggressive: false,
-        },
-        purge_errors: {
-          enabled: true,
-          turns: 8,
-        },
-      },
-    },
-  },
-
-  background_task: {
-    providerConcurrency: {
-      baidu: 5,
-      fangzhou: 5,
-      ali: 5,
-      openai: 1,
-    },
-  },
 };
 
 const DEFAULT_VARIABLES_JSON = {

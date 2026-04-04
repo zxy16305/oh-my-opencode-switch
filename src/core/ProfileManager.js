@@ -9,10 +9,9 @@ import {
 } from '../utils/paths.js';
 import { readJson, writeJson, exists, ensureDir, copyFile, remove } from '../utils/files.js';
 import { validateProfileName, validateProfilesMetadata } from '../utils/validators.js';
-import { ProfileError, ConfigError, MissingVariableError } from '../utils/errors.js';
+import { ProfileError, ConfigError } from '../utils/errors.js';
 import { ConfigManager } from './ConfigManager.js';
-import { TemplateEngine } from './TemplateEngine.js';
-import { DEFAULT_TEMPLATE_JSON } from '../commands/init.js';
+import { ProfileRenderer, DEFAULT_TEMPLATE_JSON } from './ProfileRenderer.js';
 
 const DEFAULT_CONFIG_TEMPLATE = {
   $schema:
@@ -26,6 +25,7 @@ export class ProfileManager {
     // Allow tests/consumers to override base path for profile data
     this.basePath = options.basePath || null;
     this.configManager = new ConfigManager();
+    this.renderer = new ProfileRenderer();
     this.initialized = false;
   }
 
@@ -437,93 +437,18 @@ export class ProfileManager {
       variables = await readJson(variablesPath);
     }
 
-    const renderedConfig = await this._renderTemplate(templateObj, variables);
+    const renderedConfig = await this.renderer.renderTemplate(templateObj, variables);
     await this.configManager.writeConfig(renderedConfig);
   }
 
   /**
-   * Render a template object with variables
-   * @param {Object} templateObj - Template object
-   * @param {Object} variables - Variables for substitution
-   * @returns {Promise<Object>} Rendered config
-   * @private
-   */
-  async _renderTemplate(templateObj, variables) {
-    const templateEngine = new TemplateEngine();
-    const templateStr = JSON.stringify(templateObj);
-
-    try {
-      const renderedStr = templateEngine.render(templateStr, variables);
-      let renderedConfig = JSON.parse(renderedStr);
-
-      // Process model arrays: split into model + fallback_models
-      renderedConfig = this._processModelArrays(renderedConfig);
-
-      return renderedConfig;
-    } catch (error) {
-      if (error instanceof MissingVariableError) {
-        throw new ProfileError(`Missing variable in template: ${error.variableName}`);
-      }
-      throw new ProfileError(`Failed to render template: ${error.message}`);
-    }
-  }
-
-  /**
-   * Process model arrays in config, splitting them into model (string) and fallback_models (array)
+   * Process model arrays in config (delegates to ProfileRenderer)
    * @param {Object} config - Rendered config object
    * @returns {Object} Processed config with model arrays split
    * @private
    */
   _processModelArrays(config) {
-    if (!config || typeof config !== 'object') {
-      return config;
-    }
-
-    // Deep clone to avoid mutating the original
-    const clone = JSON.parse(JSON.stringify(config));
-
-    const walk = (node) => {
-      if (!node || typeof node !== 'object') return node;
-
-      if (Array.isArray(node)) {
-        for (let i = 0; i < node.length; i++) {
-          node[i] = walk(node[i]);
-        }
-        return node;
-      }
-
-      // Process object properties
-      for (const [key, value] of Object.entries(node)) {
-        if (key === 'model') {
-          if (Array.isArray(value)) {
-            if (value.length > 1) {
-              // Multiple models: first -> model, rest -> fallback_models
-              node['model'] = value[0];
-              node['fallback_models'] = value.slice(1);
-            } else if (value.length === 1) {
-              // Single model: just set model, no fallback_models
-              node['model'] = value[0];
-              if (Object.prototype.hasOwnProperty.call(node, 'fallback_models')) {
-                delete node['fallback_models'];
-              }
-            } else {
-              // Empty array: set to null
-              node['model'] = null;
-              if (Object.prototype.hasOwnProperty.call(node, 'fallback_models')) {
-                delete node['fallback_models'];
-              }
-            }
-          }
-          // If value is not an array (string, null, undefined), leave as-is
-          continue;
-        }
-        // Recursively process nested objects
-        node[key] = walk(value);
-      }
-      return node;
-    };
-
-    return walk(clone);
+    return this.renderer._processModelArrays(config);
   }
 
   /**

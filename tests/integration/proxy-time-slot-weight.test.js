@@ -585,7 +585,6 @@ describe('Integration – Time Slot Weight Feature', () => {
 
       // Import CLI action
       const { timeSlotsAction } = await import('../../src/commands/proxy.js');
-      const { createTimeSlotWeightCalculator } = await import('../../src/utils/time-slot-stats.js');
 
       // Mock console.table and console.log to capture output
       const tableOutput = [];

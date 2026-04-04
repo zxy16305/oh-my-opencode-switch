@@ -1,49 +1,17 @@
-import { createServer, shutdownServer, isPortAvailable, SSE_HEADERS } from '../proxy/server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
-import {
-  routeRequest,
-  failoverStickySession,
-  getDynamicWeightState,
-  getUpstreamSessionCounts,
-  getUpstreamRequestCounts,
-  getUpstreamSlidingWindowCounts,
-  getSessionUpstreamMap,
-  getUpstreamStats,
-  recordUpstreamError,
-  recordUpstreamLatency,
-  recordUpstreamStats,
-  adjustWeightForError,
-  adjustWeightForLatency,
-  startWeightRecovery,
-  stopWeightRecovery,
-} from '../proxy/router.js';
-import { forwardRequest } from '../proxy/server.js';
-import { CircuitBreaker } from '../proxy/circuitbreaker.js';
 import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
-import { logAccess, readLogs, getLogPath, clearLogs, onLogAdded } from '../utils/access-log.js';
-import { logBuffer } from '../utils/log-buffer.js';
-import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
+import { readLogs, getLogPath, clearLogs } from '../utils/access-log.js';
 import { parseTimeRange, generateStats } from '../utils/stats.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';
+import { ProxyServerManager } from '../proxy/server-manager.js';
 
-const DEFAULT_PORT = 3000;
-const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
-  allowedFails: 3,
-  cooldownTimeMs: 60000,
-};
+// Singleton instance of ProxyServerManager
+const serverManager = new ProxyServerManager();
 
-let activeServer = null;
-let activePort = null;
-let circuitBreaker = null;
-let periodicWeightAdjustTimer = null;
-let timeSlotSaveTimer = null;
-const routeRecoveryTimers = new Map();
+// Time slot calculator for time-slots command
 const timeSlotCalculator = createTimeSlotWeightCalculator();
 
 /**
@@ -53,592 +21,14 @@ const timeSlotCalculator = createTimeSlotWeightCalculator();
  * @param {string} [options.config] - Path to config file
  */
 export async function startAction(options = {}) {
-  const configPath = options.config || getProxyConfigPath();
-
-  // Check if server is already running
-  if (activeServer && activeServer.listening) {
-    logger.warn(`Proxy server is already running on port ${activePort}`);
-    return;
-  }
-
-  // Load config first to get port from config file
-  const configManager = new ProxyConfigManager();
-  let config = await configManager.readConfig();
-
-  if (!config) {
-    if (!(await exists(configPath))) {
-      logger.warn(`No proxy configuration found at ${configPath}`);
-      logger.info('Run "oos proxy init" or create a proxy-config.json manually.');
-    }
-    config = { routes: {} };
-  }
-
-  // Port priority: CLI option > config.port > DEFAULT_PORT
-  const port = parseInt(options.port, 10) || config.port || DEFAULT_PORT;
-
-  // Check port availability
-  const available = await isPortAvailable(port);
-  if (!available) {
-    logger.error(`Port ${port} is already in use. Please choose a different port.`);
-    process.exit(1);
-  }
-
-  // Resolve routes from opencode config (fill baseURL/apiKey if not specified)
-  const routes = await configManager.resolveRoutes(config.routes || {});
-
-  // Validate resolved routes have required fields
-  for (const [routeName, route] of Object.entries(routes)) {
-    for (const upstream of route.upstreams || []) {
-      if (!upstream.baseURL) {
-        const provider = upstream.provider || 'unknown';
-        const suggestions = [];
-        const keywords = provider.toLowerCase().split(/[-_\s]+/);
-
-        if (keywords.includes('kimi') || keywords.includes('moonshot')) {
-          suggestions.push('npm install -g @ai-sdk/moonshotai');
-        }
-        if (keywords.includes('deepseek')) {
-          suggestions.push('npm install -g @ai-sdk/deepseek');
-        }
-        if (keywords.includes('zhipu') || keywords.includes('glm')) {
-          suggestions.push('npm install -g @ai-sdk/gateway');
-        }
-
-        suggestions.push(`Add "baseURL" to upstream "${upstream.id}" in proxy-config.json`);
-        suggestions.push(`Or configure provider "${provider}" in opencode.json with baseURL`);
-
-        logger.error(
-          `Upstream "${upstream.id || upstream.provider}" in route "${routeName}" missing baseURL.\n` +
-            `Provider "${provider}" not found or not configured.\n\n` +
-            `Suggestions:\n` +
-            suggestions.map((s) => `  • ${s}`).join('\n')
-        );
-        process.exit(1);
-      }
-    }
-  }
-
-  circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
-
-  // Get auth config for request authentication
-  const auth = config.auth;
-
-  /**
-   * Handle debug endpoint - return runtime state
-   * @param {import('node:http').IncomingMessage} req
-   * @param {import('node:http').ServerResponse} res
-   * @param {object} routes - Resolved routes config
-   */
-  function handleDebug(req, res, routes) {
-    // Security: only allow localhost
-    const clientIp = req.socket.remoteAddress || '';
-    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
-      return;
-    }
-
-    const weightState = getDynamicWeightState();
-    const sessionCounts = getUpstreamSessionCounts();
-    const circuitStates = circuitBreaker?.getStates?.() || new Map();
-
-    const response = {
-      timestamp: new Date().toISOString(),
-      routes: {},
-      circuitBreakers: {},
-    };
-
-    for (const [routeName, route] of Object.entries(routes)) {
-      response.routes[routeName] = {
-        strategy: route.strategy,
-        upstreams: (route.upstreams || []).map((upstream) => {
-          const key = `${routeName}:${upstream.id}`;
-          const weightEntry = weightState.get(key);
-          const routeSessions = sessionCounts.get(routeName);
-          const sessionCount = routeSessions?.get(upstream.id) ?? 0;
-
-          return {
-            id: upstream.id,
-            provider: upstream.provider,
-            model: upstream.model,
-            currentWeight: weightEntry?.currentWeight ?? 100,
-            sessionCount,
-          };
-        }),
-      };
-    }
-
-    for (const [providerId, state] of circuitStates) {
-      response.circuitBreakers[providerId] = {
-        state: state.state,
-        failures: state.failures,
-      };
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(response, null, 2));
-  }
-
-  /**
-   * Handle stats endpoint - return request statistics
-   * @param {import('node:http').IncomingMessage} req
-   * @param {import('node:http').ServerResponse} res
-   * @param {object} routes - Resolved routes config
-   */
-  function handleStats(req, res, routes) {
-    // Security: only allow localhost
-    const clientIp = req.socket.remoteAddress || '';
-    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
-      return;
-    }
-
-    const requestCounts = getUpstreamRequestCounts();
-    const slidingWindowCounts = getUpstreamSlidingWindowCounts();
-    const sessionCounts = getUpstreamSessionCounts();
-    const weightState = getDynamicWeightState();
-    const sessionMap = getSessionUpstreamMap();
-
-    const sessions = {};
-    for (const [sessionKey, entry] of sessionMap) {
-      sessions[sessionKey] = {
-        upstreamId: entry.upstreamId,
-        requestCount: entry.requestCount ?? 0,
-        lastAccess: new Date(entry.timestamp).toISOString(),
-      };
-    }
-
-    const response = {
-      timestamp: new Date().toISOString(),
-      routes: {},
-      sessions,
-    };
-
-    for (const [routeName, route] of Object.entries(routes)) {
-      response.routes[routeName] = {
-        strategy: route.strategy,
-        upstreams: (route.upstreams || []).map((upstream) => {
-          const key = `${routeName}:${upstream.id}`;
-          const routeRequestCounts = requestCounts.get(routeName);
-          const routeSlidingCounts = slidingWindowCounts.get(key);
-          const routeSessions = sessionCounts.get(routeName);
-          const weightEntry = weightState.get(key);
-          const stats = getUpstreamStats(routeName, upstream.id);
-
-          const now = Date.now();
-          const windowMs = 10 * 60 * 1000;
-          const recentRequestCount = routeSlidingCounts
-            ? routeSlidingCounts.filter((entry) => now - entry.timestamp <= windowMs).length
-            : 0;
-
-          return {
-            id: upstream.id,
-            provider: upstream.provider,
-            model: upstream.model,
-            requestCount: routeRequestCounts?.get(upstream.id) ?? 0,
-            recentRequestCount,
-            sessionCount: routeSessions?.get(upstream.id) ?? 0,
-            errorCount: stats.errorCount,
-            avgTtfb: stats.avgTtfb,
-            ttfbP95: stats.ttfbP95,
-            ttfbP99: stats.ttfbP99,
-            avgDuration: stats.avgDuration,
-            durationP95: stats.durationP95,
-            durationP99: stats.durationP99,
-            sampleCount: stats.sampleCount,
-            currentWeight: weightEntry?.currentWeight ?? upstream.weight ?? 100,
-            configuredWeight: upstream.weight ?? 100,
-          };
-        }),
-      };
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(response, null, 2));
-  }
-
-  /**
-   * Handle dashboard endpoint - return visualization HTML
-   * @param {import('node:http').IncomingMessage} req
-   * @param {import('node:http').ServerResponse} res
-   */
-  async function handleDashboard(req, res) {
-    // Security: only allow localhost
-    const clientIp = req.socket.remoteAddress || '';
-    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
-      return;
-    }
-
-    try {
-      const __dirname = path.dirname(fileURLToPath(import.meta.url));
-      const templatePath = path.join(__dirname, '../proxy/dashboard-template.html');
-      const html = await fs.readFile(templatePath, 'utf-8');
-
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
-    } catch (err) {
-      logger.error(`Failed to load dashboard template: ${err.message}`);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Failed to load dashboard' }));
-    }
-  }
-
-  // SSE clients for real-time log streaming
-  const sseClients = new Set();
-
-  // Register log callback to push to all SSE clients
-  onLogAdded((logEntry) => {
-    for (const clientRes of sseClients) {
-      try {
-        clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
-        // Explicitly flush to ensure data is sent immediately
-        clientRes.flush?.();
-      } catch {
-        // Remove client if write fails
-        sseClients.delete(clientRes);
-      }
-    }
-  });
-
-  /**
-   * Handle SSE logs stream endpoint - return real-time log stream
-   * @param {import('node:http').IncomingMessage} req
-   * @param {import('node:http').ServerResponse} res
-   */
-  function handleLogsStream(req, res) {
-    // Security: only allow localhost
-    const clientIp = req.socket.remoteAddress || '';
-    if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
-      return;
-    }
-
-    // Set SSE headers
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      ...SSE_HEADERS,
-    });
-
-    // Add client to the set
-    sseClients.add(res);
-
-    // Push buffered logs to new client
-    const bufferedLogs = logBuffer.getAll();
-    for (const logEntry of bufferedLogs) {
-      res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
-    }
-    // Flush buffered logs
-    res.flush?.();
-
-    // Handle client disconnect
-    req.on('close', () => {
-      sseClients.delete(res);
-    });
-  }
-
-  // Create request handler
-  const requestHandler = async (req, res) => {
-    // Handle SSE endpoint immediately (before waiting for request body)
-    if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
-      handleLogsStream(req, res);
-      return;
-    }
-
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-
-    req.on('end', async () => {
-      try {
-        // Debug endpoint - no auth required, localhost only
-        if (req.url === '/_internal/debug' && req.method === 'GET') {
-          handleDebug(req, res, routes);
-          return;
-        }
-
-        // Dashboard endpoint - no auth required, localhost only
-        if (req.url === '/_internal/dashboard' && req.method === 'GET') {
-          handleDashboard(req, res);
-          return;
-        }
-
-        // Stats endpoint - no auth required, localhost only
-        if (req.url === '/_internal/stats' && req.method === 'GET') {
-          handleStats(req, res, routes);
-          return;
-        }
-
-        // Authentication check
-        const apiKey = extractApiKey(req);
-        const authResult = authenticate(apiKey, auth);
-        if (!authResult.valid) {
-          const { statusCode, body } = createAuthErrorResponse(authResult.error);
-          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(body));
-          return;
-        }
-
-        // Parse request body to get model
-        let requestBody;
-        try {
-          requestBody = JSON.parse(body);
-        } catch {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: 'Invalid JSON body' } }));
-          return;
-        }
-
-        const model = requestBody.model;
-        if (!model) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: 'Missing model field' } }));
-          return;
-        }
-
-        const route = routes[model];
-        let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
-
-        if (!circuitBreaker.isAvailable(upstream.id)) {
-          if (sessionId && route.upstreams.length > 1) {
-            const nextUpstream = failoverStickySession(
-              sessionId,
-              upstream.id,
-              route.upstreams,
-              routeKey,
-              model,
-              (id) => circuitBreaker.isAvailable(id)
-            );
-            if (nextUpstream && circuitBreaker.isAvailable(nextUpstream.id)) {
-              upstream = nextUpstream;
-              logger.warn(
-                `Circuit breaker OPEN for ${upstream.id}, failed over to ${nextUpstream.id}`
-              );
-            } else {
-              res.writeHead(503, { 'Content-Type': 'application/json' });
-              res.end(
-                JSON.stringify({
-                  error: { message: 'All providers unavailable (circuit breaker open)' },
-                })
-              );
-              return;
-            }
-          } else {
-            res.writeHead(503, { 'Content-Type': 'application/json' });
-            res.end(
-              JSON.stringify({
-                error: { message: `Provider ${upstream.id} unavailable (circuit breaker open)` },
-              })
-            );
-            return;
-          }
-        }
-
-        const targetUrl = `${upstream.baseURL}/chat/completions`;
-
-        const extraHeaders = {};
-        if (upstream.apiKey) {
-          extraHeaders['authorization'] = `Bearer ${upstream.apiKey}`;
-        }
-
-        const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
-        const startTime = Date.now();
-        let ttfb = null;
-        let proxyResStatusCode = null;
-
-        forwardRequest(req, res, targetUrl, {
-          body: forwardBody,
-          headers: extraHeaders,
-          onProxyRes: (proxyRes) => {
-            ttfb = Date.now() - startTime;
-            proxyResStatusCode = proxyRes.statusCode;
-            proxyRes.headers['x-used-provider'] = upstream.id;
-            if (sessionId) {
-              proxyRes.headers['x-session-id'] = sessionId;
-            }
-            if (proxyRes.statusCode >= 400) {
-              circuitBreaker.recordFailure(upstream.id);
-              recordUpstreamError(model, upstream.id, proxyRes.statusCode);
-              const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
-              adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
-              if (config.timeSlotWeight?.enabled) {
-                timeSlotCalculator.recordFailure(upstream.provider);
-              }
-            } else {
-              circuitBreaker.recordSuccess(upstream.id);
-              recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
-              const latencyData = new Map([[upstream.id, { avgDuration: Date.now() - startTime }]]);
-              adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
-              if (config.timeSlotWeight?.enabled) {
-                timeSlotCalculator.recordSuccess(upstream.provider);
-              }
-            }
-          },
-          onStreamEnd: () => {
-            const duration = Date.now() - startTime;
-
-            // Record to memory stats (for dashboard)
-            recordUpstreamStats(model, upstream.id, ttfb, duration, proxyResStatusCode >= 400);
-
-            // Write to log file (for CLI stats)
-            logAccess({
-              sessionId: sessionId || null,
-              provider: upstream.provider,
-              model: upstream.model,
-              virtualModel: model,
-              status: proxyResStatusCode,
-              ttfb,
-              duration,
-              body: requestBody,
-            }).catch(() => {});
-          },
-          onError: (err) => {
-            circuitBreaker.recordFailure(upstream.id);
-            recordUpstreamError(model, upstream.id, 502);
-            const errorData = new Map([[upstream.id, [502]]]);
-            adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
-            logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
-            if (config.timeSlotWeight?.enabled) {
-              timeSlotCalculator.recordFailure(upstream.provider);
-            }
-            logAccess({
-              sessionId: sessionId || null,
-              provider: upstream.provider,
-              model: upstream.model,
-              virtualModel: model,
-              status: 502,
-              error: err.message,
-              body: requestBody,
-            }).catch(() => {});
-          },
-        });
-      } catch (error) {
-        if (error.code === 'UNKNOWN_MODEL') {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: {
-                message: error.message,
-                availableModels: error.details.availableModels,
-              },
-            })
-          );
-        } else {
-          logger.error(`Request error: ${error.message}`);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: error.message } }));
-        }
-      }
-    });
-  };
-
-  try {
-    const { server } = await createServer({ port, requestHandler });
-    activeServer = server;
-    activePort = port;
-
-    logger.success(`Proxy server started on port ${port}`);
-    logger.info(`Config: ${configPath}`);
-
-    if (Object.keys(routes).length > 0) {
-      logger.info(`Routes: ${Object.keys(routes).join(', ')}`);
-    } else {
-      logger.warn('No routes configured');
-    }
-
-    for (const [routeKey, route] of Object.entries(routes)) {
-      const recoveryTimer = startWeightRecovery(routeKey, route.upstreams, route.dynamicWeight);
-      if (recoveryTimer) {
-        routeRecoveryTimers.set(routeKey, recoveryTimer);
-      }
-    }
-
-    if (config.timeSlotWeight?.enabled) {
-      await timeSlotCalculator.load();
-      const HOUR_MS = 60 * 60 * 1000;
-      timeSlotSaveTimer = setInterval(async () => {
-        await timeSlotCalculator.save().catch((err) => {
-          logger.error(`Failed to persist time slot data: ${err.message}`);
-        });
-      }, HOUR_MS);
-    }
-
-    // Handle graceful shutdown
-    const shutdown = async () => {
-      logger.info('Shutting down proxy server...');
-
-      if (periodicWeightAdjustTimer) {
-        clearInterval(periodicWeightAdjustTimer);
-        periodicWeightAdjustTimer = null;
-      }
-
-      if (timeSlotSaveTimer) {
-        clearInterval(timeSlotSaveTimer);
-        timeSlotSaveTimer = null;
-        await timeSlotCalculator.save().catch((err) => {
-          logger.error(`Failed to persist time slot data on shutdown: ${err.message}`);
-        });
-      }
-
-      for (const [routeKey] of routeRecoveryTimers) {
-        stopWeightRecovery(routeKey);
-      }
-      routeRecoveryTimers.clear();
-
-      await shutdownServer(server);
-      activeServer = null;
-      activePort = null;
-      process.exit(0);
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-  } catch (error) {
-    logger.error(`Failed to start proxy server: ${error.message}`);
-    process.exit(1);
-  }
+  await serverManager.start(options);
 }
 
 /**
  * Stop the proxy server
  */
 export async function stopAction() {
-  if (!activeServer || !activeServer.listening) {
-    logger.warn('No proxy server is currently running');
-    return;
-  }
-
-  try {
-    if (periodicWeightAdjustTimer) {
-      clearInterval(periodicWeightAdjustTimer);
-      periodicWeightAdjustTimer = null;
-    }
-
-    if (timeSlotSaveTimer) {
-      clearInterval(timeSlotSaveTimer);
-      timeSlotSaveTimer = null;
-      await timeSlotCalculator.save().catch((err) => {
-        logger.error(`Failed to persist time slot data on stop: ${err.message}`);
-      });
-    }
-
-    for (const [routeKey] of routeRecoveryTimers) {
-      stopWeightRecovery(routeKey);
-    }
-    routeRecoveryTimers.clear();
-
-    await shutdownServer(activeServer);
-    logger.success(`Proxy server stopped (was on port ${activePort})`);
-    activeServer = null;
-    activePort = null;
-  } catch (error) {
-    logger.error(`Failed to stop proxy server: ${error.message}`);
-    process.exit(1);
-  }
+  await serverManager.stop();
 }
 
 /**
@@ -648,15 +38,16 @@ export async function statusAction() {
   const configManager = new ProxyConfigManager();
   const config = await configManager.readConfig();
   const configPath = getProxyConfigPath();
+  const status = serverManager.getStatus();
 
   console.log('');
   console.log('Proxy Server Status');
   console.log('===================');
 
-  if (activeServer && activeServer.listening) {
+  if (status.running) {
     console.log(`  Status:    Running`);
-    console.log(`  Port:      ${activePort}`);
-    console.log(`  PID:       ${process.pid}`);
+    console.log(`  Port:      ${status.port}`);
+    console.log(`  PID:       ${status.pid}`);
   } else {
     console.log(`  Status:    Not running`);
   }
@@ -680,6 +71,10 @@ export async function statusAction() {
   console.log('');
 }
 
+/**
+ * Show proxy access logs
+ * @param {object} options - CLI options
+ */
 export async function logsAction(options = {}) {
   const lines = parseInt(options.lines, 10) || 50;
   const logPath = getLogPath();
@@ -705,6 +100,10 @@ export async function logsAction(options = {}) {
   console.log(`\nShowing last ${logs.length} entries.`);
 }
 
+/**
+ * Show proxy access statistics
+ * @param {object} options - CLI options
+ */
 export async function statsAction(options = {}) {
   const { last, json } = options;
 
@@ -806,8 +205,10 @@ export async function timeSlotsAction(options = {}) {
   }
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url)); // eslint-disable-line no-unused-vars
-
+/**
+ * Initialize proxy configuration file
+ * @param {object} options - CLI options
+ */
 export async function initAction(options = {}) {
   const configPath = getProxyConfigPath();
   const force = options.force || false;

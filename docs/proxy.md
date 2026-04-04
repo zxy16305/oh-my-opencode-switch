@@ -123,19 +123,19 @@ oos proxy start -c ./custom-config.json
 
 ### 配置字段说明
 
-| 字段                      | 类型   | 必填 | 说明                                                    |
-| ------------------------- | ------ | ---- | ------------------------------------------------------- |
-| `port`                    | number | 否   | 代理服务器监听端口，默认 3000                           |
-| `routes`                  | object | 否   | 路由配置对象，键为虚拟模型名称                          |
-| `routes.<name>.strategy`  | string | 否   | 路由策略：`sticky`、`round-robin`、`weighted`、`random` |
-| `routes.<name>.upstreams` | array  | 是   | 上游服务器列表                                          |
-| `upstreams[].id`          | string | 是   | 上游唯一标识                                            |
-| `upstreams[].provider`    | string | 是   | 提供商名称（alibaba、zhipu、deepseek 等）               |
-| `upstreams[].model`       | string | 是   | 实际使用的模型名称                                      |
-| `upstreams[].baseURL`     | string | 是   | API 端点 URL                                            |
-| `upstreams[].apiKey`      | string | 否   | API 密钥，可为 null                                     |
-| `upstreams[].weight`      | number | 否   | 权重值，仅 weighted 策略使用                            |
-| `upstreams[].metadata`    | object | 否   | 自定义元数据                                            |
+| 字段                      | 类型   | 必填 | 说明                                                                   |
+| ------------------------- | ------ | ---- | ---------------------------------------------------------------------- |
+| `port`                    | number | 否   | 代理服务器监听端口，默认 3000                                          |
+| `routes`                  | object | 否   | 路由配置对象，键为虚拟模型名称                                         |
+| `routes.<name>.strategy`  | string | 否   | 路由策略：`sticky`、`round-robin`、`weighted`、`random`                |
+| `routes.<name>.upstreams` | array  | 是   | 上游服务器列表                                                         |
+| `upstreams[].id`          | string | 是   | 上游唯一标识                                                           |
+| `upstreams[].provider`    | string | 是   | 提供商名称（alibaba、zhipu、deepseek 等）                              |
+| `upstreams[].model`       | string | 是   | 实际使用的模型名称                                                     |
+| `upstreams[].baseURL`     | string | 是   | API 端点 URL                                                           |
+| `upstreams[].apiKey`      | string | 否   | API 密钥，可为 null                                                    |
+| `upstreams[].weight`      | number | 否   | 权重值，用于 weighted 策略（按比例随机）和 sticky 策略（负载均衡因子） |
+| `upstreams[].metadata`    | object | 否   | 自定义元数据                                                           |
 
 ### 常用提供商配置示例
 
@@ -231,12 +231,33 @@ oos proxy start -c ./custom-config.json
 
 **适用场景**：需要保持会话上下文的场景
 
+**权重影响方式**：
+
+sticky 策略不仅保持会话粘滞，还使用最小负载算法在多个会话间实现负载均衡：
+
+- **评分公式**：`score = (requestCount + 1) / effectiveWeight`
+  - `requestCount`：最近 1 小时内的请求数（滑动窗口）
+  - `effectiveWeight`：有效权重（1-1000，默认 1）
+  - `+1` 确保即使 requestCount=0 时权重也生效
+- **选择逻辑**：每次选择 score 最低的上游（负载最轻）
+- **权重作用**：
+  - 初始分配：权重高的上游 score 更低，优先被新会话选中
+  - 每 10 次请求重选：会话每处理 10 个请求后重新评估，权重高的可承担更多负载
+  - 长期均衡：请求数趋向于与权重成正比（权重 2:1 → 请求数约 2:1）
+
+**权重边界处理**：
+
+- 权重值必须为 1-1000 的整数，默认为 1
+- 权重=0 或负数：该上游被排除在负载均衡之外（用于流量排除/禁用）
+- 权重>1000：会被截断为 1000
+
 ```json
 {
   "strategy": "sticky",
   "upstreams": [
-    { "id": "upstream-1", ... },
-    { "id": "upstream-2", ... }
+    { "id": "upstream-1", "weight": 3, ... },  // 承担约 3 倍负载
+    { "id": "upstream-2", "weight": 1, ... },  // 承担基准负载
+    { "id": "upstream-3", "weight": 0, ... }   // 被排除（不接收请求）
   ]
 }
 ```

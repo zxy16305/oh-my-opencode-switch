@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/zxy16305/oh-my-opencode-switch/master/schemas/proxy-config.schema.json",
   "port": 3000,
   "auth": {
     "enabled": false,

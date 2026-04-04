@@ -81,33 +81,3 @@ export function validateProxyConfig(config) {
     return { success: false, error: error.message };
   }
 }
-
-export function validateRoutes(routes) {
-  try {
-    const data = routesSchema.parse(routes);
-    return { success: true, data };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        success: false,
-        error: error.errors.map((e) => e.message).join(', '),
-      };
-    }
-    return { success: false, error: error.message };
-  }
-}
-
-export function validateUpstream(upstream) {
-  try {
-    const data = upstreamSchema.parse(upstream);
-    return { success: true, data };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        success: false,
-        error: error.errors.map((e) => e.message).join(', '),
-      };
-    }
-    return { success: false, error: error.message };
-  }
-}

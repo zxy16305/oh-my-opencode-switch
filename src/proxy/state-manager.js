@@ -33,6 +33,10 @@ export class StateManager {
     /** @type {Map<string, NodeJS.Timeout>} */
     this.recoveryTimers = new Map();
 
+    // Weight check timers per route
+    /** @type {Map<string, NodeJS.Timeout>} */
+    this.checkTimers = new Map();
+
     // Statistics state per route:upstream
     /** @type {Map<string, { ttfbSamples: number[], durationSamples: number[], errorCount: number }>} */
     this.statsState = new Map();
@@ -100,6 +104,14 @@ export class StateManager {
    */
   getRecoveryTimers() {
     return this.recoveryTimers;
+  }
+
+  /**
+   * Get the check timers map
+   * @returns {Map<string, NodeJS.Timeout>}
+   */
+  getCheckTimers() {
+    return this.checkTimers;
   }
 
   /**
@@ -196,6 +208,27 @@ export class StateManager {
   }
 
   /**
+   * Add a check timer for a route
+   * @param {string} routeKey - Route identifier
+   * @param {NodeJS.Timeout} timer - Timer instance
+   */
+  addCheckTimer(routeKey, timer) {
+    this.checkTimers.set(routeKey, timer);
+  }
+
+  /**
+   * Remove and clear a check timer for a route
+   * @param {string} routeKey - Route identifier
+   */
+  removeCheckTimer(routeKey) {
+    const timer = this.checkTimers.get(routeKey);
+    if (timer) {
+      clearInterval(timer);
+      this.checkTimers.delete(routeKey);
+    }
+  }
+
+  /**
    * Reset all state to initial values
    * Clears all maps and stops all timers/intervals
    */
@@ -216,6 +249,12 @@ export class StateManager {
       clearTimeout(timer);
     }
     this.recoveryTimers.clear();
+
+    // Clear and stop all check timers
+    for (const timer of this.checkTimers.values()) {
+      clearInterval(timer);
+    }
+    this.checkTimers.clear();
 
     // Clear and stop cleanup interval
     if (this.cleanupInterval) {
@@ -276,6 +315,10 @@ export function getDynamicWeightState() {
 
 export function getRecoveryTimers() {
   return stateManager.getRecoveryTimers();
+}
+
+export function getCheckTimers() {
+  return stateManager.getCheckTimers();
 }
 
 export function getStatsState() {

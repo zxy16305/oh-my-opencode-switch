@@ -16,6 +16,8 @@ import {
   adjustWeightForLatency,
   startWeightRecovery,
   stopWeightRecovery,
+  startWeightCheck,
+  stopWeightCheck,
 } from './router.js';
 import { forwardRequest } from './server.js';
 import { CircuitBreaker } from './circuitbreaker.js';
@@ -54,6 +56,7 @@ function createInstanceState() {
     periodicWeightAdjustTimer: null,
     timeSlotSaveTimer: null,
     routeRecoveryTimers: new Map(),
+    routeCheckTimers: new Map(),
     sseClients: new Set(),
     timeSlotCalculator: createTimeSlotWeightCalculator(),
   };
@@ -353,6 +356,11 @@ export class ProxyServerManager {
         if (recoveryTimer) {
           inst.routeRecoveryTimers.set(routeKey, recoveryTimer);
         }
+
+        const checkTimer = startWeightCheck(routeKey, route.upstreams, route.dynamicWeight);
+        if (checkTimer) {
+          inst.routeCheckTimers.set(routeKey, checkTimer);
+        }
       }
 
       if (config.timeSlotWeight?.enabled) {
@@ -407,6 +415,11 @@ export class ProxyServerManager {
     }
     inst.routeRecoveryTimers.clear();
 
+    for (const [routeKey] of inst.routeCheckTimers) {
+      stopWeightCheck(routeKey);
+    }
+    inst.routeCheckTimers.clear();
+
     if (inst.server) {
       await shutdownServer(inst.server);
     }
@@ -441,6 +454,11 @@ export class ProxyServerManager {
         stopWeightRecovery(routeKey);
       }
       inst.routeRecoveryTimers.clear();
+
+      for (const [routeKey] of inst.routeCheckTimers) {
+        stopWeightCheck(routeKey);
+      }
+      inst.routeCheckTimers.clear();
 
       await shutdownServer(inst.server);
       logger.success(`[${name}] Proxy server stopped (was on port ${inst.port})`);

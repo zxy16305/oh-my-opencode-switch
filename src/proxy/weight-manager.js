@@ -4,7 +4,7 @@
  */
 
 import { StateManager } from './state-manager.js';
-import { getErrorRate, getUpstreamRequestCountInWindow } from './stats-collector.js';
+import { getErrorRate, getUpstreamRequestCountInWindow, getErrorState } from './stats-collector.js';
 
 /**
  * Default dynamic weight configuration
@@ -260,6 +260,78 @@ function stopWeightRecovery(state, routeKey) {
   state.removeRecoveryTimer(routeKey);
 }
 
+/**
+ * Start periodic weight check for a route
+ * Checks error rates and adjusts weights every checkInterval seconds
+ * @param {StateManager} state - State manager instance
+ * @param {string} routeKey
+ * @param {Upstream[]} upstreams
+ * @param {object} config - dynamicWeight config
+ * @returns {NodeJS.Timeout | null} Timer ID for cleanup
+ */
+function startWeightCheck(state, routeKey, upstreams, config) {
+  if (!state || !routeKey || !upstreams || upstreams.length === 0 || !config) {
+    return null;
+  }
+
+  const mergedConfig = { ...DEFAULT_DYNAMIC_WEIGHT_CONFIG, ...config };
+
+  if (!mergedConfig.enabled || !mergedConfig.checkInterval || mergedConfig.checkInterval <= 0) {
+    return null;
+  }
+
+  stopWeightCheck(state, routeKey);
+
+  const { checkInterval, errorWeightReduction } = mergedConfig;
+  const errorWindowMs = errorWeightReduction?.errorWindowMs || 3600000;
+  const errorCodes = errorWeightReduction?.errorCodes || [429, 500, 502, 503, 504];
+
+  const timer = setInterval(() => {
+    try {
+      const errorState = getErrorState(state);
+      const now = Date.now();
+
+      const errorData = new Map();
+      for (const upstream of upstreams) {
+        const key = `${routeKey}:${upstream.id}`;
+        const errorEntry = errorState.get(key);
+        if (errorEntry && errorEntry.errors) {
+          const windowStart = now - errorWindowMs;
+          const codes = errorEntry.errors
+            .filter((e) => e.timestamp >= windowStart && errorCodes.includes(e.statusCode))
+            .map((e) => e.statusCode);
+          if (codes.length > 0) {
+            errorData.set(upstream.id, codes);
+          }
+        }
+      }
+
+      if (errorData.size > 0) {
+        adjustWeightForError(state, routeKey, upstreams, config, errorData);
+      }
+    } catch (_error) {
+      // no-empty eslint exception
+    }
+  }, checkInterval * 1000);
+
+  state.addCheckTimer(routeKey, timer);
+
+  if (timer.unref) {
+    timer.unref();
+  }
+
+  return timer;
+}
+
+/**
+ * Stop weight check timer for a route
+ * @param {StateManager} state - State manager instance
+ * @param {string} routeKey
+ */
+function stopWeightCheck(state, routeKey) {
+  state.removeCheckTimer(routeKey);
+}
+
 // Export all functions and config
 export {
   DEFAULT_DYNAMIC_WEIGHT_CONFIG,
@@ -269,4 +341,6 @@ export {
   adjustWeightForError,
   startWeightRecovery,
   stopWeightRecovery,
+  startWeightCheck,
+  stopWeightCheck,
 };

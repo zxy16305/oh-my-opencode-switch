@@ -17,6 +17,8 @@ import {
   adjustWeightForError as _adjustWeightForError,
   startWeightRecovery as _startWeightRecovery,
   stopWeightRecovery as _stopWeightRecovery,
+  startWeightCheck as _startWeightCheck,
+  stopWeightCheck as _stopWeightCheck,
 } from './weight-manager.js';
 
 // Import internal versions of session-manager functions (with _ prefix)
@@ -177,6 +179,29 @@ export function startWeightRecovery(routeKey, upstreams, config, state = null) {
 export function stopWeightRecovery(routeKey, state = null) {
   const sm = state ?? stateManager;
   _stopWeightRecovery(sm, routeKey);
+}
+
+/**
+ * Wrapper for startWeightCheck with optional state parameter at end
+ * @param {string} routeKey - Route identifier
+ * @param {Upstream[]} upstreams - Array of upstreams
+ * @param {object} config - Dynamic weight config
+ * @param {StateManager} [state] - Optional state manager instance
+ * @returns {NodeJS.Timeout | null} Timer instance
+ */
+export function startWeightCheck(routeKey, upstreams, config, state = null) {
+  const sm = state ?? stateManager;
+  return _startWeightCheck(sm, routeKey, upstreams, config);
+}
+
+/**
+ * Wrapper for stopWeightCheck with optional state parameter at end
+ * @param {string} routeKey - Route identifier
+ * @param {StateManager} [state] - Optional state manager instance
+ */
+export function stopWeightCheck(routeKey, state = null) {
+  const sm = state ?? stateManager;
+  _stopWeightCheck(sm, routeKey);
 }
 
 /**

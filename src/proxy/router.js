@@ -609,6 +609,8 @@ export function routeRequest(model, config, request, body = null, state = null) 
   return result;
 }
 
+export { calculateEffectiveWeight } from './weight-calculator.js';
+
 /**
  * Get list of available virtual model names from config
  * @param {RoutesConfig} config - Routes configuration object

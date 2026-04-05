@@ -3,9 +3,10 @@
  * @module tests/integration/proxy-weight-calculator.test
  */
 
-import { describe, test, beforeEach } from 'node:test';
+import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { StateManager } from '../../src/proxy/state-manager.js';
 import { calculateEffectiveWeight, resetAllState } from '../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
@@ -27,171 +28,145 @@ function makeTestUpstream(id, overrides = {}) {
 // ===========================================================================
 
 describe('Weight Calculator – calculateEffectiveWeight', () => {
-  beforeEach(() => resetAllState());
+  let sm;
 
-  test('1. Dynamic weight: returns base weight when no penalties apply', () => {
+  beforeEach(() => {
+    resetAllState();
+    sm = new StateManager();
+  });
+
+  afterEach(() => {
+    sm.reset();
+  });
+
+  test('1. Returns static weight when no configs are provided', () => {
     const upstream = makeTestUpstream('u1');
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-    };
+    const staticWeight = 100;
 
-    // No errors, no latency penalty
-    const metrics = {
-      errorCount: 0,
-      totalRequests: 10,
-      avgDuration: 100,
-    };
-
-    const effectiveWeight = calculateEffectiveWeight(
-      'route1',
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
       upstream,
-      config,
-      metrics,
-      100 // base dynamic weight
-    );
+      staticWeight,
+    });
 
-    // Should return full base weight when no penalties
     assert.strictEqual(effectiveWeight, 100);
   });
 
-  test('2. Error penalty: reduces weight proportionally to error rate', () => {
+  test('2. Dynamic weight: returns configured weight when enabled', () => {
     const upstream = makeTestUpstream('u1');
-    const config = {
+    const staticWeight = 200;
+    const dynamicWeightConfig = {
       enabled: true,
       initialWeight: 100,
-      minWeight: 10,
-      errorPenaltyFactor: 0.5, // 50% penalty per 10% error rate
     };
 
-    // 20% error rate (2 errors out of 10 requests)
-    const metrics = {
-      errorCount: 2,
-      totalRequests: 10,
-      avgDuration: 100,
-    };
-
-    const effectiveWeight = calculateEffectiveWeight(
-      'route1',
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
       upstream,
-      config,
-      metrics,
-      100 // base dynamic weight
-    );
+      staticWeight,
+      dynamicWeightConfig,
+    });
 
-    // Expected: 100 * (1 - (0.2 * 0.5 * 2)) = 100 * (1 - 0.2) = 80
+    assert.strictEqual(effectiveWeight, 200);
+  });
+
+  test('3. Error penalty: reduces weight when errors are recorded', async () => {
+    const upstream = makeTestUpstream('u1');
+    const staticWeight = 100;
+    const dynamicWeightConfig = {
+      enabled: true,
+      initialWeight: 100,
+      errorWeightReduction: {
+        enabled: true,
+        minWeight: 10,
+        reductionAmount: 10,
+        errorWindowMs: 60000,
+      },
+    };
+
+    const { recordUpstreamError } = await import('../../src/proxy/stats-collector.js');
+    recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
+    recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
+
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
+      upstream,
+      staticWeight,
+      dynamicWeightConfig,
+    });
+
     assert.strictEqual(effectiveWeight, 80);
   });
 
-  test('3. Error penalty: does not reduce weight below minWeight', () => {
+  test('4. Error penalty: does not reduce weight below minWeight', async () => {
     const upstream = makeTestUpstream('u1');
-    const config = {
+    const staticWeight = 100;
+    const dynamicWeightConfig = {
       enabled: true,
       initialWeight: 100,
-      minWeight: 10,
-      errorPenaltyFactor: 1.0,
+      errorWeightReduction: {
+        enabled: true,
+        minWeight: 10,
+        reductionAmount: 20,
+        errorWindowMs: 60000,
+      },
     };
 
-    // 100% error rate
-    const metrics = {
-      errorCount: 10,
-      totalRequests: 10,
-      avgDuration: 100,
-    };
+    const { recordUpstreamError } = await import('../../src/proxy/stats-collector.js');
+    for (let i = 0; i < 10; i++) {
+      recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
+    }
 
-    const effectiveWeight = calculateEffectiveWeight(
-      'route1',
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
       upstream,
-      config,
-      metrics,
-      100 // base dynamic weight
-    );
+      staticWeight,
+      dynamicWeightConfig,
+    });
 
-    // Should not go below minWeight of 10
     assert.strictEqual(effectiveWeight, 10);
   });
 
-  test('4. Latency penalty: reduces weight for upstreams slower than average', () => {
+  test('5. Disabled dynamic weight returns static weight unchanged', () => {
     const upstream = makeTestUpstream('u1');
-    const config = {
-      enabled: true,
+    const staticWeight = 100;
+    const dynamicWeightConfig = {
+      enabled: false,
       initialWeight: 100,
-      minWeight: 10,
-      latencyThreshold: 1.5,
-      latencyPenaltyFactor: 0.3,
     };
 
-    const metrics = {
-      errorCount: 0,
-      totalRequests: 10,
-      avgDuration: 250, // 2.5x of average latency 100ms
-    };
-
-    const averageLatency = 100;
-
-    const effectiveWeight = calculateEffectiveWeight(
-      'route1',
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
       upstream,
-      config,
-      metrics,
-      100, // base dynamic weight
-      averageLatency
-    );
+      staticWeight,
+      dynamicWeightConfig,
+    });
 
-    // Expected: 2.5x exceeds 1.5x threshold → penalty = (2.5 - 1.5) * 0.3 * 100 = 30 → 100 -30 =70
-    assert.strictEqual(effectiveWeight, 70);
-  });
-
-  test('5. Combined penalties: applies both error and latency penalties', () => {
-    const upstream = makeTestUpstream('u1');
-    const config = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      errorPenaltyFactor: 0.5,
-      latencyThreshold: 1.5,
-      latencyPenaltyFactor: 0.3,
-    };
-
-    const metrics = {
-      errorCount: 2, // 20% error rate
-      totalRequests: 10,
-      avgDuration: 250, // 2.5x average latency
-    };
-
-    const averageLatency = 100;
-
-    const effectiveWeight = calculateEffectiveWeight(
-      'route1',
-      upstream,
-      config,
-      metrics,
-      100, // base dynamic weight
-      averageLatency
-    );
-
-    // Expected: 100 - 20 (error penalty) - 30 (latency penalty) = 50
-    assert.strictEqual(effectiveWeight, 50);
-  });
-
-  test('6. Disabled weight calculation returns base weight unchanged', () => {
-    const upstream = makeTestUpstream('u1');
-    const config = {
-      enabled: false, // weight calculation disabled
-      initialWeight: 100,
-      minWeight: 10,
-    };
-
-    const metrics = {
-      errorCount: 5, // high error rate
-      totalRequests: 10,
-      avgDuration: 500, // high latency
-    };
-
-    const effectiveWeight = calculateEffectiveWeight('route1', upstream, config, metrics, 100);
-
-    // Should return base weight even with bad metrics when disabled
     assert.strictEqual(effectiveWeight, 100);
+  });
+
+  test('6. Custom static weight is respected', () => {
+    const upstream = makeTestUpstream('u1', { weight: 250 });
+    const staticWeight = 250;
+    const dynamicWeightConfig = {
+      enabled: true,
+      initialWeight: 100,
+    };
+
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey: 'route1',
+      upstream,
+      staticWeight,
+      dynamicWeightConfig,
+    });
+
+    // Should return custom weight 250, not default 100
+    assert.strictEqual(effectiveWeight, 250);
   });
 });

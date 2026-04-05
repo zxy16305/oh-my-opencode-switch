@@ -3,12 +3,6 @@ import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
   failoverStickySession,
-  getDynamicWeightState,
-  getUpstreamSessionCounts,
-  getUpstreamRequestCounts,
-  getUpstreamSlidingWindowCounts,
-  getSessionUpstreamMap,
-  getUpstreamStats,
   recordUpstreamError,
   recordUpstreamLatency,
   recordUpstreamStats,
@@ -24,15 +18,9 @@ import { CircuitBreaker } from './circuitbreaker.js';
 import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
-import { getDefaultProxyConfig } from '../utils/proxy-default-config.js';
-import { logAccess, readLogs, getLogPath, clearLogs, onLogAdded } from '../utils/access-log.js';
-import { logBuffer } from '../utils/log-buffer.js';
+import { logAccess } from '../utils/access-log.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
-import { parseTimeRange, generateStats } from '../utils/stats.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';
 import {
   handleDebug,
   handleStats,

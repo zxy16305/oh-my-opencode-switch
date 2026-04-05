@@ -3,7 +3,6 @@
  * @module proxy/weight-manager
  */
 
-import { StateManager } from './state-manager.js';
 import { getErrorRate, getUpstreamRequestCountInWindow, getErrorState } from './stats-collector.js';
 
 /**
@@ -98,7 +97,11 @@ function adjustWeightForLatency(state, routeKey, upstreams, config, latencyData)
   if (!upstreams || upstreams.length <= 1) return;
   if (!config) return;
 
-  const { minWeight, latencyThreshold, initialWeight } = {
+  const {
+    minWeight,
+    latencyThreshold,
+    initialWeight: _initialWeight,
+  } = {
     ...DEFAULT_DYNAMIC_WEIGHT_CONFIG,
     ...config,
   };
@@ -221,7 +224,7 @@ function startWeightRecovery(state, routeKey, upstreams, config) {
 
   stopWeightRecovery(state, routeKey);
 
-  const { recoveryInterval, recoveryAmount, initialWeight } = mergedConfig;
+  const { recoveryInterval, recoveryAmount, initialWeight: _initialWeight } = mergedConfig;
 
   const timer = setInterval(() => {
     for (const upstream of upstreams) {

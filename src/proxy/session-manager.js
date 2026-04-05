@@ -3,7 +3,7 @@
  * @module proxy/session-manager
  */
 
-import { StateManager, stateManager } from './state-manager.js';
+import { stateManager } from './state-manager.js';
 
 /** Default TTL for session mappings (30 minutes) */
 export const SESSION_MAP_TTL_MS = 30 * 60 * 1000;

@@ -3,8 +3,6 @@
  * @module proxy/stats-collector
  */
 
-import { StateManager, stateManager } from './state-manager.js';
-
 /**
  * Maximum number of samples to keep per upstream (sliding window)
  */

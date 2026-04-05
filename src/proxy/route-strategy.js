@@ -3,7 +3,7 @@
  * @module proxy/route-strategy
  */
 
-import { StateManager, stateManager } from './state-manager.js';
+import { stateManager } from './state-manager.js';
 import { RouterError } from './errors.js';
 import { getOrCreateCountMap as _getOrCreateCountMap } from './session-manager.js';
 import { calculateEffectiveWeight } from './weight-calculator.js';

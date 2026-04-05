@@ -41,8 +41,8 @@ export function calculateEffectiveWeight(params) {
     staticWeight,
     dynamicWeightConfig = null,
     timeSlotWeightConfig = null,
-    upstreams = [],
-    latencyWindowMs = 60000,
+    upstreams: _upstreams = [],
+    latencyWindowMs: _latencyWindowMs = 60000,
   } = params;
 
   let effectiveWeight = staticWeight;

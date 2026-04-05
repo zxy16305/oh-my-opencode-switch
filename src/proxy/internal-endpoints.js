@@ -107,7 +107,7 @@ export function handleDebug(req, res, routes, circuitBreaker) {
  * @param {object} routes - Resolved routes config
  * @param {CircuitBreaker} circuitBreaker - Circuit breaker instance
  */
-export function handleStats(req, res, routes, circuitBreaker) {
+export function handleStats(req, res, routes, _circuitBreaker) {
   // Security: only allow localhost
   const clientIp = req.socket.remoteAddress || '';
   if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {

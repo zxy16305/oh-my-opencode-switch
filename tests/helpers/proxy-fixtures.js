@@ -51,7 +51,7 @@ const defaultDynamicWeightConfig = {
 /**
  * Default time slot weight configuration.
  */
-const defaultTimeSlotWeightConfig = {
+const _defaultTimeSlotWeightConfig = {
   enabled: false,
   totalErrorThreshold: 0.01,
   dangerSlotThreshold: 0.05,

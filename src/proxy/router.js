@@ -4,10 +4,9 @@
  */
 
 import { z } from 'zod';
-import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { RouterError } from './errors.js';
-import { StateManager, stateManager } from './state-manager.js';
-import { upstreamSchema, routeSchema, routesConfigSchema } from './schemas.js';
+import { stateManager } from './state-manager.js';
+import { routeSchema, routesConfigSchema } from './schemas.js';
 
 // Import internal versions of weight-manager functions (with _ prefix)
 import {
@@ -92,7 +91,7 @@ export function getRouteForModel(model, config) {
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {string} Session ID
  */
-export function getSessionId(request, body = null, state = null) {
+export function getSessionId(request, body = null, _state = null) {
   return _getSessionId(request, body);
 }
 
@@ -103,7 +102,7 @@ export function getSessionId(request, body = null, state = null) {
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {number} Backend index
  */
-export function hashSessionToBackend(sessionId, backendCount, state = null) {
+export function hashSessionToBackend(sessionId, backendCount, _state = null) {
   return _hashSessionToBackend(sessionId, backendCount);
 }
 
@@ -375,7 +374,7 @@ export function selectUpstreamRoundRobin(upstreams, routeKey, state = null) {
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {Upstream} Selected upstream
  */
-export function selectUpstreamRandom(upstreams, state = null) {
+export function selectUpstreamRandom(upstreams, _state = null) {
   return _selectUpstreamRandom(upstreams);
 }
 
@@ -385,7 +384,7 @@ export function selectUpstreamRandom(upstreams, state = null) {
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {Upstream} Selected upstream
  */
-export function selectUpstreamWeighted(upstreams, state = null) {
+export function selectUpstreamWeighted(upstreams, _state = null) {
   return _selectUpstreamWeighted(upstreams);
 }
 

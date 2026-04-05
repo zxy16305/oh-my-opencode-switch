@@ -1,4 +1,5 @@
 import { ProfileManager } from '../../core/ProfileManager.js';
+import logger from '../../utils/logger.js';
 
 export async function listAction(options) {
   const manager = new ProfileManager();
@@ -6,21 +7,21 @@ export async function listAction(options) {
 
   if (profiles.length === 0) {
     if (options.json) {
-      console.log('[]');
+      logger.raw('[]');
     } else {
-      console.log('No profiles found');
+      logger.raw('No profiles found');
     }
     return;
   }
 
   if (options.json) {
-    console.log(JSON.stringify(profiles, null, 2));
+    logger.raw(JSON.stringify(profiles, null, 2));
     return;
   }
 
   if (options.quiet) {
     for (const profile of profiles) {
-      console.log(profile.name);
+      logger.raw(profile.name);
     }
     return;
   }

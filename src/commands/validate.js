@@ -4,7 +4,7 @@ import { getCachedSchema } from '../utils/schemaFetcher.js';
 import Ajv from 'ajv';
 
 export async function validateAction(_options) {
-  console.log('Validating current configuration...');
+  logger.info('Validating current configuration...');
 
   // Fetch schema
   const { schema, error: schemaError } = await getCachedSchema();
@@ -34,12 +34,12 @@ export async function validateAction(_options) {
     logger.success('✓ Configuration is valid');
     process.exit(0);
   } else {
-    console.log('✗ Validation failed:');
+    logger.error('Validation failed:');
 
     if (validate.errors) {
       for (const error of validate.errors) {
         const path = error.instancePath || '/';
-        console.log(`  ${path}: ${error.message}`);
+        logger.raw(`  ${path}: ${error.message}`);
       }
     }
 

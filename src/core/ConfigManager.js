@@ -4,6 +4,7 @@ import { getSourceConfigPath, getOosDir, getBackupDir } from '../utils/paths.js'
 import { writeJson, exists, ensureDir, readJsonWithComments, remove } from '../utils/files.js';
 import { ConfigError, FileSystemError } from '../utils/errors.js';
 import { opencodeConfigSchema } from '../utils/validators.js';
+import logger from '../utils/logger.js';
 
 export class ConfigManager {
   constructor() {
@@ -108,13 +109,13 @@ export class ConfigManager {
 
     if (backupFiles.length > keepCount) {
       const filesToDelete = backupFiles.slice(keepCount);
-      console.log(
+      logger.info(
         `Cleaning up old backups: found ${backupFiles.length}, keeping ${keepCount}, deleting ${filesToDelete.length}...`
       );
       for (const file of filesToDelete) {
         const filePath = path.join(backupDir, file);
         await remove(filePath);
-        console.log(`  ✓ Deleted old backup: ${file}`);
+        logger.success(`Deleted old backup: ${file}`);
       }
     }
   }

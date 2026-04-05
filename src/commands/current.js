@@ -1,13 +1,14 @@
 import { ProfileManager } from '../core/ProfileManager.js';
+import logger from '../utils/logger.js';
 
 export async function currentAction(_options) {
   const manager = new ProfileManager();
   const profile = await manager.getActiveProfile();
 
   if (profile) {
-    console.log(profile.name);
+    logger.raw(profile.name);
   } else {
-    console.log('(none)');
+    logger.raw('(none)');
   }
 }
 

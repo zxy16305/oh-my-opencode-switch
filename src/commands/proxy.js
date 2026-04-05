@@ -27,35 +27,35 @@ export async function statusAction(options = {}) {
   const name = options.name || 'default';
   const status = serverManager.getStatus(name);
 
-  console.log('');
-  console.log(`Proxy Server Status [${name}]`);
-  console.log('===================');
+  logger.raw('');
+  logger.raw(`Proxy Server Status [${name}]`);
+  logger.raw('===================');
 
   if (status.running) {
-    console.log(`  Status:    Running`);
-    console.log(`  Port:      ${status.port}`);
-    console.log(`  PID:       ${status.pid}`);
+    logger.raw(`  Status:    Running`);
+    logger.raw(`  Port:      ${status.port}`);
+    logger.raw(`  PID:       ${status.pid}`);
   } else {
-    console.log(`  Status:    Not running`);
+    logger.raw(`  Status:    Not running`);
   }
 
-  console.log(`  Config:    ${configPath}`);
+  logger.raw(`  Config:    ${configPath}`);
 
   if (config && config.routes) {
     const models = Object.keys(config.routes);
-    console.log(`  Routes:    ${models.length} configured`);
+    logger.raw(`  Routes:    ${models.length} configured`);
     if (models.length > 0) {
       for (const model of models) {
         const route = config.routes[model];
         const upstreamCount = route.upstreams?.length || 0;
-        console.log(`    - ${model}: ${upstreamCount} upstream(s)`);
+        logger.raw(`    - ${model}: ${upstreamCount} upstream(s)`);
       }
     }
   } else {
-    console.log(`  Routes:    Not configured`);
+    logger.raw(`  Routes:    Not configured`);
   }
 
-  console.log('');
+  logger.raw('');
 }
 
 /**
@@ -66,7 +66,7 @@ export async function logsAction(options = {}) {
   const lines = parseInt(options.lines, 10) || 50;
   const logPath = getLogPath();
 
-  console.log(`\nProxy Access Logs (${logPath})\n`);
+  logger.raw(`\nProxy Access Logs (${logPath})\n`);
 
   if (options.clear) {
     await clearLogs();
@@ -76,15 +76,15 @@ export async function logsAction(options = {}) {
 
   const logs = await readLogs(lines);
   if (logs.length === 0) {
-    console.log('No logs found.');
+    logger.raw('No logs found.');
     return;
   }
 
   for (const line of logs) {
-    console.log(line);
+    logger.raw(line);
   }
 
-  console.log(`\nShowing last ${logs.length} entries.`);
+  logger.raw(`\nShowing last ${logs.length} entries.`);
 }
 
 /**
@@ -109,7 +109,7 @@ export async function statsAction(options = {}) {
     }
 
     if (json) {
-      console.log(JSON.stringify(stats, null, 2));
+      logger.raw(JSON.stringify(stats, null, 2));
     } else {
       const tableData = stats.map((s) => ({
         Provider: s.provider,
@@ -181,11 +181,11 @@ export async function timeSlotsAction(options = {}) {
       });
     }
 
-    console.log('\nTime Slot Statistics\n');
+    logger.raw('\nTime Slot Statistics\n');
     console.table(tableData);
-    console.log(`\nCurrent hour: ${currentHour}:00`);
-    console.log('Weight coefficients: 0.5 (danger), 1.0 (neutral), 2.0 (good)');
-    console.log('Data based on last 7 days of statistics.\n');
+    logger.raw(`\nCurrent hour: ${currentHour}:00`);
+    logger.raw('Weight coefficients: 0.5 (danger), 1.0 (neutral), 2.0 (good)');
+    logger.raw('Data based on last 7 days of statistics.\n');
   } catch (error) {
     logger.error(`Failed to load time slot data: ${error.message}`);
     process.exit(1);

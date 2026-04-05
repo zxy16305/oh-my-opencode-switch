@@ -1,4 +1,5 @@
 import { getModels } from '../tui/model-aggregator.js';
+import logger from '../utils/logger.js';
 
 const sourceToDisplay = {
   'opencode.json': 'config',
@@ -26,9 +27,9 @@ export async function modelsAction(_options) {
 
   for (const provider of sortedProviders) {
     const { source, models: modelSet } = grouped.get(provider);
-    console.log(`${provider} [${source}]`);
+    logger.raw(`${provider} [${source}]`);
     for (const model of Array.from(modelSet).sort()) {
-      console.log(`  - ${model}`);
+      logger.raw(`  - ${model}`);
     }
   }
 }

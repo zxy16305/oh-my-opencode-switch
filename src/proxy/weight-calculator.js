@@ -82,7 +82,7 @@ export function calculateEffectiveWeight(params) {
       if (errorCount > 0) {
         const errorWeight = Math.max(
           errorConfig.minWeight,
-          dynamicWeightConfig.initialWeight - errorCount * errorConfig.reductionAmount
+          staticWeight - errorCount * errorConfig.reductionAmount
         );
         effectiveWeight = Math.min(effectiveWeight, errorWeight);
       }

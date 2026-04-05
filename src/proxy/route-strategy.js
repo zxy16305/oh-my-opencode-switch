@@ -42,7 +42,7 @@ function selectLeastLoadedUpstream(
   // Filter out upstreams with effective weight <= 0
   const validUpstreams = [];
   for (const upstream of upstreams) {
-    const staticWeight = upstream.weight ?? 1;
+    const staticWeight = upstream.weight ?? 100;
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
@@ -84,11 +84,11 @@ function selectLeastLoadedUpstream(
     return candidates[0];
   }
 
-  const totalWeight = candidates.reduce((sum, u) => sum + (u.weight ?? 1), 0);
+  const totalWeight = candidates.reduce((sum, u) => sum + (u.weight ?? 100), 0);
   let random = Math.random() * totalWeight;
 
   for (const candidate of candidates) {
-    random -= candidate.weight ?? 1;
+    random -= candidate.weight ?? 100;
     if (random <= 0) {
       return candidate;
     }
@@ -155,11 +155,11 @@ export function selectUpstreamWeighted(upstreams) {
     return upstreams[0];
   }
 
-  const totalWeight = upstreams.reduce((sum, u) => sum + (u.weight ?? 1), 0);
+  const totalWeight = upstreams.reduce((sum, u) => sum + (u.weight ?? 100), 0);
   let random = Math.random() * totalWeight;
 
   for (const upstream of upstreams) {
-    random -= upstream.weight ?? 1;
+    random -= upstream.weight ?? 100;
     if (random <= 0) {
       return upstream;
     }

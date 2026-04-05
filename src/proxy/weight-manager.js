@@ -153,7 +153,8 @@ function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
     const hasMatchingError = codes.some((code) => errorCodes.includes(code));
     if (!hasMatchingError) continue;
 
-    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, initialWeight);
+    const configuredWeight = upstream.weight ?? 100;
+    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, configuredWeight);
 
     if (currentWeight <= minWeight) continue;
 

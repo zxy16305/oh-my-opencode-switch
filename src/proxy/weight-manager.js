@@ -40,10 +40,22 @@ function getDynamicWeight(state, routeKey, upstreamId, initialWeight = 100) {
   if (!weightState) {
     dynamicWeightState.set(key, {
       currentWeight: initialWeight,
+      lastStaticWeight: initialWeight,
       lastAdjustment: Date.now(),
       requestCount: 0,
     });
     return initialWeight;
+  }
+  // If static weight increased above last recorded static weight, bump dynamic weight up.
+  // Static weight changes are intentional config edits that should take effect immediately,
+  // overriding any dynamic adjustments that may have capped the weight at a lower value.
+  // But if static weight stayed the same, respect error/latency reductions.
+  if (initialWeight > weightState.lastStaticWeight) {
+    weightState.currentWeight = initialWeight;
+    weightState.lastStaticWeight = initialWeight;
+    weightState.lastAdjustment = Date.now();
+  } else {
+    weightState.lastStaticWeight = initialWeight;
   }
   return weightState.currentWeight;
 }

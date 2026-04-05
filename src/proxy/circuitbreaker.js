@@ -36,7 +36,7 @@ export class CircuitBreakerError extends Error {
  * Default circuit breaker options
  */
 const DEFAULTS = {
-  allowedFails: 3,
+  allowedFails: 2,
   cooldownTimeMs: 60000,
 };
 
@@ -53,7 +53,7 @@ const DEFAULTS = {
 export class CircuitBreaker {
   /**
    * @param {Object} [options]
-   * @param {number} [options.allowedFails=3] - Consecutive failures before tripping
+   * @param {number} [options.allowedFails=2] - Consecutive failures before tripping
    * @param {number} [options.cooldownTimeMs=60000] - Time in ms before HALF_OPEN probe
    */
   constructor(options = {}) {

@@ -42,7 +42,7 @@ import {
 const DEFAULT_PORT = 3000;
 const DEFAULT_INSTANCE_NAME = 'default';
 const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
-  allowedFails: 3,
+  allowedFails: 2,
   cooldownTimeMs: 60000,
 };
 

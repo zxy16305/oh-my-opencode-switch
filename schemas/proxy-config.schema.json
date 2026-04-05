@@ -16,6 +16,9 @@
     },
     "auth": {
       "$ref": "#/definitions/auth"
+    },
+    "reliability": {
+      "$ref": "#/definitions/reliability"
     }
   },
   "definitions": {
@@ -262,6 +265,24 @@
       "required": [],
       "additionalProperties": false,
       "description": "Authentication configuration for the proxy server"
+    },
+    "reliability": {
+      "type": "object",
+      "properties": {
+        "allowedFails": {
+          "type": "integer",
+          "default": 2,
+          "description": "Consecutive failures before tripping circuit breaker"
+        },
+        "cooldownTimeMs": {
+          "type": "integer",
+          "default": 60000,
+          "description": "Cooldown time before HALF_OPEN probe"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Reliability configuration for circuit breaker and failure handling"
     }
   }
 }

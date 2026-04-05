@@ -8,6 +8,10 @@
       { "key": "sk-your-api-key-2", "name": "prod-key", "enabled": false }
     ]
   },
+  "reliability": {
+    "allowedFails": 2,
+    "cooldownTimeMs": 60000
+  },
   "routes": {
     "lb-qwen-plus": {
       "strategy": "sticky",

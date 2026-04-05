@@ -339,7 +339,7 @@ describe('CircuitBreaker – per-provider isolation', () => {
 describe('CircuitBreaker – constructor defaults', () => {
   test('uses default allowedFails when not specified', () => {
     const cb = new CircuitBreaker();
-    assert.equal(cb.allowedFails, 3);
+    assert.equal(cb.allowedFails, 2);
   });
 
   test('uses default cooldownTimeMs when not specified', () => {
@@ -373,7 +373,7 @@ describe('CircuitBreaker – createCircuitBreaker factory', () => {
   test('creates with defaults when no options', () => {
     const cb = createCircuitBreaker();
     assert.ok(cb instanceof CircuitBreaker);
-    assert.equal(cb.allowedFails, 3);
+    assert.equal(cb.allowedFails, 2);
   });
 });
 

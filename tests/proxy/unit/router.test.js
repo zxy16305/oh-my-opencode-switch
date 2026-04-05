@@ -207,7 +207,7 @@ describe('Router – selectUpstreamWeighted()', () => {
     assert.equal(selectUpstreamWeighted(upstreams).id, 'solo');
   });
 
-  test('uses default weight of 1 when weight not specified', () => {
+  test('uses default weight of 100 when weight not specified', () => {
     const upstreams = [makeUpstream({ id: 'no-weight-1' }), makeUpstream({ id: 'no-weight-2' })];
 
     const counts = { 'no-weight-1': 0, 'no-weight-2': 0 };

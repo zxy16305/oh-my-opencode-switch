@@ -4,6 +4,7 @@
  */
 
 import { StateManager } from './state-manager.js';
+import { getErrorRate, getUpstreamRequestCountInWindow } from './stats-collector.js';
 
 /**
  * Default dynamic weight configuration
@@ -149,14 +150,12 @@ function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
   if (!errorData || errorData.size === 0) return;
   if (!config) return;
 
-  // Check original config before merging
-  if (!('errorWeightReduction' in config)) return;
   const mergedConfig = { ...DEFAULT_DYNAMIC_WEIGHT_CONFIG, ...config };
   const errorConfig = mergedConfig.errorWeightReduction;
   if (!errorConfig || !errorConfig.enabled) return;
 
-  const { errorCodes = [], reductionAmount = 10, minWeight = 5 } = errorConfig;
-  const initialWeight = mergedConfig.initialWeight;
+  const { errorCodes = [], errorWindowMs = 3600000 } = errorConfig;
+  const minWeight = 10; // Minimum weight floor
 
   for (const upstream of upstreams) {
     const codes = errorData.get(upstream.id);
@@ -166,16 +165,34 @@ function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
     if (!hasMatchingError) continue;
 
     const configuredWeight = upstream.weight ?? 100;
-    const currentWeight = getDynamicWeight(state, routeKey, upstream.id, configuredWeight);
 
-    if (currentWeight <= minWeight) continue;
-
-    setDynamicWeight(
+    // Calculate error rate percentage
+    const errorCount = getErrorRate(state, routeKey, upstream.id, errorWindowMs);
+    const totalRequests = getUpstreamRequestCountInWindow(
       state,
       routeKey,
       upstream.id,
-      Math.max(minWeight, currentWeight - reductionAmount)
+      errorWindowMs
     );
+
+    if (totalRequests === 0) continue; // No requests in window, skip adjustment
+
+    const errorRatePercent = (errorCount / totalRequests) * 100;
+
+    // Apply step penalty based on error rate thresholds
+    let newWeight;
+    if (errorRatePercent >= 30) {
+      // Severe error rate: reduce to 10% of original
+      newWeight = Math.max(minWeight, configuredWeight * 0.1);
+    } else if (errorRatePercent >= 10) {
+      // Moderate error rate: reduce to 50% of original
+      newWeight = Math.max(minWeight, configuredWeight * 0.5);
+    } else {
+      // Error rate below threshold: no adjustment
+      continue;
+    }
+
+    setDynamicWeight(state, routeKey, upstream.id, newWeight);
   }
 }
 

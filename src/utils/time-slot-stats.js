@@ -322,6 +322,7 @@ const DEFAULT_TIME_SLOT_CONFIG = {
   dangerSlotThreshold: 0.05,
   dangerMultiplier: 0.5,
   normalMultiplier: 2.0,
+  lookbackDays: 3,
 };
 
 /**
@@ -373,7 +374,10 @@ export class TimeSlotWeightCalculator {
     const hourOfDay = hour ?? this.getCurrentHour();
     const effectiveConfig = configOverride ? { ...this.config, ...configOverride } : this.config;
 
-    const totalStats = this.tracker.calculateTotalErrorRate(provider, 7);
+    const totalStats = this.tracker.calculateTotalErrorRate(
+      provider,
+      effectiveConfig.lookbackDays || 3
+    );
 
     if (!totalStats.sufficientData) {
       return 1.0;
@@ -383,7 +387,11 @@ export class TimeSlotWeightCalculator {
       return 1.0;
     }
 
-    const hourlyStats = this.tracker.calculateHourlyErrorRate(provider, hourOfDay, 7);
+    const hourlyStats = this.tracker.calculateHourlyErrorRate(
+      provider,
+      hourOfDay,
+      effectiveConfig.lookbackDays || 3
+    );
 
     if (!hourlyStats.sufficientData) {
       return 1.0;

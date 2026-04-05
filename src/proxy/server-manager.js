@@ -48,7 +48,7 @@ const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
   cooldownTimeMs: 60000,
 };
 
-function createInstanceState() {
+function createInstanceState(config = {}) {
   return {
     server: null,
     port: null,
@@ -58,7 +58,7 @@ function createInstanceState() {
     routeRecoveryTimers: new Map(),
     routeCheckTimers: new Map(),
     sseClients: new Set(),
-    timeSlotCalculator: createTimeSlotWeightCalculator(),
+    timeSlotCalculator: createTimeSlotWeightCalculator({ config: config.timeSlotWeight || {} }),
   };
 }
 
@@ -67,9 +67,9 @@ export class ProxyServerManager {
     this.instances = new Map();
   }
 
-  _getOrCreateInstance(name) {
+  _getOrCreateInstance(name, config) {
     if (!this.instances.has(name)) {
-      this.instances.set(name, createInstanceState());
+      this.instances.set(name, createInstanceState(config));
     }
     return this.instances.get(name);
   }
@@ -82,10 +82,9 @@ export class ProxyServerManager {
     const instanceName = options.name || DEFAULT_INSTANCE_NAME;
     const configPath = options.config || getProxyConfigPath();
 
-    const inst = this._getOrCreateInstance(instanceName);
-
-    if (inst.server && inst.server.listening) {
-      logger.warn(`[${instanceName}] Proxy server is already running on port ${inst.port}`);
+    const existingInst = this._getInstance(instanceName);
+    if (existingInst && existingInst.server && existingInst.server.listening) {
+      logger.warn(`[${instanceName}] Proxy server is already running on port ${existingInst.port}`);
       return;
     }
 
@@ -99,6 +98,9 @@ export class ProxyServerManager {
       }
       config = { routes: {} };
     }
+
+    // Create instance with config (timeSlotCalculator needs config)
+    const inst = this._getOrCreateInstance(instanceName, config);
 
     const port = parseInt(options.port, 10) || config.port || DEFAULT_PORT;
 

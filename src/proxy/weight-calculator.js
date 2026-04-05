@@ -59,6 +59,7 @@ export function calculateEffectiveWeight(params) {
       dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
       dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
       normalMultiplier: timeSlotWeightConfig.normalMultiplier,
+      lookbackDays: timeSlotWeightConfig.lookbackDays,
     });
     effectiveWeight = effectiveWeight * timeSlotWeightMultiplier;
   }

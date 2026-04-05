@@ -32,7 +32,7 @@ export const routeSchema = z.object({
       dangerSlotThreshold: z.number().positive().default(0.05),
       dangerMultiplier: z.number().positive().default(0.5),
       normalMultiplier: z.number().positive().default(2.0),
-      lookbackDays: z.number().int().positive().default(7),
+      lookbackDays: z.number().int().positive().default(3),
     })
     .optional()
     .default({
@@ -41,7 +41,7 @@ export const routeSchema = z.object({
       dangerSlotThreshold: 0.05,
       dangerMultiplier: 0.5,
       normalMultiplier: 2.0,
-      lookbackDays: 7,
+      lookbackDays: 3,
     }),
 });
 

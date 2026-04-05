@@ -141,12 +141,12 @@ describe('Integration – Time Slot Weight Feature', () => {
       assert.strictEqual(calc.getTimeSlotWeight('risky', 2), 2.0);
     });
 
-    test('insufficient data (< 7 days) yields 1.0', () => {
+    test('insufficient data (< 3 days) yields 1.0', () => {
       const tracker = new HourlyErrorTracker();
       const calc = new TimeSlotWeightCalculator({ tracker });
 
       const now = new Date();
-      for (let day = 0; day < 3; day++) {
+      for (let day = 0; day < 2; day++) {
         for (let hour = 0; hour < 24; hour++) {
           const ts = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day, hour);
           for (let i = 0; i < 50; i++) tracker.recordSuccess('cold', ts);

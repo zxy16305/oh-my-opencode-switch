@@ -19,6 +19,7 @@ import {
   adjustWeightForError,
   recordUpstreamError,
   getErrorRate,
+  incrementUpstreamRequestCount,
 } from '../../src/proxy/router.js';
 
 import { makeUpstream, makeDynamicWeightConfig as makeConfig } from '../helpers/proxy-fixtures.js';
@@ -35,6 +36,8 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     const upstreams = [makeUpstream({ id: 'rate-limited' }), makeUpstream({ id: 'healthy' })];
     const config = makeConfig();
 
+    // Record a request first so error penalty can be applied
+    incrementUpstreamRequestCount('test-route', 'rate-limited');
     // Record 429 error
     recordUpstreamError('test-route', 'rate-limited', 429);
 
@@ -58,6 +61,8 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     const upstreams = [makeUpstream({ id: 'persistently-limited' })];
     const config = makeConfig();
 
+    // Record a request first so error penalty can be applied
+    incrementUpstreamRequestCount('test-route', 'persistently-limited');
     // Record multiple 429 errors
     recordUpstreamError('test-route', 'persistently-limited', 429);
     recordUpstreamError('test-route', 'persistently-limited', 429);

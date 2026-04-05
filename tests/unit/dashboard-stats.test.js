@@ -6,11 +6,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  recordUpstreamStats,
-  getUpstreamStats,
-  resetAllState,
-} from '../../src/proxy/router.js';
+import { recordUpstreamStats, getUpstreamStats, resetAllState } from '../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
 // Tests

@@ -16,8 +16,9 @@ import {
   startWeightRecovery,
   stopWeightRecovery,
   selectUpstreamSticky,
-  routeSchema,
 } from '../../../src/proxy/router.js';
+
+import { routeSchema } from '../../../src/proxy/schemas.js';
 
 import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 

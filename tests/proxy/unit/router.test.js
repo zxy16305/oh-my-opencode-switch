@@ -22,13 +22,12 @@ import {
   getSessionMapSize,
   getUpstreamSessionCounts,
   RouterError,
-  upstreamSchema,
-  routeSchema,
-  routesConfigSchema,
   setDynamicWeight,
   getUpstreamRequestCountInWindow,
   getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/router.js';
+
+import { upstreamSchema, routeSchema, routesConfigSchema } from '../../../src/proxy/schemas.js';
 
 import { makeUpstream, makeRoute, makeConfig } from '../../helpers/proxy-fixtures.js';
 

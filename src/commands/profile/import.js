@@ -3,12 +3,13 @@ import fs from 'fs';
 import readline from 'readline';
 import logger from '../../utils/logger.js';
 import ProfileManager from '../../core/ProfileManager.js';
+import { ProfileError } from '../../utils/errors.js';
 
 export async function importAction(file) {
   const filePath = path.resolve(file);
   if (!fs.existsSync(filePath)) {
     logger.error(`Import file not found: ${filePath}`);
-    throw new Error('Import file not found');
+    throw new ProfileError('Import file not found');
   }
   let importData;
   try {

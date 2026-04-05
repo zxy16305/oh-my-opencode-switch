@@ -2,6 +2,8 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import { URL } from 'node:url';
+import { OosError } from '../utils/errors.js';
+import logger from '../utils/logger.js';
 
 const DEFAULT_PORT = 3000;
 export const SSE_HEADERS = {
@@ -180,7 +182,7 @@ export async function createServer(config = {}) {
 
   const available = await isPortAvailable(port);
   if (!available) {
-    throw new Error(`Port ${port} is already in use. Please choose a different port.`);
+    throw new OosError(`Port ${port} is already in use. Please choose a different port.`);
   }
 
   const server = http.createServer((req, res) => {
@@ -210,7 +212,7 @@ export async function createServer(config = {}) {
 
   return new Promise((resolve, reject) => {
     server.listen(port, () => {
-      console.log(`[proxy] server listening on port ${port}`);
+      logger.info(`[proxy] server listening on port ${port}`);
       resolve({ server, port });
     });
 
@@ -235,7 +237,7 @@ export function shutdownServer(server) {
       if (err) {
         reject(err);
       } else {
-        console.log('[proxy] server shut down');
+        logger.info('[proxy] server shut down');
         resolve();
       }
     });

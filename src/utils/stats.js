@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { getLogPath } from './access-log.js';
+import { OosError } from './errors.js';
 
 const TIME_RANGE_PATTERN = /^(\d+)(h|d)$/;
 
 export function parseTimeRange(last) {
   const match = TIME_RANGE_PATTERN.exec(last);
   if (!match) {
-    throw new Error(
+    throw new OosError(
       `Invalid time range format: "${last}". Expected format like "1h", "24h", "7d", "30d".`
     );
   }

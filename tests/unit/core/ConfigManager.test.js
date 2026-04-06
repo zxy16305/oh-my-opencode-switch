@@ -4,8 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ConfigManager } from '../../../src/core/ConfigManager.js';
-import { writeJson, ensureDir } from '../../../src/utils/files.js';
-import { ConfigError } from '../../../src/utils/errors.js';
+import { ensureDir } from '../../../src/utils/files.js';
 
 function createTestableConfigManager(baseDir) {
   const sourceConfigPath = path.join(baseDir, 'oh-my-opencode.json');
@@ -14,7 +13,6 @@ function createTestableConfigManager(baseDir) {
 
   const cm = new ConfigManager();
 
-  const origInit = cm.init.bind(cm);
   cm.init = async function () {
     if (this.initialized) return;
     await ensureDir(oosDir);

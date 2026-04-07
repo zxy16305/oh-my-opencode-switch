@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { writeFile } from 'atomically';
 import JSON5 from 'json5';
+import commentJson from 'comment-json';
 import { FileSystemError } from './errors.js';
 
 export async function exists(filePath) {
@@ -56,6 +57,32 @@ export async function writeJson(filePath, data, options = {}) {
     await writeFile(filePath, content, { encoding: 'utf8', backup: false });
   } catch (error) {
     throw new FileSystemError(`Failed to write file: ${filePath} - ${error.message}`);
+  }
+}
+
+/**
+ * Write JSON with comment preservation (JSONC support)
+ * Preserves comments from original file if it exists
+ * Uses 2-space indentation for formatting
+ */
+export async function writeJsonWithComments(filePath, data) {
+  try {
+    let existingContent = null;
+    try {
+      existingContent = await fs.readFile(filePath, 'utf8');
+    } catch {}
+
+    let content;
+    if (existingContent) {
+      const parsed = commentJson.parse(existingContent, null, true);
+      content = commentJson.stringify(data, null, 2);
+    } else {
+      content = commentJson.stringify(data, null, 2);
+    }
+
+    await writeFile(filePath, content, { encoding: 'utf8', backup: false });
+  } catch (error) {
+    throw new FileSystemError(`Failed to write JSONC file: ${filePath} - ${error.message}`);
   }
 }
 

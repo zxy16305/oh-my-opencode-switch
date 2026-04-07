@@ -4,8 +4,15 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
-const CACHE_FILE = join(tmpdir(), 'oos-models-dev-cache.json');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+
+function getCacheFilePath() {
+  return process.env.OOS_TEST_HOME
+    ? join(process.env.OOS_TEST_HOME, 'oos-models-dev-cache.json')
+    : join(tmpdir(), 'oos-models-dev-cache.json');
+}
 
 let memoryCache = null;
 
@@ -18,29 +25,56 @@ async function loadModelsDev() {
     return memoryCache;
   }
 
-  try {
-    const res = await fetch(MODELS_DEV_URL, {
-      signal: AbortSignal.timeout(15000),
-      headers: { 'User-Agent': 'oos-cli/0.1.0' },
-    });
-    if (!res.ok) {
-      logger.debug(`models.dev fetch failed: ${res.status}`);
-      return null;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      logger.debug(`models.dev fetch attempt ${attempt}/${MAX_RETRIES}`);
+      const res = await fetch(MODELS_DEV_URL, {
+        signal: AbortSignal.timeout(15000),
+        headers: { 'User-Agent': 'oos-cli/0.1.0' },
+      });
+      if (!res.ok) {
+        logger.debug(`models.dev fetch failed: ${res.status}`);
+        if (attempt === MAX_RETRIES) {
+          return null;
+        }
+        memoryCache = null;
+        const cacheFile = getCacheFilePath();
+        if (existsSync(cacheFile)) {
+          unlinkSync(cacheFile);
+        }
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+      const data = await res.json();
+      writeCacheFile(data);
+      memoryCache = data;
+      return memoryCache;
+    } catch (err) {
+      logger.debug(`models.dev fetch error: ${err.message}`);
+      if (attempt === MAX_RETRIES) {
+        const cacheFile = getCacheFilePath();
+        if (existsSync(cacheFile)) {
+          unlinkSync(cacheFile);
+        }
+        return null;
+      }
+      memoryCache = null;
+      const cacheFile = getCacheFilePath();
+      if (existsSync(cacheFile)) {
+        unlinkSync(cacheFile);
+      }
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
-    const data = await res.json();
-    writeCacheFile(data);
-    memoryCache = data;
-    return memoryCache;
-  } catch (err) {
-    logger.debug(`models.dev fetch error: ${err.message}`);
-    return null;
   }
+
+  return null;
 }
 
 function readCacheFile() {
   try {
-    if (!existsSync(CACHE_FILE)) return null;
-    const raw = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
+    const cacheFile = getCacheFilePath();
+    if (!existsSync(cacheFile)) return null;
+    const raw = JSON.parse(readFileSync(cacheFile, 'utf-8'));
     if (Date.now() - raw._cachedAt < CACHE_TTL_MS) {
       return raw;
     }
@@ -52,9 +86,10 @@ function readCacheFile() {
 
 function writeCacheFile(data) {
   try {
-    const dir = join(CACHE_FILE, '..');
+    const cacheFile = getCacheFilePath();
+    const dir = join(cacheFile, '..');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(CACHE_FILE, JSON.stringify({ ...data, _cachedAt: Date.now() }, null, 2));
+    writeFileSync(cacheFile, JSON.stringify({ ...data, _cachedAt: Date.now() }, null, 2));
   } catch {
     // ignore write errors
   }
@@ -93,8 +128,6 @@ export async function getModelLimit(providerName, modelName) {
     return null;
   }
 
-  let hasRetried = false;
-
   async function query() {
     const data = await loadModelsDev();
     if (!data) {
@@ -115,31 +148,25 @@ export async function getModelLimit(providerName, modelName) {
     };
   }
 
-  let result = await query();
-
-  if (!result && !hasRetried) {
-    hasRetried = true;
-    clearDiscoveryCache();
-    result = await query();
-  }
-
-  return result;
+  return await query();
 }
 
 export function clearDiscoveryCache() {
   memoryCache = null;
   try {
-    if (existsSync(CACHE_FILE)) unlinkSync(CACHE_FILE);
+    const cacheFile = getCacheFilePath();
+    if (existsSync(cacheFile)) unlinkSync(cacheFile);
   } catch {
     // cache file deletion is best-effort
   }
 }
 
 export function getDiscoveryCacheStats() {
+  const cacheFile = getCacheFilePath();
   return {
     memoryLoaded: memoryCache !== null,
-    cacheFile: CACHE_FILE,
-    cacheFileExists: existsSync(CACHE_FILE),
+    cacheFile,
+    cacheFileExists: existsSync(cacheFile),
     providersCount: memoryCache
       ? Object.keys(memoryCache).filter((k) => !k.startsWith('_')).length
       : 0,

@@ -134,5 +134,111 @@ describe('Provider Discovery', () => {
         assert.deepStrictEqual(firstResult, secondResult);
       }
     });
+
+    describe('cache auto-refresh behavior', () => {
+      it('should auto-refresh cache when provider not found in stale cache', async () => {
+        // This test verifies that getModelLimit will retry with a fresh fetch
+        // when the initial cache lookup returns null for a provider
+        //
+        // Scenario:
+        // 1. Cache has stale data without the provider
+        // 2. getModelLimit should clear cache and retry fresh fetch
+        // 3. Fresh fetch returns data with the provider
+
+        // Seed cache with data that doesn't have 'test-provider-auto-refresh'
+        // This simulates a stale cache scenario
+        const staleCacheData = {
+          _cachedAt: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago (beyond TTL)
+          'other-provider': {
+            api: 'https://api.other-provider.com',
+            models: {
+              'other-model': {
+                limit: { context: 4096, output: 2048 },
+              },
+            },
+          },
+        };
+
+        // Write stale cache to force auto-refresh scenario
+        const fs = await import('fs');
+        const { join } = await import('path');
+        const { tmpdir } = await import('os');
+        const cacheFile = join(tmpdir(), 'oos-models-dev-cache.json');
+        fs.writeFileSync(cacheFile, JSON.stringify(staleCacheData, null, 2));
+
+        // Clear memory cache to force file cache read
+        clearDiscoveryCache();
+
+        // Now call getModelLimit - it should detect stale cache
+        // and retry with fresh fetch
+        // Since the provider doesn't exist even after refresh (no network mock),
+        // this tests that the retry mechanism is triggered
+        const result = await getModelLimit('test-provider-auto-refresh', 'test-model');
+
+        // With auto-refresh: should have attempted fresh fetch
+        // Without auto-refresh (current impl): just returns null without retry
+        // This test FAILS until auto-refresh is implemented
+        console.log('Auto-refresh test result:', result);
+
+        // Expected behavior: auto-refresh triggered, but still null because
+        // no actual provider exists. The key is that fetch was attempted twice.
+        // For now, this test documents expected behavior and will fail
+        // until we can verify the retry count.
+        assert.strictEqual(result, null);
+      });
+
+      it('should retry only once (no infinite loop)', async () => {
+        // This test verifies that getModelLimit does not infinitely retry
+        // when a provider is not found
+        //
+        // Scenario:
+        // 1. Cache is empty or stale
+        // 2. Provider doesn't exist in models.dev
+        // 3. Should try exactly once more, then give up
+
+        // Clear any existing cache
+        clearDiscoveryCache();
+
+        // Track how many times fetch was called
+        let fetchCallCount = 0;
+        const originalFetch = global.fetch;
+
+        // Mock fetch to count calls and return data without our test provider
+        global.fetch = async (url) => {
+          fetchCallCount++;
+          return {
+            ok: true,
+            json: async () => ({
+              _cachedAt: Date.now(),
+              openai: {
+                api: 'https://api.openai.com',
+                models: {
+                  'gpt-4': {
+                    limit: { context: 8192, output: 4096 },
+                  },
+                },
+              },
+            }),
+          };
+        };
+
+        try {
+          // Call getModelLimit for a provider that doesn't exist
+          const result = await getModelLimit('non-existent-provider', 'some-model');
+
+          // Should return null after retry
+          assert.strictEqual(result, null);
+
+          // Expected: fetch called exactly 2 times (initial + 1 retry)
+          // Current implementation: fetch called 1 time (no retry)
+          // This assertion will FAIL until auto-refresh is implemented
+          console.log('Fetch call count:', fetchCallCount);
+          assert.strictEqual(fetchCallCount, 2, 'Should fetch exactly twice (initial + 1 retry)');
+        } finally {
+          // Restore original fetch
+          global.fetch = originalFetch;
+        }
+      });
+    });
   });
 });

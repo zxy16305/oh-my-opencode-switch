@@ -23,13 +23,8 @@ import { generateStats, parseLogLine, parseTimeRange } from '../../src/utils/sta
 // Helpers
 // ---------------------------------------------------------------------------
 
-let nextPort = 29830;
-function allocPort() {
-  return nextPort++;
-}
-
-/** Start a bare-bones HTTP server on the given port */
-function startMockUpstream(port, handler) {
+/** Start a bare-bones HTTP server on dynamically assigned port */
+function startMockUpstream(handler) {
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -40,7 +35,7 @@ function startMockUpstream(port, handler) {
   });
 
   return new Promise((resolve, reject) => {
-    server.listen(port, () => resolve({ server, port }));
+    server.listen(0, () => resolve({ server, port: server.address().port }));
     server.once('error', reject);
   });
 }
@@ -131,8 +126,7 @@ describe('Proxy TTFB Integration', () => {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
 
     // Create mock upstream that returns SSE stream with a deliberate delay
-    const upstreamPort = allocPort();
-    mockUpstream = await startMockUpstream(upstreamPort, (_req, res) => {
+    mockUpstream = await startMockUpstream((_req, res) => {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -150,14 +144,15 @@ describe('Proxy TTFB Integration', () => {
       }, 30);
     });
 
+    const upstreamPort = mockUpstream.port;
+
     // Create proxy server with routing and TTFB/duration logging
-    const proxyPort = allocPort();
     const routesConfig = buildRoutesConfig([
       { id: 'mock-upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
     ]);
 
     proxy = await createServer({
-      port: proxyPort,
+      port: 0,
       requestHandler: (req, res) => {
         const chunks = [];
         req.on('data', (c) => chunks.push(c));

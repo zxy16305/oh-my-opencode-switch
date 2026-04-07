@@ -2,16 +2,23 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 
 const providerDiscovery = await import('../../../src/utils/provider-discovery.js');
+const { setupTestHome, cleanupTestHome } = await import('../../helpers/test-home.js');
 
-const { discoverProviderBaseURL, getModelLimit, clearDiscoveryCache } = providerDiscovery;
+const { discoverProviderBaseURL, getModelLimit, clearDiscoveryCache, getDiscoveryCacheStats } =
+  providerDiscovery;
+
+let testHome;
 
 describe('Provider Discovery', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const setup = await setupTestHome();
+    testHome = setup.testHome;
     clearDiscoveryCache();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     clearDiscoveryCache();
+    await cleanupTestHome(testHome);
   });
 
   describe('discoverProviderBaseURL', () => {
@@ -161,9 +168,7 @@ describe('Provider Discovery', () => {
 
         // Write stale cache to force auto-refresh scenario
         const fs = await import('fs');
-        const { join } = await import('path');
-        const { tmpdir } = await import('os');
-        const cacheFile = join(tmpdir(), 'oos-models-dev-cache.json');
+        const cacheFile = getDiscoveryCacheStats().cacheFile;
         fs.writeFileSync(cacheFile, JSON.stringify(staleCacheData, null, 2));
 
         // Clear memory cache to force file cache read
@@ -236,6 +241,51 @@ describe('Provider Discovery', () => {
           assert.strictEqual(fetchCallCount, 2, 'Should fetch exactly twice (initial + 1 retry)');
         } finally {
           // Restore original fetch
+          global.fetch = originalFetch;
+        }
+      });
+    });
+
+    describe('cache path isolation', () => {
+      it('should use test-home directory for cache file', async () => {
+        const { cacheFile } = getDiscoveryCacheStats();
+        assert.ok(
+          cacheFile.startsWith(testHome),
+          `Cache file ${cacheFile} should be under test home ${testHome}`
+        );
+      });
+
+      it('should retry fetch 3 times on failure', async () => {
+        let fetchCallCount = 0;
+        const originalFetch = global.fetch;
+
+        global.fetch = async (_url) => {
+          fetchCallCount++;
+          if (fetchCallCount < 3) {
+            throw new Error('Network error');
+          }
+          return {
+            ok: true,
+            json: async () => ({
+              _cachedAt: Date.now(),
+              openai: {
+                api: 'https://api.openai.com',
+                models: {
+                  'gpt-4': {
+                    limit: { context: 8192, output: 4096 },
+                  },
+                },
+              },
+            }),
+          };
+        };
+
+        try {
+          const result = await getModelLimit('openai', 'gpt-4');
+
+          assert.ok(result !== null, 'Should return result after retries');
+          assert.strictEqual(fetchCallCount, 3, 'Should fetch exactly 3 times');
+        } finally {
           global.fetch = originalFetch;
         }
       });

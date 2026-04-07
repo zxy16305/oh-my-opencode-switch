@@ -3,10 +3,10 @@ import { getOosDir } from './paths.js';
 import { readJson, writeJson, exists, ensureDir } from './files.js';
 
 /**
- * Schema URL for oh-my-opencode
+ * Schema URL for oh-my-openagent
  */
 const SCHEMA_URL =
-  'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json';
+  'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-openagent.schema.json';
 
 /**
  * Cache file name
@@ -38,7 +38,7 @@ function createTimeoutController(ms) {
 }
 
 /**
- * Fetch the oh-my-opencode schema from GitHub Raw
+ * Fetch the oh-my-openagent schema from GitHub Raw
  * @returns {Promise<{schema: object|null, error: string|null}>}
  */
 export async function fetchSchema() {

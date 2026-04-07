@@ -93,23 +93,37 @@ export async function getModelLimit(providerName, modelName) {
     return null;
   }
 
-  const data = await loadModelsDev();
-  if (!data) {
-    logger.debug(`No models.dev data available for ${providerName}/${modelName}`);
-    return null;
+  let hasRetried = false;
+
+  async function query() {
+    const data = await loadModelsDev();
+    if (!data) {
+      logger.debug(`No models.dev data available for ${providerName}/${modelName}`);
+      return null;
+    }
+
+    const provider = data[providerName];
+    if (!provider?.models?.[modelName]?.limit) {
+      logger.debug(`Model limit not found for ${providerName}/${modelName}`);
+      return null;
+    }
+
+    const limit = provider.models[modelName].limit;
+    return {
+      context: limit.context || null,
+      output: limit.output || null,
+    };
   }
 
-  const provider = data[providerName];
-  if (!provider?.models?.[modelName]?.limit) {
-    logger.debug(`Model limit not found for ${providerName}/${modelName}`);
-    return null;
+  let result = await query();
+
+  if (!result && !hasRetried) {
+    hasRetried = true;
+    clearDiscoveryCache();
+    result = await query();
   }
 
-  const limit = provider.models[modelName].limit;
-  return {
-    context: limit.context || null,
-    output: limit.output || null,
-  };
+  return result;
 }
 
 export function clearDiscoveryCache() {

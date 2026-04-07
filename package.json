@@ -33,6 +33,7 @@
     "blessed": "^0.1.81",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
+    "comment-json": "^4.6.2",
     "handlebars": "^4.7.9",
     "json5": "^2.2.3",
     "zod": "^3.23.8"

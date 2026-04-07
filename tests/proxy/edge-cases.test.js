@@ -382,6 +382,7 @@ describe('Edge Cases – Proxy', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('returns 404 for unknown model with available models list', async () => {
@@ -431,6 +432,10 @@ describe('Edge Cases – Proxy', () => {
   // 3. Port conflict
   // -------------------------------------------------------------------------
   describe('Port conflict', () => {
+    after(() => {
+      resetAllState();
+    });
+
     test('createServer throws descriptive error for occupied port', async () => {
       const port = allocPort();
       const first = await createServer({ port });
@@ -469,6 +474,10 @@ describe('Edge Cases – Proxy', () => {
   // 4. Config parsing errors (Zod validation)
   // -------------------------------------------------------------------------
   describe('Config parsing errors', () => {
+    after(() => {
+      resetAllState();
+    });
+
     test('validateRoutesConfig rejects empty upstreams array', () => {
       const result = validateRoutesConfig({
         'my-model': { strategy: 'round-robin', upstreams: [] },
@@ -564,6 +573,7 @@ describe('Edge Cases – Proxy', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('handles 1 MB request body correctly', async () => {
@@ -631,6 +641,7 @@ describe('Edge Cases – Proxy', () => {
 
     after(async () => {
       await shutdownServer(proxy.server);
+      resetAllState();
     });
 
     test('server starts successfully with empty routes', () => {
@@ -682,6 +693,7 @@ describe('Edge Cases – Proxy', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('returns 400 for completely invalid JSON', async () => {
@@ -769,6 +781,7 @@ describe('Edge Cases – Proxy', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('returns 400 when model field is absent', async () => {
@@ -819,6 +832,10 @@ describe('Edge Cases – Proxy', () => {
   // 9. Upstream timeout
   // -------------------------------------------------------------------------
   describe('Upstream timeout', () => {
+    after(() => {
+      resetAllState();
+    });
+
     test('slow upstream does not hang proxy indefinitely', async () => {
       const slowPort = allocPort();
       const slow = await slowUpstream(slowPort, 5000);

@@ -6,9 +6,10 @@ import { exists } from './files.js';
  * Base configuration directory
  * Windows: %USERPROFILE%\.config\opencode
  * Unix: ~/.config/opencode
+ * Uses OOS_TEST_HOME env var for test isolation if set.
  */
 export const getBaseConfigDir = () => {
-  const homeDir = os.homedir();
+  const homeDir = process.env.OOS_TEST_HOME || os.homedir();
   return path.join(homeDir, '.config', 'opencode');
 };
 

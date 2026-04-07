@@ -1,7 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'path';
-import os from 'os';
 import fs from 'fs/promises';
 import {
   getBaseConfigDir,
@@ -15,13 +14,26 @@ import {
   hasTemplate,
   hasVariables,
 } from '../../../src/utils/paths.js';
-
-const baseDir = path.join(os.homedir(), '.config', 'opencode');
+import { setupTestHome, cleanupTestHome } from '../../helpers/test-home.js';
 
 describe('Paths utilities', () => {
+  let testHome;
+  let baseDir;
+
+  beforeEach(async () => {
+    const result = await setupTestHome();
+    testHome = result.testHome;
+    baseDir = path.join(testHome, '.config', 'opencode');
+  });
+
+  afterEach(async () => {
+    await cleanupTestHome(testHome);
+  });
+
   describe('getBaseConfigDir', () => {
     it('should return base config directory', () => {
-      assert.equal(getBaseConfigDir(), baseDir);
+      const result = getBaseConfigDir();
+      assert.equal(result, baseDir);
     });
   });
 
@@ -92,18 +104,11 @@ describe('Paths utilities', () => {
 
   describe('hasTemplate', () => {
     const testProfileName = 'test-has-template-profile';
-    const profileDir = path.join(baseDir, '.oos', 'profiles', testProfileName);
-    const templatePath = path.join(profileDir, 'template.json');
-
-    beforeEach(async () => {
-      await fs.mkdir(profileDir, { recursive: true });
-    });
-
-    afterEach(async () => {
-      await fs.rm(profileDir, { recursive: true, force: true });
-    });
 
     it('should return true when template.json exists', async () => {
+      const profileDir = path.join(baseDir, '.oos', 'profiles', testProfileName);
+      const templatePath = path.join(profileDir, 'template.json');
+      await fs.mkdir(profileDir, { recursive: true });
       await fs.writeFile(templatePath, '{}');
       const result = await hasTemplate(testProfileName);
       assert.equal(result, true);
@@ -117,18 +122,11 @@ describe('Paths utilities', () => {
 
   describe('hasVariables', () => {
     const testProfileName = 'test-has-variables-profile';
-    const profileDir = path.join(baseDir, '.oos', 'profiles', testProfileName);
-    const variablesPath = path.join(profileDir, 'variables.json');
-
-    beforeEach(async () => {
-      await fs.mkdir(profileDir, { recursive: true });
-    });
-
-    afterEach(async () => {
-      await fs.rm(profileDir, { recursive: true, force: true });
-    });
 
     it('should return true when variables.json exists', async () => {
+      const profileDir = path.join(baseDir, '.oos', 'profiles', testProfileName);
+      const variablesPath = path.join(profileDir, 'variables.json');
+      await fs.mkdir(profileDir, { recursive: true });
       await fs.writeFile(variablesPath, '{}');
       const result = await hasVariables(testProfileName);
       assert.equal(result, true);

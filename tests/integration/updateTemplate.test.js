@@ -1,7 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import os from 'node:os';
 import { promises as fs } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -10,40 +9,27 @@ import { ProfileManager } from '../../src/core/ProfileManager.js';
 import { readJson, writeJson, exists } from '../../src/utils/files.js';
 import { getTemplatePath, getVariablesPath } from '../../src/utils/paths.js';
 import { DEFAULT_TEMPLATE_JSON } from '../../src/commands/init.js';
+import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const cliPath = path.join(__dirname, '../../bin/oos.js');
 
-const originalHomedir = os.homedir;
-let testHomeDir;
-
 describe('updateTemplate integration tests', () => {
   let manager;
+  let testHome;
 
   beforeEach(async () => {
-    // Use temporary directory for testing to avoid affecting user's real config
-    testHomeDir = path.join(
-      os.tmpdir(),
-      'oos-updateTemplate-test-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
-    );
-    await fs.mkdir(testHomeDir, { recursive: true });
-    os.homedir = () => testHomeDir;
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
 
     manager = new ProfileManager();
     await manager.init();
   });
 
   afterEach(async () => {
-    // Restore original homedir
-    os.homedir = originalHomedir;
-
-    try {
-      await fs.rm(testHomeDir, { recursive: true, force: true });
-    } catch {
-      // Cleanup failures in temp directories are non-critical
-    }
+    await cleanupTestHome(testHome);
   });
 
   describe('updateTemplate from specified profile', () => {
@@ -364,27 +350,22 @@ describe('updateTemplate integration tests', () => {
 });
 
 describe('updateTemplate CLI integration tests', () => {
+  let testHome;
+
   beforeEach(async () => {
-    testHomeDir = path.join(
-      os.tmpdir(),
-      'oos-updateTemplate-cli-test-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
-    );
-    await fs.mkdir(testHomeDir, { recursive: true });
-    os.homedir = () => testHomeDir;
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
   });
 
   afterEach(async () => {
-    os.homedir = originalHomedir;
-    try {
-      await fs.rm(testHomeDir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    await cleanupTestHome(testHome);
   });
 
   it('should error when called with no profileName and no --default', async () => {
     try {
-      await execFileAsync('node', [cliPath, 'profile', 'updateTemplate']);
+      await execFileAsync('node', [cliPath, 'profile', 'updateTemplate'], {
+        env: getTestEnv(testHome),
+      });
       assert.fail('Should have exited with error');
     } catch (error) {
       assert.ok(

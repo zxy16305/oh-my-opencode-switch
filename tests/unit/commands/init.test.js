@@ -1,27 +1,17 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import os from 'node:os';
-import { promises as fs } from 'node:fs';
-
-const originalHomedir = os.homedir;
+import { setupTestHome, cleanupTestHome } from '../../helpers/test-home.js';
 
 describe('init module exports', () => {
-  let testHomeDir;
+  let testHome;
 
   beforeEach(async () => {
-    testHomeDir = path.join(os.tmpdir(), 'oos-unit-test-init-' + Date.now());
-    await fs.mkdir(testHomeDir, { recursive: true });
-    os.homedir = () => testHomeDir;
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
   });
 
   afterEach(async () => {
-    os.homedir = originalHomedir;
-    try {
-      await fs.rm(testHomeDir, { recursive: true, force: true });
-    } catch {
-      // eslint-disable-line no-empty
-    }
+    await cleanupTestHome(testHome);
   });
 
   it('should export initAction function', async () => {

@@ -2,63 +2,48 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { ConfigManager } from '../../../src/core/ConfigManager.js';
-import { ensureDir } from '../../../src/utils/files.js';
-
-function createTestableConfigManager(baseDir) {
-  const sourceConfigPath = path.join(baseDir, 'oh-my-opencode.json');
-  const oosDir = path.join(baseDir, '.oos');
-  const backupDir = path.join(baseDir, '.oos', 'backup');
-
-  const cm = new ConfigManager();
-
-  cm.init = async function () {
-    if (this.initialized) return;
-    await ensureDir(oosDir);
-    await ensureDir(backupDir);
-    this.initialized = true;
-  };
-
-  return { cm, sourceConfigPath, oosDir, backupDir };
-}
+import { setupTestHome, cleanupTestHome } from '../../helpers/test-home.js';
 
 describe('ConfigManager', () => {
-  let tmpDir;
-  let testCtx;
+  let cm;
+  let testHome;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oos-cfg-test-'));
-    testCtx = createTestableConfigManager(tmpDir);
+    const result = await setupTestHome();
+    testHome = result.testHome;
+    cm = new ConfigManager();
   });
 
   afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await cleanupTestHome(testHome);
   });
 
   describe('init', () => {
     it('should create .oos and backup directories', async () => {
-      await testCtx.cm.init();
-      const oosStat = await fs.stat(testCtx.oosDir);
-      const backupStat = await fs.stat(testCtx.backupDir);
+      await cm.init();
+      const oosDir = path.join(testHome, '.oos');
+      const backupDir = path.join(testHome, '.oos', 'backup');
+      const oosStat = await fs.stat(oosDir);
+      const backupStat = await fs.stat(backupDir);
       assert.ok(oosStat.isDirectory());
       assert.ok(backupStat.isDirectory());
     });
 
     it('should be idempotent', async () => {
-      await testCtx.cm.init();
-      assert.equal(testCtx.cm.initialized, true);
-      await testCtx.cm.init();
-      assert.equal(testCtx.cm.initialized, true);
+      await cm.init();
+      assert.equal(cm.initialized, true);
+      await cm.init();
+      assert.equal(cm.initialized, true);
     });
   });
 
   describe('writeConfig and readConfig round-trip', () => {
     it('should write and read back a valid config', async () => {
       const config = { agents: { build: { model: 'gpt-4' } } };
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig(config);
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig(config);
+      const result = await cm.readConfig();
       assert.equal(result.agents.build.model, 'gpt-4');
     });
 
@@ -72,34 +57,34 @@ describe('ConfigManager', () => {
         },
         categories: { deep: { model: 'model-c' } },
       };
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig(config);
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig(config);
+      const result = await cm.readConfig();
       assert.equal(result.agents.Sisyphus.model, 'model-a');
       assert.equal(result.agents.Sisyphus.ultrawork.model, 'model-b');
       assert.equal(result.categories.deep.model, 'model-c');
     });
 
     it('should overwrite existing config', async () => {
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig({ version: 1 });
-      await testCtx.cm.writeConfig({ version: 2 });
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig({ version: 1 });
+      await cm.writeConfig({ version: 2 });
+      const result = await cm.readConfig();
       assert.equal(result.version, 2);
     });
 
     it('should handle empty object config', async () => {
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig({});
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig({});
+      const result = await cm.readConfig();
       assert.deepEqual(result, {});
     });
 
     it('should handle config with null and boolean values', async () => {
       const config = { enabled: true, count: 42, value: null, ratio: 3.14 };
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig(config);
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig(config);
+      const result = await cm.readConfig();
       assert.equal(result.enabled, true);
       assert.equal(result.count, 42);
       assert.equal(result.value, null);
@@ -114,9 +99,9 @@ describe('ConfigManager', () => {
           },
         },
       };
-      await testCtx.cm.init();
-      await testCtx.cm.writeConfig(config);
-      const result = await testCtx.cm.readConfig();
+      await cm.init();
+      await cm.writeConfig(config);
+      const result = await cm.readConfig();
       assert.deepEqual(result.experimental.dynamic_context_pruning.protected_tools, [
         'task',
         'todowrite',
@@ -127,7 +112,7 @@ describe('ConfigManager', () => {
 
   describe('_cleanupOldBackups', () => {
     it('should keep only the specified number of backup files', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-test');
+      const backupDir = path.join(testHome, 'cleanup-test');
       await fs.mkdir(backupDir, { recursive: true });
 
       const timestamps = [
@@ -142,7 +127,7 @@ describe('ConfigManager', () => {
         await fs.writeFile(path.join(backupDir, `oh-my-opencode.${ts}.json`), '{}');
       }
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 3);
+      await cm._cleanupOldBackups(backupDir, 3);
 
       const remaining = await fs.readdir(backupDir);
       const backupFiles = remaining.filter((f) => f.endsWith('.json'));
@@ -150,7 +135,7 @@ describe('ConfigManager', () => {
     });
 
     it('should keep the latest files when cleaning up', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-latest');
+      const backupDir = path.join(testHome, 'cleanup-latest');
       await fs.mkdir(backupDir, { recursive: true });
 
       const timestamps = [
@@ -163,7 +148,7 @@ describe('ConfigManager', () => {
         await fs.writeFile(path.join(backupDir, `oh-my-opencode.${ts}.json`), '{}');
       }
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 1);
+      await cm._cleanupOldBackups(backupDir, 1);
 
       const remaining = await fs.readdir(backupDir);
       const backupFiles = remaining.filter((f) => f.endsWith('.json'));
@@ -172,7 +157,7 @@ describe('ConfigManager', () => {
     });
 
     it('should not delete anything when count is within limit', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-within');
+      const backupDir = path.join(testHome, 'cleanup-within');
       await fs.mkdir(backupDir, { recursive: true });
 
       await fs.writeFile(
@@ -184,14 +169,14 @@ describe('ConfigManager', () => {
         '{}'
       );
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 5);
+      await cm._cleanupOldBackups(backupDir, 5);
 
       const remaining = await fs.readdir(backupDir);
       assert.equal(remaining.length, 2);
     });
 
     it('should only clean files matching the backup filename pattern', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-pattern');
+      const backupDir = path.join(testHome, 'cleanup-pattern');
       await fs.mkdir(backupDir, { recursive: true });
 
       await fs.writeFile(
@@ -201,7 +186,7 @@ describe('ConfigManager', () => {
       await fs.writeFile(path.join(backupDir, 'other-file.json'), '{}');
       await fs.writeFile(path.join(backupDir, 'random.txt'), 'data');
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 0);
+      await cm._cleanupOldBackups(backupDir, 0);
 
       const remaining = await fs.readdir(backupDir);
       assert.ok(remaining.includes('other-file.json'));
@@ -210,17 +195,17 @@ describe('ConfigManager', () => {
     });
 
     it('should handle empty backup directory', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-empty');
+      const backupDir = path.join(testHome, 'cleanup-empty');
       await fs.mkdir(backupDir, { recursive: true });
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 5);
+      await cm._cleanupOldBackups(backupDir, 5);
 
       const remaining = await fs.readdir(backupDir);
       assert.equal(remaining.length, 0);
     });
 
     it('should delete all matching files when keepCount is 0', async () => {
-      const backupDir = path.join(tmpDir, 'cleanup-zero');
+      const backupDir = path.join(testHome, 'cleanup-zero');
       await fs.mkdir(backupDir, { recursive: true });
 
       for (let i = 1; i <= 3; i++) {
@@ -230,7 +215,7 @@ describe('ConfigManager', () => {
         );
       }
 
-      await testCtx.cm._cleanupOldBackups(backupDir, 0);
+      await cm._cleanupOldBackups(backupDir, 0);
 
       const remaining = await fs.readdir(backupDir);
       const backupFiles = remaining.filter((f) => f.endsWith('.json'));

@@ -77,6 +77,36 @@ oh-my-opencode switch (oos) - CLI tool for managing and switching OpenCode confi
 - Tests in `tests/unit` and `tests/integration`
 - Pattern: `*.test.js`, not `*.spec.js`
 
+### Test Isolation (MANDATORY)
+
+**Rule: Tests MUST NEVER touch real user config at `~/.config/opencode/`.**
+
+#### Required Pattern
+
+- Import `setupTestHome` / `cleanupTestHome` / `getTestEnv` from `tests/helpers/test-home.js`
+- Unit tests: call `setupTestHome()` in `beforeEach`, `cleanupTestHome()` in `afterEach`
+- Integration tests: pass `getTestEnv(testHome)` to `execFileAsync` env option
+
+#### When writing new tests that touch the filesystem:
+
+1. ALWAYS use `setupTestHome()` — no exceptions
+2. NEVER import `paths.js` functions without first calling `setupTestHome()`
+3. NEVER use `os.homedir()` directly in test expectations — use the test home path
+
+#### Files that must use test-home helper:
+
+- Any test importing from `src/utils/paths.js`
+- Any test importing from `src/core/ConfigManager.js`
+- Any test importing from `src/core/VariableManager.js`
+- Any test importing from `src/core/ProfileManager.js` (if calling `init()`)
+- Any integration test spawning `bin/oos.js` subprocess
+
+#### How OOS_TEST_HOME works:
+
+- `paths.js` `getBaseConfigDir()` checks `process.env.OOS_TEST_HOME` first
+- When set, all paths resolve under the test directory instead of `os.homedir()`
+- Production code is unaffected — env var only exists during tests
+
 ## ANTI-PATTERNS (THIS PROJECT)
 
 ### Framework Mismatch

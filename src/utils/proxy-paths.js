@@ -1,6 +1,6 @@
 import path from 'path';
 import os from 'os';
-import { getOosDir } from './paths.js';
+import { getOosDir, getBaseConfigDir } from './paths.js';
 
 /**
  * Get the path to the proxy configuration file
@@ -17,8 +17,7 @@ export const getProxyConfigPath = () => {
  * @returns {string} Path to opencode.json
  */
 export const getOpencodeConfigPath = () => {
-  const homeDir = os.homedir();
-  return path.join(homeDir, '.config', 'opencode', 'opencode.json');
+  return path.join(getBaseConfigDir(), 'opencode.json');
 };
 
 /**
@@ -27,7 +26,7 @@ export const getOpencodeConfigPath = () => {
  * @returns {string} Path to auth.json
  */
 export const getOpencodeAuthPath = () => {
-  const homeDir = os.homedir();
+  const homeDir = process.env.OOS_TEST_HOME || os.homedir();
   return path.join(homeDir, '.local', 'share', 'opencode', 'auth.json');
 };
 

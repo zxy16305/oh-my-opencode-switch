@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
+import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
@@ -16,36 +16,37 @@ describe('CLI Integration - profile export', () => {
   let testDir;
   let exportDir;
   let profileName;
+  let testHome;
 
   beforeEach(async () => {
+    const result = await setupTestHome();
+    testHome = result.testHome;
+
     const uniqueId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     profileName = 'test-export-' + uniqueId;
-    testDir = join(os.tmpdir(), 'oos-cli-export-test-' + uniqueId);
-    exportDir = join(testDir, 'exports');
+    testDir = join(testHome, 'exports');
+    exportDir = testDir;
     await fs.mkdir(exportDir, { recursive: true });
 
-    await execFileAsync('node', [
-      cliPath,
-      'profile',
-      'create',
-      profileName,
-      '-d',
-      'Integration test profile',
-    ]);
+    await execFileAsync(
+      'node',
+      [cliPath, 'profile', 'create', profileName, '-d', 'Integration test profile'],
+      {
+        env: getTestEnv(testHome),
+      }
+    );
   });
 
   afterEach(async () => {
     try {
-      await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f']);
+      await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f'], {
+        env: getTestEnv(testHome),
+      });
     } catch {
       // Silently ignore - profile may not exist
     }
 
-    try {
-      await fs.rm(testDir, { recursive: true, force: true });
-    } catch {
-      // Cleanup failures in temp directories are non-critical
-    }
+    await cleanupTestHome(testHome);
   });
 
   describe('basic export', () => {
@@ -54,6 +55,7 @@ describe('CLI Integration - profile export', () => {
 
       const { stdout } = await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
         cwd: exportDir,
+        env: getTestEnv(testHome),
       });
 
       assert.ok(stdout.includes('Exported profile') || stdout.includes(profileName));
@@ -96,6 +98,7 @@ describe('CLI Integration - profile export', () => {
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName, '-o', customPath], {
         cwd: exportDir,
+        env: getTestEnv(testHome),
       });
 
       const stat = await fs.stat(customPath);
@@ -110,6 +113,7 @@ describe('CLI Integration - profile export', () => {
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName, '-o', customPath], {
         cwd: exportDir,
+        env: getTestEnv(testHome),
       });
 
       const stat = await fs.stat(customPath);
@@ -124,6 +128,7 @@ describe('CLI Integration - profile export', () => {
         [cliPath, 'profile', 'export', profileName, '--output', customPath],
         {
           cwd: exportDir,
+          env: getTestEnv(testHome),
         }
       );
 
@@ -139,6 +144,7 @@ describe('CLI Integration - profile export', () => {
       try {
         await execFileAsync('node', [cliPath, 'profile', 'export', nonExistentProfile], {
           cwd: exportDir,
+          env: getTestEnv(testHome),
         });
         assert.fail('Should have thrown an error');
       } catch (error) {
@@ -155,6 +161,7 @@ describe('CLI Integration - profile export', () => {
       try {
         await execFileAsync('node', [cliPath, 'profile', 'export'], {
           cwd: exportDir,
+          env: getTestEnv(testHome),
         });
         assert.fail('Should have thrown an error');
       } catch (error) {
@@ -169,6 +176,7 @@ describe('CLI Integration - profile export', () => {
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
         cwd: exportDir,
+        env: getTestEnv(testHome),
       });
 
       const data = JSON.parse(await fs.readFile(exportPath, 'utf8'));
@@ -182,6 +190,7 @@ describe('CLI Integration - profile export', () => {
 
       await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
         cwd: exportDir,
+        env: getTestEnv(testHome),
       });
 
       const rawContent = await fs.readFile(exportPath, 'utf8');

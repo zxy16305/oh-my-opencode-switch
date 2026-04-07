@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { remove } from '../../src/utils/files.js';
+import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
@@ -14,58 +14,29 @@ const cliPath = path.join(__dirname, '../../bin/oos.js');
 
 describe('init command integration tests', () => {
   const profileName = 'default-template';
-  let testHomeDir;
+  let testHome;
   let oosDir;
   let profilesMetadataPath;
   let templatePath;
   let variablesPath;
 
   beforeEach(async () => {
-    testHomeDir = path.join(
-      process.env.TMPDIR || process.env.TEMP || '/tmp',
-      'oos-integration-test-init-' + Date.now()
-    );
-    await fs.mkdir(testHomeDir, { recursive: true });
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
 
-    oosDir = path.join(testHomeDir, '.config', 'opencode', '.oos');
+    oosDir = path.join(testHome, '.config', 'opencode', '.oos');
     profilesMetadataPath = path.join(oosDir, 'profiles.json');
     templatePath = path.join(oosDir, 'profiles', profileName, 'template.json');
     variablesPath = path.join(oosDir, 'profiles', profileName, 'variables.json');
-
-    try {
-      await remove(oosDir);
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   afterEach(async () => {
-    try {
-      await remove(testHomeDir);
-    } catch {
-      // Ignore cleanup errors
-    }
-  });
-
-  function getTestEnv() {
-    return {
-      ...process.env,
-      HOME: testHomeDir,
-      USERPROFILE: testHomeDir,
-    };
-  }
-
-  afterEach(async () => {
-    try {
-      await remove(testHomeDir);
-    } catch {
-      // Ignore cleanup errors
-    }
+    await cleanupTestHome(testHome);
   });
 
   it('should create default-template profile on first initialization', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const metadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -78,7 +49,7 @@ describe('init command integration tests', () => {
 
   it('should not overwrite existing default-template profile on repeated initialization', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const originalMetadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -89,7 +60,7 @@ describe('init command integration tests', () => {
     await fs.writeFile(profilesMetadataPath, JSON.stringify(originalMetadata, null, 2));
 
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const newMetadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -103,7 +74,7 @@ describe('init command integration tests', () => {
 
   it('should keep activeProfile as null after initialization', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const metadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -113,7 +84,7 @@ describe('init command integration tests', () => {
 
   it('should create correct template.json and variables.json for default-template', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const templateContent = await fs.readFile(templatePath, 'utf8');
@@ -127,7 +98,7 @@ describe('init command integration tests', () => {
   });
   it('should not overwrite existing default-template profile on repeated initialization', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const originalMetadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -138,7 +109,7 @@ describe('init command integration tests', () => {
     await fs.writeFile(profilesMetadataPath, JSON.stringify(originalMetadata, null, 2));
 
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const newMetadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -152,7 +123,7 @@ describe('init command integration tests', () => {
 
   it('should keep activeProfile as null after initialization', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const metadataContent = await fs.readFile(profilesMetadataPath, 'utf8');
@@ -162,7 +133,7 @@ describe('init command integration tests', () => {
 
   it('should create correct template.json and variables.json for default-template', async () => {
     await execFileAsync('node', [cliPath, 'init'], {
-      env: getTestEnv(),
+      env: getTestEnv(testHome),
     });
 
     const templateContent = await fs.readFile(templatePath, 'utf8');

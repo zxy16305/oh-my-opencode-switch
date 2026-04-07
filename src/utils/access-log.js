@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { logBuffer } from './log-buffer.js';
+import { getOosDir } from './paths.js';
 
-const LOG_DIR = path.join(os.homedir(), '.config', 'opencode', '.oos', 'logs');
-const LOG_FILE = path.join(LOG_DIR, 'proxy-access.log');
+const getLogDir = () => path.join(getOosDir(), 'logs');
+const getLogFilePath = () => path.join(getLogDir(), 'proxy-access.log');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
 let logInitialized = false;
@@ -12,7 +12,7 @@ const logCallbacks = [];
 
 async function ensureLogDir() {
   if (!logInitialized) {
-    await fs.mkdir(LOG_DIR, { recursive: true });
+    await fs.mkdir(getLogDir(), { recursive: true });
     logInitialized = true;
   }
 }
@@ -40,6 +40,7 @@ function formatLogEntry(entry) {
 
 async function rotateLogIfNeeded() {
   try {
+    const LOG_FILE = getLogFilePath();
     const stats = await fs.stat(LOG_FILE).catch(() => null);
     if (stats && stats.size > MAX_LOG_SIZE) {
       const backup = LOG_FILE + '.' + new Date().toISOString().replace(/[:.]/g, '-');
@@ -64,7 +65,7 @@ export async function logAccess(entry) {
   };
   const logLine = formatLogEntry(logEntry);
 
-  await fs.appendFile(LOG_FILE, logLine, 'utf8');
+  await fs.appendFile(getLogFilePath(), logLine, 'utf8');
 
   // Add to in-memory buffer for SSE streaming
   logBuffer.add(logEntry);
@@ -79,12 +80,12 @@ export async function logAccess(entry) {
 }
 
 export function getLogPath() {
-  return LOG_FILE;
+  return getLogFilePath();
 }
 
 export async function readLogs(lines = 100) {
   try {
-    const content = await fs.readFile(LOG_FILE, 'utf8');
+    const content = await fs.readFile(getLogFilePath(), 'utf8');
     const allLines = content.trim().split('\n').filter(Boolean);
     return allLines.slice(-lines);
   } catch {
@@ -94,7 +95,7 @@ export async function readLogs(lines = 100) {
 
 export async function clearLogs() {
   try {
-    await fs.unlink(LOG_FILE);
+    await fs.unlink(getLogFilePath());
   } catch {
     // ignore
   }

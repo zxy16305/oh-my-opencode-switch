@@ -4,24 +4,27 @@ import fs from 'fs/promises';
 import { VariableManager } from '../../../src/core/VariableManager.js';
 import { getVariablesPath, getProfileDirPath } from '../../../src/utils/paths.js';
 import { VariableValidationError } from '../../../src/utils/errors.js';
+import { setupTestHome, cleanupTestHome } from '../../helpers/test-home.js';
 
 const testProfileName = 'test-variable-manager-profile';
-const profileDir = getProfileDirPath(testProfileName);
-const variablesPath = getVariablesPath(testProfileName);
 
 describe('VariableManager', () => {
   let variableManager;
+  let testHome;
+  let profileDir;
+  let variablesPath;
 
   beforeEach(async () => {
-    // Clean up before each test
-    await fs.rm(profileDir, { recursive: true, force: true });
+    const result = await setupTestHome();
+    testHome = result.testHome;
+    profileDir = getProfileDirPath(testProfileName);
+    variablesPath = getVariablesPath(testProfileName);
     await fs.mkdir(profileDir, { recursive: true });
     variableManager = new VariableManager(testProfileName);
   });
 
   afterEach(async () => {
-    // Clean up after each test
-    await fs.rm(profileDir, { recursive: true, force: true });
+    await cleanupTestHome(testHome);
   });
 
   describe('constructor', () => {

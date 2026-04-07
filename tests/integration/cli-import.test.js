@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
+import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
 
 const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
@@ -21,8 +22,12 @@ describe('CLI Import Command', () => {
   const nonExistentFile = join(testDir, 'non-existent.json');
   let validExportFile;
   let profileName;
+  let testHome;
 
   beforeEach(async () => {
+    const result = await setupTestHome();
+    testHome = result.testHome;
+
     await fs.mkdir(testDir, { recursive: true });
 
     profileName = generateUniqueProfileName();
@@ -53,21 +58,26 @@ describe('CLI Import Command', () => {
 
     if (profileName) {
       try {
-        await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f']);
+        await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f'], {
+          env: getTestEnv(testHome),
+        });
       } catch {
         // Ignore deletion errors
       }
     }
+
+    await cleanupTestHome(testHome);
   });
 
   describe('Successful import', () => {
     it('should import from a valid export file', async () => {
-      const { stdout, stderr } = await execFileAsync('node', [
-        cliPath,
-        'profile',
-        'import',
-        validExportFile,
-      ]);
+      const { stdout, stderr } = await execFileAsync(
+        'node',
+        [cliPath, 'profile', 'import', validExportFile],
+        {
+          env: getTestEnv(testHome),
+        }
+      );
 
       assert(stdout.includes(profileName) || stderr.includes(profileName));
     });
@@ -76,7 +86,9 @@ describe('CLI Import Command', () => {
   describe('Error cases', () => {
     it('should error when importing a non-existent file', async () => {
       try {
-        await execFileAsync('node', [cliPath, 'profile', 'import', nonExistentFile]);
+        await execFileAsync('node', [cliPath, 'profile', 'import', nonExistentFile], {
+          env: getTestEnv(testHome),
+        });
         assert.fail('Expected command to fail');
       } catch (error) {
         // Command should fail with non-zero exit code
@@ -90,7 +102,9 @@ describe('CLI Import Command', () => {
 
     it('should error when importing invalid JSON', async () => {
       try {
-        await execFileAsync('node', [cliPath, 'profile', 'import', invalidJsonFile]);
+        await execFileAsync('node', [cliPath, 'profile', 'import', invalidJsonFile], {
+          env: getTestEnv(testHome),
+        });
         assert.fail('Expected command to fail');
       } catch (error) {
         // Command should fail with non-zero exit code

@@ -81,16 +81,6 @@ function failingUpstream() {
   });
 }
 
-/** Upstream that deliberately hangs for a long time before responding */
-function slowUpstream(delayMs) {
-  return startMockUpstream((_req, res) => {
-    setTimeout(() => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ slow: true }));
-    }, delayMs);
-  });
-}
-
 /** Shut down a mock upstream */
 function stopMock(mock) {
   if (!mock?.server) return Promise.resolve();

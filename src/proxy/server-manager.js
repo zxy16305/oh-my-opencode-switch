@@ -19,6 +19,7 @@ import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { logAccess } from '../utils/access-log.js';
+import { diffProxyConfigs } from '../utils/config-diff.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import {
@@ -128,6 +129,8 @@ export class ProxyServerManager {
       process.exit(1);
     }
 
+    inst._currentRoutes = routes;
+
     inst.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
 
     const auth = config.auth;
@@ -151,6 +154,50 @@ export class ProxyServerManager {
 
       req.on('end', async () => {
         try {
+          if (req.url === '/_internal/reload' && req.method === 'POST') {
+            const clientIp = req.socket.remoteAddress || '';
+            const forwardedFor = req.headers['x-forwarded-for'];
+
+            let ipIsLocalhost =
+              clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+
+            if (forwardedFor) {
+              const forwardedIp = forwardedFor.split(',')[0].trim();
+              const forwardedIsLocalhost =
+                forwardedIp === '127.0.0.1' ||
+                forwardedIp === '::1' ||
+                forwardedIp === '::ffff:127.0.0.1';
+              ipIsLocalhost = ipIsLocalhost && forwardedIsLocalhost;
+            }
+
+            if (!ipIsLocalhost) {
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+              return;
+            }
+
+            const result = await this.reloadConfig(instanceName);
+            if (result.success) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(
+                JSON.stringify({
+                  success: true,
+                  message: 'Config reloaded successfully',
+                  diff: result.diff,
+                })
+              );
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(
+                JSON.stringify({
+                  success: false,
+                  error: result.error,
+                })
+              );
+            }
+            return;
+          }
+
           if (req.url === '/_internal/debug' && req.method === 'GET') {
             handleDebug(req, res, routes, circuitBreaker);
             return;
@@ -496,7 +543,108 @@ export class ProxyServerManager {
     return statuses;
   }
 
+  async reloadConfig(instanceName) {
+    const name = instanceName || DEFAULT_INSTANCE_NAME;
+    const inst = this._getInstance(name);
+
+    if (!inst || !inst.server) {
+      return { success: false, error: 'No running proxy instance' };
+    }
+
+    if (inst._reloading) {
+      return { success: false, deferred: true, error: 'Reload already in progress' };
+    }
+
+    inst._reloading = true;
+
+    try {
+      const configManager = new ProxyConfigManager();
+      const config = await configManager.readConfig();
+
+      if (!config) {
+        return { success: false, error: 'Configuration file not found' };
+      }
+
+      const validation = configManager.validateConfig(config);
+      if (!validation.success) {
+        return { success: false, error: `Invalid configuration: ${validation.error}` };
+      }
+
+      const newRoutes = await configManager.resolveRoutes(config.routes || {});
+
+      for (const [routeName, route] of Object.entries(newRoutes)) {
+        const validUpstreams = [];
+        for (const upstream of route.upstreams || []) {
+          if (!upstream.baseURL) {
+            const provider = upstream.provider || 'unknown';
+            logger.warn(
+              `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
+                `provider "${provider}" has no baseURL.`
+            );
+            continue;
+          }
+          validUpstreams.push(upstream);
+        }
+        if (validUpstreams.length === 0 && (route.upstreams || []).length > 0) {
+          delete newRoutes[routeName];
+        } else if (validUpstreams.length < (route.upstreams || []).length) {
+          route.upstreams = validUpstreams;
+        }
+      }
+
+      if (Object.keys(newRoutes).length === 0) {
+        return { success: false, error: 'New configuration has no valid routes' };
+      }
+
+      const oldRoutesSnapshot = { ...inst._currentRoutes };
+      const diff = diffProxyConfigs(
+        { routes: serializeRoutes(oldRoutesSnapshot) },
+        { routes: serializeRoutes(newRoutes) }
+      );
+
+      for (const key of Object.keys(inst._currentRoutes)) {
+        delete inst._currentRoutes[key];
+      }
+      for (const [key, value] of Object.entries(newRoutes)) {
+        inst._currentRoutes[key] = value;
+      }
+
+      if (config.reliability && inst.circuitBreaker) {
+        if (typeof inst.circuitBreaker.updateOptions === 'function') {
+          inst.circuitBreaker.updateOptions(config.reliability);
+        }
+      }
+
+      logger.info(`[${name}] Configuration reloaded successfully`);
+
+      return {
+        success: true,
+        diff,
+      };
+    } catch (error) {
+      logger.error(`[${name}] Failed to reload config: ${error.message}`);
+      return { success: false, error: error.message };
+    } finally {
+      inst._reloading = false;
+    }
+  }
+
   listInstances() {
     return [...this.instances.keys()];
   }
+}
+
+function serializeRoutes(routes) {
+  const result = {};
+  for (const [key, route] of Object.entries(routes || {})) {
+    result[key] = {
+      strategy: route.strategy,
+      upstreams: (route.upstreams || []).map((u) => ({
+        provider: u.provider,
+        model: u.model,
+        weight: u.weight,
+      })),
+    };
+  }
+  return result;
 }

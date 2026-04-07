@@ -204,7 +204,7 @@ describe('Provider Discovery', () => {
         const originalFetch = global.fetch;
 
         // Mock fetch to count calls and return data without our test provider
-        global.fetch = async (url) => {
+        global.fetch = async (_url) => {
           fetchCallCount++;
           return {
             ok: true,

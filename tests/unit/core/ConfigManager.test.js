@@ -22,8 +22,8 @@ describe('ConfigManager', () => {
   describe('init', () => {
     it('should create .oos and backup directories', async () => {
       await cm.init();
-      const oosDir = path.join(testHome, '.oos');
-      const backupDir = path.join(testHome, '.oos', 'backup');
+      const oosDir = path.join(testHome, '.config', 'opencode', '.oos');
+      const backupDir = path.join(testHome, '.config', 'opencode', '.oos', 'backup');
       const oosStat = await fs.stat(oosDir);
       const backupStat = await fs.stat(backupDir);
       assert.ok(oosStat.isDirectory());

@@ -18,6 +18,7 @@ import { registerSetupCompletionCommand } from '../src/commands/setup-completion
 import { registerUpgradeCommand } from '../src/commands/upgrade.js';
 import { registerProxyCommands } from '../src/commands/proxy.js';
 import { registerProxyRegisterCommands } from '../src/commands/proxy-register.js';
+import { registerProxyReloadCommand } from '../src/commands/proxy-reload.js';
 import { logger } from '../src/utils/logger.js';
 import { OosError } from '../src/utils/errors.js';
 
@@ -45,6 +46,7 @@ registerSetupCompletionCommand(program);
 registerUpgradeCommand(program);
 registerProxyCommands(program);
 registerProxyRegisterCommands(program);
+registerProxyReloadCommand(program);
 
 program.exitOverride();
 

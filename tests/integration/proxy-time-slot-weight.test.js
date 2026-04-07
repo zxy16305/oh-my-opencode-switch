@@ -25,6 +25,7 @@ import {
 } from '../../src/utils/time-slot-stats.js';
 
 import { makeUpstream, makeMockRequest } from '../helpers/proxy-fixtures.js';
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 
 const defaultTimeSlotWeightConfig = {
   enabled: false,
@@ -99,8 +100,16 @@ const normalHours =
 // ===========================================================================
 
 describe('Integration – Time Slot Weight Feature', () => {
-  beforeEach(() => resetAllState());
-  afterEach(() => resetAllState());
+  let testHome;
+  beforeEach(async () => {
+    resetAllState();
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
+  });
+  afterEach(async () => {
+    resetAllState();
+    await cleanupTestHome(testHome);
+  });
 
   // -----------------------------------------------------------------------
   // 1. Calculator + Tracker pipeline

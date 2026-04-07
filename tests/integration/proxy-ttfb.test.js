@@ -18,6 +18,7 @@ import { createServer, shutdownServer, forwardRequest } from '../../src/proxy/se
 import { routeRequest } from '../../src/proxy/router.js';
 import { logAccess, readLogs, clearLogs, getLogPath } from '../../src/utils/access-log.js';
 import { generateStats, parseLogLine, parseTimeRange } from '../../src/utils/stats.js';
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,21 +110,11 @@ function buildRoutesConfig(upstreams, strategy = 'round-robin') {
 describe('Proxy TTFB Integration', () => {
   let mockUpstream;
   let proxy;
-  const logPath = getLogPath();
-  let backupPath = null;
+  let testHome;
 
   before(async () => {
-    // Backup existing log file
-    try {
-      backupPath = logPath + '.ttfb-test-backup';
-      fs.copyFileSync(logPath, backupPath);
-    } catch {
-      backupPath = null;
-    }
-    // Clear log for clean test state
-    await clearLogs();
-    // Ensure log directory exists
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
 
     // Create mock upstream that returns SSE stream with a deliberate delay
     mockUpstream = await startMockUpstream((_req, res) => {
@@ -207,18 +198,7 @@ describe('Proxy TTFB Integration', () => {
   after(async () => {
     await shutdownServer(proxy.server);
     await stopMock(mockUpstream);
-
-    // Restore original log file
-    try {
-      if (backupPath) {
-        fs.copyFileSync(backupPath, logPath);
-        fs.unlinkSync(backupPath);
-      } else {
-        fs.unlinkSync(logPath);
-      }
-    } catch {
-      // already cleaned up
-    }
+    await cleanupTestHome(testHome);
   });
 
   // -------------------------------------------------------------------------

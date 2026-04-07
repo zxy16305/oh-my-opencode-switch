@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseLogLine, calculatePercentile, generateStats } from '../../src/utils/stats.js';
 import { getLogPath } from '../../src/utils/access-log.js';
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 
 describe('parseLogLine', () => {
   it('should parse log line with ttfb field', () => {
@@ -122,34 +123,22 @@ describe('calculatePercentile', () => {
 });
 
 describe('generateStats – ttfb fields', () => {
-  const logPath = getLogPath();
-  let backupPath = null;
+  let testHome;
+  let logPath;
 
   function logLine(ts, provider, model, virtualModel, status, ttfb, duration) {
     return `[${ts}] session=- provider=${provider} model=${model} virtualModel=${virtualModel} status=${status} ttfb=${ttfb}ms duration=${duration}ms`;
   }
 
-  before(() => {
-    try {
-      backupPath = logPath + '.test-backup';
-      fs.copyFileSync(logPath, backupPath);
-    } catch {
-      backupPath = null;
-    }
+  before(async () => {
+    const { testHome: home } = await setupTestHome();
+    testHome = home;
+    logPath = getLogPath();
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
   });
 
-  after(() => {
-    try {
-      if (backupPath) {
-        fs.copyFileSync(backupPath, logPath);
-        fs.unlinkSync(backupPath);
-      } else {
-        fs.unlinkSync(logPath);
-      }
-    } catch {
-      // already cleaned up
-    }
+  after(async () => {
+    await cleanupTestHome(testHome);
   });
 
   it('should include ttfb stats (avgTtfb, ttfbP95, ttfbP99) in output', async () => {

@@ -1,11 +1,23 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { ProfileManager } from '../../../src/core/ProfileManager.js';
+import { setupTestHome, cleanupTestHome } from '../../helpers/test-home.js';
 
 describe('ProfileManager', () => {
-  describe('_processModelArrays', () => {
-    let profileManager;
+  let profileManager;
+  let testHome;
 
+  beforeEach(async () => {
+    const result = await setupTestHome();
+    testHome = result.testHome;
+    profileManager = new ProfileManager();
+  });
+
+  afterEach(async () => {
+    await cleanupTestHome(testHome);
+  });
+
+  describe('_processModelArrays', () => {
     beforeEach(() => {
       profileManager = new ProfileManager();
     });

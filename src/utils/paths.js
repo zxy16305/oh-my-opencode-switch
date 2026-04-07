@@ -10,6 +10,15 @@ import { exists } from './files.js';
  * Uses OOS_TEST_HOME env var for test isolation if set.
  */
 export const getBaseConfigDir = () => {
+  // Test environment safety validation
+  // Prevents tests from accidentally writing to real user config
+  if (process.env.NODE_ENV === 'test' && !process.env.OOS_TEST_HOME) {
+    throw new Error(
+      'Test environment requires OOS_TEST_HOME to be set. ' +
+        'Use setupTestHome() from tests/helpers/test-home.js'
+    );
+  }
+
   const homeDir = process.env.OOS_TEST_HOME || os.homedir();
   return path.join(homeDir, '.config', 'opencode');
 };

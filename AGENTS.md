@@ -179,3 +179,79 @@ When `oos profile switch NAME` is called:
 ### First Profile
 
 First created profile becomes `isDefault: true` and auto-activates if no active profile exists.
+
+## 测试与临时脚本访问规则
+
+### 核心原则
+
+**所有测试、临时脚本必须使用测试隔离机制，禁止直接修改真实用户配置。**
+
+### 禁止的行为
+
+1. **禁止修改真实配置文件**
+   - 禁止测试、临时脚本修改 `~/.config/opencode/.oos/` 下的真实文件
+   - 包括但不限于：`proxy-config.json`, `profiles.json`, `proxy-time-slots.json` 等
+
+2. **禁止直接访问用户目录**
+   - 禁止测试直接使用 `os.homedir()` 访问用户目录
+   - 禁止在测试中使用硬编码的真实路径（如 `~/.config/opencode/...`）
+
+3. **禁止绕过测试隔离机制**
+   - 禁止在未调用 `setupTestHome()` 的情况下使用 `paths.js` 函数
+   - 禁止测试直接操作真实文件系统
+
+### 必须遵守的规则
+
+1. **测试隔离要求**
+   - 所有涉及文件 I/O 的测试必须使用 `setupTestHome()` 隔离
+   - 单元测试：在 `beforeEach` 中调用 `setupTestHome()`，在 `afterEach` 中调用 `cleanupTestHome()`
+   - 集成测试：启动子进程时必须传递 `getTestEnv(testHome)` 环境变量
+
+2. **路径访问规范**
+   - 测试中必须使用 `paths.js` 提供的路径函数，不能直接拼接路径
+   - 使用 `getProxyConfigPath()`, `getOpencodeConfigPath()` 等函数获取测试路径
+
+3. **测试验证**
+   - 新增测试必须验证不会修改真实用户目录
+   - 使用 `paths.js` 的测试必须检查 `OOS_TEST_HOME` 环境变量
+
+### 违反规则的后果
+
+1. **数据风险**
+   - 可能导致用户配置丢失（proxy-config.json, profiles.json 等）
+   - 可能污染真实用户环境，影响生产使用
+
+2. **CI/CD 拦截**
+   - CI/CD 会检测到并阻止合并
+   - 代码审查会被拒绝
+
+### 例外情况
+
+1. **纯单元测试**
+   - 纯单元测试（不涉及文件 I/O）不需要测试隔离
+   - 例如：只测试纯函数逻辑的测试
+
+2. **Mock 文件系统**
+   - Mock 文件系统的测试可以例外
+   - 但必须在测试注释中明确说明原因
+
+### 快速参考
+
+```javascript
+// ✅ 正确示例
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
+
+let testHome;
+beforeEach(async () => {
+  const result = await setupTestHome();
+  testHome = result.testHome;
+});
+afterEach(async () => {
+  await cleanupTestHome(testHome);
+});
+
+// ❌ 错误示例 - 禁止这样做！
+import os from 'os';
+const realPath = path.join(os.homedir(), '.config/opencode/.oos/proxy-config.json');
+// 这会修改真实用户配置！
+```

@@ -5,22 +5,19 @@
 
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'os';
-import path from 'path';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { dirname } from 'path';
+import { writeFileSync } from 'fs';
 
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
+import { writeJson, ensureDir, readJson } from '../../src/utils/files.js';
+import { getOpencodeConfigPath } from '../../src/utils/proxy-paths.js';
 import { registerAction } from '../../src/commands/proxy-register.js';
 import { ProxyConfigManager } from '../../src/core/ProxyConfigManager.js';
-import { clearDiscoveryCache } from '../../src/utils/provider-discovery.js';
+import { clearDiscoveryCache, getDiscoveryCacheStats } from '../../src/utils/provider-discovery.js';
 
 // ---------------------------------------------------------------------------
-// Isolated temp directory — never touch real opencode config
+// Test data
 // ---------------------------------------------------------------------------
-
-const TEST_DIR = path.join(os.tmpdir(), 'oos-test-proxy-register');
-const OPENCODE_PATH = path.join(TEST_DIR, 'opencode.json');
-const CACHE_FILE = path.join(os.tmpdir(), 'oos-models-dev-cache.json');
-const CACHE_BACKUP = CACHE_FILE + '.oos-test-bak';
 
 const MODELS_DEV_DATA = {
   doubao: {
@@ -45,29 +42,20 @@ const MODELS_DEV_DATA = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function writeJson(filePath, data) {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(data, null, 2));
-}
-
-function readJson(filePath) {
-  return JSON.parse(readFileSync(filePath, 'utf-8'));
-}
-
 function seedModelsDevCache(data) {
+  const cacheFile = getDiscoveryCacheStats().cacheFile;
   const cacheData = { ...data, _cachedAt: Date.now() };
-  writeFileSync(CACHE_FILE, JSON.stringify(cacheData, null, 2));
+  writeFileSync(cacheFile, JSON.stringify(cacheData, null, 2));
 }
 
+let testHome;
 let originalProcessExit;
 let originalReadConfig;
 
-beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
+beforeEach(async () => {
+  const setup = await setupTestHome();
+  testHome = setup.testHome;
 
-  if (existsSync(CACHE_FILE)) {
-    writeFileSync(CACHE_BACKUP, readFileSync(CACHE_FILE));
-  }
   clearDiscoveryCache();
   seedModelsDevCache(MODELS_DEV_DATA);
 
@@ -79,16 +67,11 @@ beforeEach(() => {
   originalReadConfig = ProxyConfigManager.prototype.readConfig;
 });
 
-afterEach(() => {
+afterEach(async () => {
   ProxyConfigManager.prototype.readConfig = originalReadConfig;
   process.exit = originalProcessExit;
 
-  if (existsSync(CACHE_BACKUP)) {
-    writeFileSync(CACHE_FILE, readFileSync(CACHE_BACKUP));
-    rmSync(CACHE_BACKUP, { force: true });
-  }
-
-  rmSync(TEST_DIR, { recursive: true, force: true });
+  await cleanupTestHome(testHome);
 });
 
 // ===========================================================================
@@ -97,10 +80,13 @@ afterEach(() => {
 
 describe('Proxy Register - registerAction', () => {
   test('1. Registers proxy with built-in provider using models.dev limit', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
     const opencodeConfig = {
       provider: {},
     };
-    writeJson(OPENCODE_PATH, opencodeConfig);
+    await writeJson(opencodePath, opencodeConfig);
 
     const proxyConfig = {
       port: 3000,
@@ -116,9 +102,9 @@ describe('Proxy Register - registerAction', () => {
       return proxyConfig;
     };
 
-    await registerAction({ opencodePath: OPENCODE_PATH });
+    await registerAction({ opencodePath });
 
-    const result = readJson(OPENCODE_PATH);
+    const result = await readJson(opencodePath);
     const proxyProvider = result.provider['opencode-proxy'];
 
     assert.ok(proxyProvider);
@@ -130,6 +116,9 @@ describe('Proxy Register - registerAction', () => {
   });
 
   test('2. Custom provider limit takes precedence over models.dev limit', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
     const opencodeConfig = {
       provider: {
         ali: {
@@ -144,7 +133,7 @@ describe('Proxy Register - registerAction', () => {
         },
       },
     };
-    writeJson(OPENCODE_PATH, opencodeConfig);
+    await writeJson(opencodePath, opencodeConfig);
 
     const proxyConfig = {
       port: 3001,
@@ -160,9 +149,9 @@ describe('Proxy Register - registerAction', () => {
       return proxyConfig;
     };
 
-    await registerAction({ opencodePath: OPENCODE_PATH });
+    await registerAction({ opencodePath });
 
-    const result = readJson(OPENCODE_PATH);
+    const result = await readJson(opencodePath);
     const proxyProvider = result.provider['opencode-proxy'];
 
     assert.ok(proxyProvider);

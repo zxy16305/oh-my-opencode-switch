@@ -6,7 +6,12 @@ import {
   getProfilesMetadataPath,
   getTemplatePath,
   getVariablesPath,
+  getNewConfigFilename,
+  getOldConfigFilename,
+  getBaseConfigDir,
+  getActiveConfigPath,
 } from '../utils/paths.js';
+import { getOpenAgentVersion, isVersionAtLeast } from '../utils/version.js';
 import { exists, writeJson, ensureDir } from '../utils/files.js';
 import { logger } from '../utils/logger.js';
 import { ProfileManager } from '../core/ProfileManager.js';
@@ -71,10 +76,24 @@ export async function initAction(_options) {
     });
   }
 
-  // Create oh-my-opencode.json with default template if not exists
-  if (!(await exists(sourceConfigPath))) {
-    await ensureDir(path.dirname(sourceConfigPath));
-    await writeJson(sourceConfigPath, DEFAULT_CONFIG_TEMPLATE);
+  // Create appropriate config file if no config exists
+  const activeConfigPath = getActiveConfigPath();
+  if (!activeConfigPath) {
+    const baseConfigDir = getBaseConfigDir();
+    await ensureDir(baseConfigDir);
+
+    // Detect version to choose config filename
+    const version = await getOpenAgentVersion();
+    let configFilename;
+
+    if (version && isVersionAtLeast('3.15.1', version)) {
+      configFilename = getNewConfigFilename();
+    } else {
+      configFilename = getOldConfigFilename();
+    }
+
+    const configPath = path.join(baseConfigDir, configFilename);
+    await writeJson(configPath, DEFAULT_CONFIG_TEMPLATE);
   }
 
   if (isAlreadyInitialized) {

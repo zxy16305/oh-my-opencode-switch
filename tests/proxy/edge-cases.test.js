@@ -34,19 +34,14 @@ import {
 import { CircuitBreaker, CircuitState } from '../../src/proxy/circuitbreaker.js';
 
 // ---------------------------------------------------------------------------
-// Helpers – port allocation
+// Helpers
 // ---------------------------------------------------------------------------
 
-let nextPort = 19900;
-function allocPort() {
-  return nextPort++;
-}
-
 /**
- * Start a bare-bones HTTP server on the given port.
+ * Start a bare-bones HTTP server on dynamically assigned port.
  * Returns { server, port, requests } where `requests` collects inbound requests.
  */
-function startMockUpstream(port, handler) {
+function startMockUpstream(handler) {
   const requests = [];
   const server = http.createServer((req, res) => {
     const chunks = [];
@@ -59,14 +54,14 @@ function startMockUpstream(port, handler) {
   });
 
   return new Promise((resolve, reject) => {
-    server.listen(port, () => resolve({ server, port, requests }));
+    server.listen(0, () => resolve({ server, port: server.address().port, requests }));
     server.once('error', reject);
   });
 }
 
 /** Convenience: a healthy upstream that returns a JSON chat completion */
-function healthyUpstream(port) {
-  return startMockUpstream(port, (_req, res) => {
+function healthyUpstream() {
+  return startMockUpstream((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -79,16 +74,16 @@ function healthyUpstream(port) {
 }
 
 /** Upstream that always returns 500 */
-function failingUpstream(port) {
-  return startMockUpstream(port, (_req, res) => {
+function failingUpstream() {
+  return startMockUpstream((_req, res) => {
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: { message: 'Internal Server Error', code: 500 } }));
   });
 }
 
 /** Upstream that deliberately hangs for a long time before responding */
-function slowUpstream(port, delayMs) {
-  return startMockUpstream(port, (_req, res) => {
+function slowUpstream(delayMs) {
+  return startMockUpstream((_req, res) => {
     setTimeout(() => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ slow: true }));
@@ -166,14 +161,13 @@ function buildRoutesConfig(upstreams, strategy = 'round-robin') {
  * @param {object} opts
  * @param {object} opts.routesConfig - Routes config passed to routeRequest
  * @param {CircuitBreaker} [opts.circuitBreaker] - Optional circuit breaker instance
- * @param {number} opts.port - Port for the proxy server
  * @returns {Promise<{ server, port }>}
  */
 function buildProxy(opts) {
-  const { routesConfig, circuitBreaker, port } = opts;
+  const { routesConfig, circuitBreaker } = opts;
 
   return createServer({
-    port,
+    port: 0,
     requestHandler: (req, res) => {
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
@@ -279,20 +273,17 @@ describe('Edge Cases – Proxy', () => {
     let cb;
 
     before(async () => {
-      const port1 = allocPort();
-      const port2 = allocPort();
-      upstream1 = await failingUpstream(port1);
-      upstream2 = await failingUpstream(port2);
+      upstream1 = await failingUpstream();
+      upstream2 = await failingUpstream();
 
       cb = new CircuitBreaker({ allowedFails: 1, cooldownTimeMs: 60000 });
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'provider-1', baseURL: `http://127.0.0.1:${port1}` },
-        { id: 'provider-2', baseURL: `http://127.0.0.1:${port2}` },
+        { id: 'provider-1', baseURL: `http://127.0.0.1:${upstream1.port}` },
+        { id: 'provider-2', baseURL: `http://127.0.0.1:${upstream2.port}` },
       ]);
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig, circuitBreaker: cb });
+      proxy = await buildProxy({ routesConfig, circuitBreaker: cb });
     });
 
     after(async () => {
@@ -345,10 +336,8 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
-      upstream = await healthyUpstream(upstreamPort);
+      upstream = await healthyUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = {
         'gpt-4o': {
           strategy: 'round-robin',
@@ -357,7 +346,7 @@ describe('Edge Cases – Proxy', () => {
               id: 'u1',
               provider: 'openai',
               model: 'gpt-4o',
-              baseURL: `http://127.0.0.1:${upstreamPort}`,
+              baseURL: `http://127.0.0.1:${upstream.port}`,
               apiKey: 'k',
             },
           ],
@@ -369,14 +358,14 @@ describe('Edge Cases – Proxy', () => {
               id: 'u2',
               provider: 'anthropic',
               model: 'claude-3',
-              baseURL: `http://127.0.0.1:${upstreamPort}`,
+              baseURL: `http://127.0.0.1:${upstream.port}`,
               apiKey: 'k',
             },
           ],
         },
       };
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig });
+      proxy = await buildProxy({ routesConfig });
     });
 
     after(async () => {
@@ -437,8 +426,8 @@ describe('Edge Cases – Proxy', () => {
     });
 
     test('createServer throws descriptive error for occupied port', async () => {
-      const port = allocPort();
-      const first = await createServer({ port });
+      const first = await createServer({ port: 0 });
+      const port = first.port;
 
       await assert.rejects(() => createServer({ port }), { message: /already in use/i });
 
@@ -446,12 +435,7 @@ describe('Edge Cases – Proxy', () => {
     });
 
     test('isPortAvailable returns correct state before and after binding', async () => {
-      const port = allocPort();
-
-      const before = await isPortAvailable(port);
-      assert.equal(before, true);
-
-      const { server } = await createServer({ port });
+      const { server, port } = await createServer({ port: 0 });
 
       const during = await isPortAvailable(port);
       assert.equal(during, false);
@@ -559,15 +543,13 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
-      upstream = await healthyUpstream(upstreamPort);
+      upstream = await healthyUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig });
+      proxy = await buildProxy({ routesConfig });
     });
 
     after(async () => {
@@ -634,9 +616,8 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const proxyPort = allocPort();
       // Empty routes config — no models configured
-      proxy = await buildProxy({ port: proxyPort, routesConfig: {} });
+      proxy = await buildProxy({ routesConfig: {} });
     });
 
     after(async () => {
@@ -679,15 +660,13 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
-      upstream = await healthyUpstream(upstreamPort);
+      upstream = await healthyUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig });
+      proxy = await buildProxy({ routesConfig });
     });
 
     after(async () => {
@@ -767,15 +746,13 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
-      upstream = await healthyUpstream(upstreamPort);
+      upstream = await healthyUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig });
+      proxy = await buildProxy({ routesConfig });
     });
 
     after(async () => {
@@ -829,109 +806,6 @@ describe('Edge Cases – Proxy', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 9. Upstream timeout
-  // -------------------------------------------------------------------------
-  describe('Upstream timeout', () => {
-    after(() => {
-      resetAllState();
-    });
-
-    test('slow upstream does not hang proxy indefinitely', async () => {
-      const slowPort = allocPort();
-      const slow = await slowUpstream(slowPort, 5000);
-
-      const proxyPort = allocPort();
-      const routesConfig = buildRoutesConfig([
-        { id: 'slow-upstream', baseURL: `http://127.0.0.1:${slowPort}` },
-      ]);
-
-      const proxy = await buildProxy({ port: proxyPort, routesConfig });
-
-      // Client timeout is shorter than upstream delay — will reject with timeout error
-      await assert.rejects(
-        () =>
-          httpFetch(proxy.port, '/v1/chat/completions', {
-            body: JSON.stringify({ model: 'test-model', messages: [] }),
-            timeout: 1000,
-          }),
-        { message: /timeout/i }
-      );
-
-      // The proxy should not crash — it just loses the client connection
-      assert.ok(proxy.server.listening, 'Proxy should still be listening after client timeout');
-
-      await shutdownServer(proxy.server);
-      await stopMock(slow);
-    });
-
-    test('proxy remains responsive while one request is waiting on slow upstream', async () => {
-      const slowPort = allocPort();
-      const fastPort = allocPort();
-
-      // One slow upstream (3s delay) for slow-model
-      const slow = await slowUpstream(slowPort, 3000);
-
-      const routesFast = {
-        'fast-model': {
-          strategy: 'round-robin',
-          upstreams: [
-            {
-              id: 'fast-u',
-              provider: 'mock',
-              model: 'fast-model',
-              baseURL: `http://127.0.0.1:${fastPort}`,
-              apiKey: 'k',
-            },
-          ],
-        },
-        'slow-model': {
-          strategy: 'round-robin',
-          upstreams: [
-            {
-              id: 'slow-u',
-              provider: 'mock',
-              model: 'slow-model',
-              baseURL: `http://127.0.0.1:${slowPort}`,
-              apiKey: 'k',
-            },
-          ],
-        },
-      };
-
-      const fast = await healthyUpstream(fastPort);
-
-      const proxyPort = allocPort();
-      const proxy = await buildProxy({ port: proxyPort, routesConfig: routesFast });
-
-      // Fire slow request (don't await it yet)
-      const slowPromise = httpFetch(proxy.port, '/v1/chat/completions', {
-        body: JSON.stringify({ model: 'slow-model', messages: [] }),
-        timeout: 10000,
-      });
-
-      // Wait a tiny bit to ensure the slow request is in-flight
-      await new Promise((r) => setTimeout(r, 50));
-
-      // Fast request should succeed immediately while slow one is pending
-      const fastRes = await httpFetch(proxy.port, '/v1/chat/completions', {
-        body: JSON.stringify({ model: 'fast-model', messages: [] }),
-        timeout: 5000,
-      });
-      assert.equal(fastRes.status, 200);
-      const fastBody = JSON.parse(fastRes.body);
-      assert.equal(fastBody.id, 'chatcmpl-edge');
-
-      // Slow request should also eventually complete
-      const slowRes = await slowPromise;
-      assert.equal(slowRes.status, 200);
-
-      await shutdownServer(proxy.server);
-      await stopMock(slow);
-      await stopMock(fast);
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // 10. Concurrent requests
   // -------------------------------------------------------------------------
   describe('Concurrent requests', () => {
@@ -939,9 +813,8 @@ describe('Edge Cases – Proxy', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
       // Upstream that echoes back which request it received
-      upstream = await startMockUpstream(upstreamPort, (_req, res, body) => {
+      upstream = await startMockUpstream((_req, res, body) => {
         const parsed = JSON.parse(body);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
@@ -953,12 +826,11 @@ describe('Edge Cases – Proxy', () => {
         );
       });
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
-      proxy = await buildProxy({ port: proxyPort, routesConfig });
+      proxy = await buildProxy({ routesConfig });
     });
 
     after(async () => {

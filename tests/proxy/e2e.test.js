@@ -34,19 +34,14 @@ import {
 } from '../../src/proxy/circuitbreaker.js';
 
 // ---------------------------------------------------------------------------
-// Helpers – port allocation
+// Helpers
 // ---------------------------------------------------------------------------
 
-let nextPort = 19830;
-function allocPort() {
-  return nextPort++;
-}
-
 /**
- * Start a bare-bones HTTP server on the given port.
+ * Start a bare-bones HTTP server on dynamically assigned port.
  * Returns { server, port, requests } where `requests` collects every inbound request.
  */
-function startMockUpstream(port, handler) {
+function startMockUpstream(handler) {
   const requests = [];
   const server = http.createServer((req, res) => {
     const chunks = [];
@@ -64,14 +59,14 @@ function startMockUpstream(port, handler) {
   });
 
   return new Promise((resolve, reject) => {
-    server.listen(port, () => resolve({ server, port, requests }));
+    server.listen(0, () => resolve({ server, port: server.address().port, requests }));
     server.once('error', reject);
   });
 }
 
 /** Convenience: a healthy upstream that returns a JSON chat completion */
-function healthyUpstream(port) {
-  return startMockUpstream(port, (_req, res) => {
+function healthyUpstream() {
+  return startMockUpstream((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({
@@ -84,16 +79,16 @@ function healthyUpstream(port) {
 }
 
 /** Upstream that always returns 500 */
-function failingUpstream(port) {
-  return startMockUpstream(port, (_req, res) => {
+function failingUpstream() {
+  return startMockUpstream((_req, res) => {
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: { message: 'Internal Server Error', code: 500 } }));
   });
 }
 
 /** Upstream that returns an SSE stream then closes */
-function sseUpstream(port, events = []) {
-  return startMockUpstream(port, (_req, res) => {
+function sseUpstream(events = []) {
+  return startMockUpstream((_req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -214,24 +209,22 @@ describe('E2E – Proxy Server', () => {
   // -------------------------------------------------------------------------
   describe('Server lifecycle', () => {
     test('starts and listens on the specified port', async () => {
-      const port = allocPort();
-      const { server, port: actualPort } = await createServer({ port });
-      assert.equal(actualPort, port);
+      const { server, port } = await createServer({ port: 0 });
+      assert.ok(port > 0, 'Port should be dynamically assigned');
       assert.ok(server.listening);
       await shutdownServer(server);
     });
 
     test('shuts down cleanly', async () => {
-      const port = allocPort();
-      const { server } = await createServer({ port });
+      const { server } = await createServer({ port: 0 });
       assert.ok(server.listening);
       await shutdownServer(server);
       assert.ok(!server.listening);
     });
 
     test('throws when port is already in use', async () => {
-      const port = allocPort();
-      const first = await createServer({ port });
+      const first = await createServer({ port: 0 });
+      const port = first.port;
 
       await assert.rejects(() => createServer({ port }), {
         message: /already in use/i,
@@ -241,31 +234,30 @@ describe('E2E – Proxy Server', () => {
     });
 
     test('isPortAvailable returns false for occupied port', async () => {
-      const port = allocPort();
-      const { server } = await createServer({ port });
+      const { server, port } = await createServer({ port: 0 });
       const available = await isPortAvailable(port);
       assert.equal(available, false);
       await shutdownServer(server);
     });
 
     test('isPortAvailable returns true for free port', async () => {
-      const port = allocPort();
-      // Make sure no one is listening on it
+      const { server, port } = await createServer({ port: 0 });
+      await shutdownServer(server);
+      // Wait for port to be released
+      await new Promise((r) => setTimeout(r, 100));
       const available = await isPortAvailable(port);
       assert.equal(available, true);
     });
 
     test('shutdownServer is idempotent on already-stopped server', async () => {
-      const port = allocPort();
-      const { server } = await createServer({ port });
+      const { server } = await createServer({ port: 0 });
       await shutdownServer(server);
       // Second shutdown should not throw
       await shutdownServer(server);
     });
 
     test('returns 404 when no requestHandler is configured', async () => {
-      const port = allocPort();
-      const { server } = await createServer({ port });
+      const { server, port } = await createServer({ port: 0 });
 
       const res = await httpFetch(port, '/v1/chat/completions', { method: 'POST' });
       assert.equal(res.status, 404);
@@ -284,16 +276,14 @@ describe('E2E – Proxy Server', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
-      upstream = await healthyUpstream(upstreamPort);
+      upstream = await healthyUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'upstream-1', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
       proxy = await createServer({
-        port: proxyPort,
+        port: 0,
         requestHandler: (req, res) => {
           const chunks = [];
           req.on('data', (c) => chunks.push(c));
@@ -354,14 +344,21 @@ describe('E2E – Proxy Server', () => {
     });
 
     test('returns 502 when upstream is unreachable', async () => {
-      const badPort = allocPort();
+      const badUpstream = await startMockUpstream((_req, res) => {
+        // This upstream will be closed immediately
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Bad upstream' } }));
+      });
+
       const badConfig = buildRoutesConfig([
-        { id: 'dead-upstream', baseURL: `http://127.0.0.1:${badPort}` },
+        { id: 'dead-upstream', baseURL: `http://127.0.0.1:${badUpstream.port}` },
       ]);
 
-      const proxyPort = allocPort();
+      // Close the bad upstream to simulate unreachable
+      await stopMock(badUpstream);
+
       const badProxy = await createServer({
-        port: proxyPort,
+        port: 0,
         requestHandler: (req, res) => {
           const body = [];
           req.on('data', (c) => body.push(c));
@@ -397,30 +394,26 @@ describe('E2E – Proxy Server', () => {
     let proxy;
 
     before(async () => {
-      const portA = allocPort();
-      const portB = allocPort();
-
-      upstreamA = await startMockUpstream(portA, (_req, res) => {
+      upstreamA = await startMockUpstream((_req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ upstream: 'A', port: portA }));
+        res.end(JSON.stringify({ upstream: 'A', port: upstreamA.port }));
       });
 
-      upstreamB = await startMockUpstream(portB, (_req, res) => {
+      upstreamB = await startMockUpstream((_req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ upstream: 'B', port: portB }));
+        res.end(JSON.stringify({ upstream: 'B', port: upstreamB.port }));
       });
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig(
         [
-          { id: 'upstream-A', baseURL: `http://127.0.0.1:${portA}` },
-          { id: 'upstream-B', baseURL: `http://127.0.0.1:${portB}` },
+          { id: 'upstream-A', baseURL: `http://127.0.0.1:${upstreamA.port}` },
+          { id: 'upstream-B', baseURL: `http://127.0.0.1:${upstreamB.port}` },
         ],
         'sticky'
       );
 
       proxy = await createServer({
-        port: proxyPort,
+        port: 0,
         requestHandler: (req, res) => {
           const chunks = [];
           req.on('data', (c) => chunks.push(c));
@@ -668,18 +661,16 @@ describe('E2E – Proxy Server', () => {
 
     // Integration: circuit breaker with proxy routing
     test('integration: circuit breaker blocks requests to failing provider', async () => {
-      const upstreamPort = allocPort();
-      const upstream = await failingUpstream(upstreamPort);
+      const upstream = await failingUpstream();
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'failing-provider', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'failing-provider', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
       const cb = new CircuitBreaker({ allowedFails: 3, cooldownTimeMs: 60000 });
 
       const proxyServer = await createServer({
-        port: proxyPort,
+        port: 0,
         requestHandler: (req, res) => {
           const body = [];
           req.on('data', (c) => body.push(c));
@@ -722,7 +713,7 @@ describe('E2E – Proxy Server', () => {
 
       // Send 3 requests to trip the breaker
       for (let i = 0; i < 3; i++) {
-        const res = await httpFetch(proxyPort, '/v1/chat/completions', {
+        const res = await httpFetch(proxyServer.port, '/v1/chat/completions', {
           method: 'POST',
           body: JSON.stringify({ model: 'test-model', messages: [] }),
         });
@@ -733,7 +724,7 @@ describe('E2E – Proxy Server', () => {
       assert.equal(cb.getState('failing-provider'), CircuitState.OPEN);
 
       // 4th request should be blocked by circuit breaker
-      const res = await httpFetch(proxyPort, '/v1/chat/completions', {
+      const res = await httpFetch(proxyServer.port, '/v1/chat/completions', {
         method: 'POST',
         body: JSON.stringify({ model: 'test-model', messages: [] }),
       });
@@ -754,22 +745,20 @@ describe('E2E – Proxy Server', () => {
     let proxy;
 
     before(async () => {
-      const upstreamPort = allocPort();
       const sseEvents = [
         { choices: [{ delta: { content: 'Hello' } }] },
         { choices: [{ delta: { content: ' world' } }] },
         { choices: [{ delta: { content: '!' } }] },
       ];
 
-      upstream = await sseUpstream(upstreamPort, sseEvents);
+      upstream = await sseUpstream(sseEvents);
 
-      const proxyPort = allocPort();
       const routesConfig = buildRoutesConfig([
-        { id: 'sse-upstream', baseURL: `http://127.0.0.1:${upstreamPort}` },
+        { id: 'sse-upstream', baseURL: `http://127.0.0.1:${upstream.port}` },
       ]);
 
       proxy = await createServer({
-        port: proxyPort,
+        port: 0,
         requestHandler: (req, res) => {
           const body = [];
           req.on('data', (c) => body.push(c));

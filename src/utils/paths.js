@@ -1,5 +1,6 @@
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 import { exists } from './files.js';
 
 /**
@@ -43,6 +44,55 @@ export const getProfilesMetadataPath = () => {
  */
 export const getSourceConfigPath = () => {
   return path.join(getBaseConfigDir(), 'oh-my-opencode.json');
+};
+
+/**
+ * Get new configuration filename
+ * @returns {string} 'oh-my-openagent.jsonc'
+ */
+export const getNewConfigFilename = () => {
+  return 'oh-my-openagent.jsonc';
+};
+
+/**
+ * Get old configuration filename
+ * @returns {string} 'oh-my-opencode.json'
+ */
+export const getOldConfigFilename = () => {
+  return 'oh-my-opencode.json';
+};
+
+/**
+ * Get all source configuration file paths
+ * Returns paths in priority order: new config first, then old config
+ * @returns {string[]} Array of configuration file paths
+ */
+export const getSourceConfigPaths = () => {
+  const baseDir = getBaseConfigDir();
+  return [path.join(baseDir, getNewConfigFilename()), path.join(baseDir, getOldConfigFilename())];
+};
+
+/**
+ * Get the active configuration file path
+ * Checks which file exists and returns the first found (new config first, then old)
+ * @returns {string|null} Path to existing config file, or null if neither exists
+ */
+export const getActiveConfigPath = () => {
+  const paths = getSourceConfigPaths();
+  for (const configPath of paths) {
+    if (fs.existsSync(configPath)) {
+      return configPath;
+    }
+  }
+  return null;
+};
+
+/**
+ * Get configuration directory
+ * @returns {string} Path to configuration directory
+ */
+export const getConfigDir = () => {
+  return getBaseConfigDir();
 };
 
 /**

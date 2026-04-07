@@ -1,9 +1,24 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { getSourceConfigPath, getOosDir, getBackupDir } from '../utils/paths.js';
-import { writeJson, exists, ensureDir, readJsonWithComments, remove } from '../utils/files.js';
+import {
+  getOosDir,
+  getBackupDir,
+  getActiveConfigPath,
+  getNewConfigFilename,
+  getOldConfigFilename,
+  getBaseConfigDir,
+  getConfigDir,
+} from '../utils/paths.js';
+import {
+  writeJson,
+  writeJsonWithComments,
+  ensureDir,
+  readJsonWithComments,
+  remove,
+} from '../utils/files.js';
 import { ConfigError, FileSystemError } from '../utils/errors.js';
 import { opencodeConfigSchema } from '../utils/validators.js';
+import { getOpenAgentVersion, isVersionAtLeast } from '../utils/version.js';
 import logger from '../utils/logger.js';
 
 export class ConfigManager {
@@ -20,9 +35,9 @@ export class ConfigManager {
 
   async readConfig() {
     await this.init();
-    const configPath = getSourceConfigPath();
+    const configPath = getActiveConfigPath();
 
-    if (!(await exists(configPath))) {
+    if (!configPath) {
       throw new ConfigError('OpenCode config file not found. Please initialize OpenCode first.');
     }
 
@@ -40,11 +55,21 @@ export class ConfigManager {
 
   async writeConfig(config) {
     await this.init();
-    const configPath = getSourceConfigPath();
+
+    const version = await getOpenAgentVersion();
+    const isNewVersion = isVersionAtLeast('3.15.1', version);
+
+    const filename = isNewVersion ? getNewConfigFilename() : getOldConfigFilename();
+    const configPath = path.join(getBaseConfigDir(), filename);
 
     try {
       opencodeConfigSchema.parse(config);
-      await writeJson(configPath, config);
+
+      if (isNewVersion) {
+        await writeJsonWithComments(configPath, config);
+      } else {
+        await writeJson(configPath, config);
+      }
     } catch (error) {
       if (error instanceof FileSystemError) {
         throw error;
@@ -54,16 +79,21 @@ export class ConfigManager {
   }
 
   /**
-   * Migrate .bak. backups (created by oh-my-opencode) to .oos/backup/.
+   * Migrate .bak. backups (created by OpenCode) to .oos/backup/.
    * Root dir keeps 1 latest .bak., .oos/backup/ keeps up to 100.
+   * Supports both old (oh-my-opencode.json) and new (oh-my-openagent.jsonc) backup files.
    */
   async backupConfig() {
     await this.init();
-    const configDir = path.dirname(getSourceConfigPath());
+    const configDir = getConfigDir();
 
     try {
       const files = await fs.readdir(configDir);
-      const bakPattern = /^oh-my-opencode\.json\.bak\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
+      // Match both old and new backup file patterns:
+      // - oh-my-opencode.json.bak.2026-01-15T10-30-45-123Z
+      // - oh-my-openagent.jsonc.bak.2026-01-15T10-30-45-123Z
+      const bakPattern =
+        /^(oh-my-opencode\.json|oh-my-openagent\.jsonc)\.bak\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
       const bakFiles = files
         .filter((file) => bakPattern.test(file))
         .sort()
@@ -78,8 +108,22 @@ export class ConfigManager {
 
       for (const bakFile of filesToMove) {
         const srcPath = path.join(configDir, bakFile);
-        const timestamp = bakFile.replace('oh-my-opencode.json.bak.', '');
-        const destFileName = `oh-my-opencode.${timestamp}.json`;
+        // Extract base filename and timestamp from backup file
+        // oh-my-opencode.json.bak.2026-01-15T10-30-45-123Z �?oh-my-opencode.2026-01-15T10-30-45-123Z.json
+        // oh-my-openagent.jsonc.bak.2026-01-15T10-30-45-123Z �?oh-my-openagent.2026-01-15T10-30-45-123Z.jsonc
+        const match = bakFile.match(
+          /^(oh-my-opencode\.json|oh-my-openagent\.jsonc)\.bak\.(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)$/
+        );
+        const baseFilename = match[1];
+        const timestamp = match[2];
+
+        // Determine destination filename preserving the correct prefix and extension
+        let destFileName;
+        if (baseFilename === 'oh-my-opencode.json') {
+          destFileName = `oh-my-opencode.${timestamp}.json`;
+        } else {
+          destFileName = `oh-my-openagent.${timestamp}.jsonc`;
+        }
         const destPath = path.join(backupDir, destFileName);
 
         await fs.rename(srcPath, destPath);
@@ -101,7 +145,11 @@ export class ConfigManager {
    */
   async _cleanupOldBackups(backupDir, keepCount) {
     const files = await fs.readdir(backupDir);
-    const backupPattern = /^oh-my-opencode\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/;
+    // Match both old and new backup file patterns:
+    // - oh-my-opencode.2026-01-15T10-30-45-123Z.json
+    // - oh-my-openagent.2026-01-15T10-30-45-123Z.jsonc
+    const backupPattern =
+      /^(oh-my-opencode\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json|oh-my-openagent\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.jsonc)$/;
     const backupFiles = files
       .filter((file) => backupPattern.test(file))
       .sort()

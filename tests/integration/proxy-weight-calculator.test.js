@@ -72,7 +72,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
     assert.strictEqual(effectiveWeight, 200);
   });
 
-  test('3. Error penalty: reduces weight when errors are recorded', async () => {
+  test('3. Error penalty: per-error reduction removed (Mechanism 1)', async () => {
     const upstream = makeTestUpstream('u1');
     const staticWeight = 100;
     const dynamicWeightConfig = {
@@ -98,10 +98,12 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       dynamicWeightConfig,
     });
 
-    assert.strictEqual(effectiveWeight, 80);
+    // Mechanism 1 (per-error reduction) removed - weight unchanged
+    // Error-based weight adjustments now handled in weight-manager.js (Mechanism 2)
+    assert.strictEqual(effectiveWeight, 100);
   });
 
-  test('4. Error penalty: does not reduce weight below minWeight', async () => {
+  test('4. Error penalty: minWeight limit no longer applies (Mechanism 1 removed)', async () => {
     const upstream = makeTestUpstream('u1');
     const staticWeight = 100;
     const dynamicWeightConfig = {
@@ -128,7 +130,9 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       dynamicWeightConfig,
     });
 
-    assert.strictEqual(effectiveWeight, 10);
+    // Mechanism 1 (per-error reduction) removed - weight unchanged
+    // Error-based weight adjustments now handled in weight-manager.js (Mechanism 2)
+    assert.strictEqual(effectiveWeight, 100);
   });
 
   test('5. Disabled dynamic weight returns static weight unchanged', () => {

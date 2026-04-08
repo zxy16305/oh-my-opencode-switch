@@ -76,18 +76,9 @@ export function calculateEffectiveWeight(params) {
     );
     effectiveWeight = Math.min(effectiveWeight, dynWeight);
 
-    // Apply error-based weight penalty if error reduction is enabled
-    const errorConfig = dynamicWeightConfig.errorWeightReduction;
-    if (errorConfig && errorConfig.enabled) {
-      const errorCount = _getErrorRate(sm, routeKey, upstream.id, errorConfig.errorWindowMs);
-      if (errorCount > 0) {
-        const errorWeight = Math.max(
-          errorConfig.minWeight,
-          staticWeight - errorCount * errorConfig.reductionAmount
-        );
-        effectiveWeight = Math.min(effectiveWeight, errorWeight);
-      }
-    }
+    // Error-based weight penalty (Mechanism 1) has been removed.
+    // Error-based weight adjustments are now handled exclusively in weight-manager.js
+    // via percentage thresholds (Mechanism 2).
 
     // Latency-based weight penalty has been removed from this function.
     // Latency adjustments should only happen via adjustWeightForLatency() (periodic),

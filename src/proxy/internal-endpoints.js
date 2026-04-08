@@ -10,6 +10,13 @@ import { logger } from '../utils/logger.js';
 import { logBuffer } from '../utils/log-buffer.js';
 import { onLogAdded } from '../utils/access-log.js';
 import { SSE_HEADERS } from './server.js';
+import { parseTimeRange } from '../utils/stats.js';
+import { readAccesslog } from '../analytics/reader/accesslog-reader.js';
+import { getAllSessions, getAllMessages } from '../analytics/reader/database-reader.js';
+import { aggregateSummary } from '../analytics/analyzer/summary-stats.js';
+import { aggregateByModel } from '../analytics/analyzer/model-stats.js';
+import { aggregateByAgent } from '../analytics/analyzer/agent-stats.js';
+import { aggregateByCategory } from '../analytics/analyzer/category-stats.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
@@ -244,4 +251,81 @@ export function handleLogsStream(req, res, sseClients) {
   req.on('close', () => {
     sseClients.delete(res);
   });
+}
+
+/**
+ * Handle analytics endpoint - return aggregated analytics data
+ * Query params: last (time range like 24h, 7d), category, model
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
+export async function handleAnalytics(req, res) {
+  // Security: only allow localhost
+  const clientIp = req.socket.remoteAddress || '';
+  if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+    return;
+  }
+
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const lastParam = url.searchParams.get('last') || '24h';
+
+    let startTime;
+    let endTime;
+    try {
+      const range = parseTimeRange(lastParam);
+      startTime = range.startTime;
+      endTime = range.endTime;
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Invalid time range: ${lastParam}` }));
+      return;
+    }
+
+    const categoryFilter = url.searchParams.get('category') || null;
+    const modelFilter = url.searchParams.get('model') || null;
+
+    const [accesslogEntries, sessions, messages] = await Promise.all([
+      readAccesslog({ startTime, endTime }),
+      getAllSessions({ startTime, endTime }),
+      getAllMessages({ startTime, endTime }),
+    ]);
+
+    let filteredEntries = accesslogEntries;
+    if (categoryFilter) {
+      filteredEntries = filteredEntries.filter((e) => e.category === categoryFilter);
+    }
+    if (modelFilter) {
+      filteredEntries = filteredEntries.filter(
+        (e) => e.model === modelFilter || e.virtualModel === modelFilter
+      );
+    }
+
+    const summary = aggregateSummary(filteredEntries, sessions, messages);
+    const topModels = aggregateByModel(filteredEntries);
+    const topAgents = aggregateByAgent(messages);
+    const categoryStats = aggregateByCategory(filteredEntries, sessions);
+
+    const response = {
+      timestamp: new Date().toISOString(),
+      timeRange: {
+        last: lastParam,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+      },
+      summary,
+      topModels,
+      topAgents,
+      categoryStats,
+    };
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response, null, 2));
+  } catch (error) {
+    logger.error(`Analytics endpoint error: ${error.message}`);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: error.message } }));
+  }
 }

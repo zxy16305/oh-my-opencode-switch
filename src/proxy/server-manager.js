@@ -27,6 +27,7 @@ import {
   handleStats,
   handleDashboard,
   handleLogsStream,
+  handleAnalytics,
   setupSSELogCallback,
 } from './internal-endpoints.js';
 
@@ -210,6 +211,11 @@ export class ProxyServerManager {
 
           if (req.url === '/_internal/stats' && req.method === 'GET') {
             handleStats(req, res, routes, circuitBreaker);
+            return;
+          }
+
+          if (req.url.startsWith('/_internal/analytics') && req.method === 'GET') {
+            handleAnalytics(req, res);
             return;
           }
 

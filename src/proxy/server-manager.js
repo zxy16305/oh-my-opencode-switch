@@ -20,6 +20,8 @@ import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { logAccess } from '../utils/access-log.js';
 import { diffProxyConfigs } from '../utils/config-diff.js';
+import { getLatencyAvg } from './stats-collector.js';
+import { stateManager } from './state-manager.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import {
@@ -309,9 +311,13 @@ export class ProxyServerManager {
               } else {
                 circuitBreaker.recordSuccess(upstream.id);
                 recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
-                const latencyData = new Map([
-                  [upstream.id, { avgDuration: Date.now() - startTime }],
-                ]);
+                const latencyData = new Map();
+                for (const u of route.upstreams) {
+                  const avg = getLatencyAvg(stateManager, routeKey, u.id);
+                  if (avg > 0) {
+                    latencyData.set(u.id, { avgDuration: avg });
+                  }
+                }
                 adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
                 if (config.timeSlotWeight?.enabled) {
                   timeSlotCalculator.recordSuccess(upstream.provider);

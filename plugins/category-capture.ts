@@ -37,48 +37,23 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
      * Hook: chat.headers
      * Injects the captured category as an HTTP header for analytics.
      */
-    'chat.headers': async (context) => {
+    'chat.headers': async (input, output) => {
       try {
-        const sessionID = context.sessionID || context.sessionId;
+        const sessionID = input.sessionID || input.sessionId;
 
         if (!sessionID) {
           console.warn('[category-capture] No sessionID in chat.headers context');
-          return context.headers || {};
+          return;
         }
 
         const entry = categoryMap.get(sessionID);
 
-        let category = entry?.category;
-        if (!category) {
-          category = 'default';
-        }
-
-        const headers = context.headers || {};
-        headers['x-opencode-category'] = category;
+        output.headers['x-opencode-category'] = entry?.category || 'default';
         if (entry?.agent) {
-          headers['x-opencode-agent'] = entry.agent;
+          output.headers['x-opencode-agent'] = entry.agent;
         }
-
-        return headers;
       } catch (error) {
         console.error('[category-capture] Error injecting header:', error);
-        return context?.headers || {};
-      }
-    },
-
-    /**
-     * Hook: session.end
-     * Cleans up category map to prevent memory leaks.
-     */
-    'session.end': async (context) => {
-      try {
-        const sessionID = context.sessionID || context.sessionId;
-
-        if (sessionID) {
-          categoryMap.delete(sessionID);
-        }
-      } catch (error) {
-        console.error('[category-capture] Error cleaning up session:', error);
       }
     },
   };

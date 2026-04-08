@@ -3,174 +3,241 @@ import readline from 'node:readline';
 import { getLogPath } from '../../utils/access-log.js';
 
 /**
- * Regex pattern to parse accesslog lines.
- * Format: [timestamp] session=xxx category=xxx provider=xxx model=xxx virtualModel=xxx status=xxx ttfb=xxxms duration=xxxms
- * Category is optional for backward compatibility with old logs.
+ * Accesslog entry format:
+ * { timestamp, sessionId, category, provider, model, virtualModel, status, ttfb, duration }
  */
-const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
 
+const LOG_LINE_PATTERN =
+  /^\[([^\]]+)\]\s+session=(\S+)\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?(?:\s+category=(\S+))?/;
+
+/**
+ * Parse a single log line into an entry object
+ * @param {string} line - Log line
+ * @returns {object|null} - Parsed entry or null
+ */
 function parseLogLine(line) {
   const match = LOG_LINE_PATTERN.exec(line);
   if (!match) {
     return null;
   }
 
-  const [, timestamp, sessionId, category, provider, model, virtualModel, status, ttfb, duration] =
+  const [, timestamp, sessionId, provider, model, virtualModel, status, ttfb, duration, category] =
     match;
 
   return {
     timestamp: new Date(timestamp),
     sessionId: sessionId === '-' ? null : sessionId,
-    category: category || 'unknown',
     provider,
     model,
     virtualModel,
     status: parseInt(status, 10),
     ttfb: ttfb ? parseInt(ttfb, 10) : 0,
     duration: duration ? parseInt(duration, 10) : 0,
+    category: category || null,
   };
 }
 
-function matchesFilters(entry, filters) {
-  const { startTime, endTime, sessionId, category, provider } = filters;
-
-  if (startTime && entry.timestamp < startTime) {
-    return false;
-  }
-  if (endTime && entry.timestamp > endTime) {
-    return false;
-  }
-  if (sessionId && entry.sessionId !== sessionId) {
-    return false;
-  }
-  if (category && entry.category !== category) {
-    return false;
-  }
-  if (provider && entry.provider !== provider) {
-    return false;
-  }
-
-  return true;
+/**
+ * Extract timestamp from a log line without full parsing
+ * @param {string} line - Log line
+ * @returns {Date|null} - Parsed timestamp or null
+ */
+function extractTimestamp(line) {
+  const match = /^\[([^\]]+)\]/.exec(line);
+  if (!match) return null;
+  return new Date(match[1]);
 }
 
 /**
- * Read and parse proxy accesslog with streaming support.
- * @param {Object} options - Filter options
- * @param {Date} [options.startTime] - Filter logs after this time
- * @param {Date} [options.endTime] - Filter logs before this time
- * @param {string} [options.sessionId] - Filter by session ID
- * @param {string} [options.category] - Filter by category
- * @param {string} [options.provider] - Filter by provider
- * @param {number} [options.limit] - Maximum number of entries to return
- * @param {string} [options.logPath] - Custom log file path (for testing)
- * @returns {Promise<Array<Object>>} Array of parsed log entries
+ * Read a complete line starting from offset
+ * @param {number} fd - File descriptor
+ * @param {number} offset - Starting offset
+ * @param {number} fileSize - Total file size
+ * @returns {{line: string, nextOffset: number}} - Line content and offset for next line
+ */
+function readLineAtOffset(fd, offset, fileSize) {
+  const CHUNK_SIZE = 4096;
+  let buffer = Buffer.alloc(CHUNK_SIZE);
+  let lineStart = offset;
+  let content = '';
+
+  // If not at start of file, find the start of current line
+  if (offset > 0) {
+    let searchOffset = offset - 1;
+    const searchBuffer = Buffer.alloc(1);
+
+    while (searchOffset >= 0) {
+      fs.readSync(fd, searchBuffer, 0, 1, searchOffset);
+      if (searchBuffer[0] === 0x0a) {
+        lineStart = searchOffset + 1;
+        break;
+      }
+      searchOffset--;
+      if (searchOffset < 0) {
+        lineStart = 0;
+      }
+    }
+  }
+
+  // Read forward until we find end of line or EOF
+  let readOffset = lineStart;
+  let foundNewline = false;
+
+  while (readOffset < fileSize && !foundNewline) {
+    const toRead = Math.min(CHUNK_SIZE, fileSize - readOffset);
+    const bytesRead = fs.readSync(fd, buffer, 0, toRead, readOffset);
+
+    for (let i = 0; i < bytesRead; i++) {
+      if (buffer[i] === 0x0a) {
+        content += buffer.toString('utf8', 0, i);
+        foundNewline = true;
+        break;
+      }
+    }
+
+    if (!foundNewline) {
+      content += buffer.toString('utf8', 0, bytesRead);
+    }
+
+    readOffset += bytesRead;
+  }
+
+  return {
+    line: content.trim(),
+    nextOffset: readOffset,
+  };
+}
+
+/**
+ * Binary search to find the offset where startTime begins
+ * @param {number} fd - File descriptor
+ * @param {number} fileSize - Total file size
+ * @param {Date} startTime - Target start time
+ * @returns {number} - File offset where startTime entries begin
+ */
+function findStartOffset(fd, fileSize, startTime) {
+  if (fileSize === 0) return 0;
+
+  let low = 0;
+  let high = fileSize;
+  let result = 0;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const { line } = readLineAtOffset(fd, mid, fileSize);
+
+    if (!line) {
+      high = mid;
+      continue;
+    }
+
+    const timestamp = extractTimestamp(line);
+    if (!timestamp) {
+      low = mid + 1;
+      continue;
+    }
+
+    if (timestamp < startTime) {
+      low = mid + 1;
+    } else {
+      result = mid;
+      high = mid;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Read accesslog entries with optional time filtering
+ * @param {object} options - Options
+ * @param {Date} [options.startTime] - Start time filter
+ * @param {Date} [options.endTime] - End time filter
+ * @returns {Promise<Array>} - Array of accesslog entries
  */
 export async function readAccesslog(options = {}) {
-  const { startTime, endTime, sessionId, category, provider, limit, logPath } = options;
+  const { startTime, endTime } = options;
+  const logPath = getLogPath();
 
-  const filePath = logPath || getLogPath();
   const entries = [];
-  const filters = { startTime, endTime, sessionId, category, provider };
 
-  return new Promise((resolve, reject) => {
-    if (!fs.existsSync(filePath)) {
-      resolve([]);
-      return;
+  try {
+    await fs.promises.access(logPath, fs.constants.R_OK);
+  } catch {
+    return entries;
+  }
+
+  const stats = await fs.promises.stat(logPath);
+  const fileSize = stats.size;
+
+  if (fileSize === 0) {
+    return entries;
+  }
+
+  const fd = fs.openSync(logPath, 'r');
+
+  try {
+    let startOffset = 0;
+
+    if (startTime) {
+      startOffset = findStartOffset(fd, fileSize, startTime);
     }
 
-    const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
-    const rl = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity,
+    fs.closeSync(fd);
+
+    const stream = fs.createReadStream(logPath, {
+      encoding: 'utf8',
+      start: startOffset,
     });
 
-    let limitReached = false;
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
-    rl.on('line', (line) => {
-      if (limitReached) {
-        return;
-      }
-
-      if (!line.trim()) {
-        return;
-      }
-
+    for await (const line of rl) {
       const entry = parseLogLine(line);
       if (!entry) {
-        return;
+        continue;
       }
 
-      if (matchesFilters(entry, filters)) {
-        entries.push(entry);
-
-        if (limit && entries.length >= limit) {
-          limitReached = true;
-          rl.close();
-          fileStream.destroy();
-        }
+      // Skip entries before startTime
+      if (startTime && entry.timestamp < startTime) {
+        continue;
       }
-    });
 
-    rl.on('close', () => {
-      resolve(entries);
-    });
+      // Stop if past endTime
+      if (endTime && entry.timestamp > endTime) {
+        break;
+      }
 
-    rl.on('error', (err) => {
-      reject(err);
-    });
+      entries.push(entry);
+    }
+  } catch (error) {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+    throw error;
+  }
 
-    fileStream.on('error', (err) => {
-      reject(err);
-    });
-  });
+  return entries;
 }
 
 /**
- * Count log entries matching filters without loading all into memory.
- * @param {Object} options - Filter options (same as readAccesslog)
- * @returns {Promise<number>} Count of matching entries
+ * Get unique session IDs from accesslog within time range
+ * @param {object} options - Options
+ * @param {Date} [options.startTime] - Start time filter
+ * @param {Date} [options.endTime] - End time filter
+ * @returns {Promise<Array<string>>} - Array of unique session IDs
  */
-export async function countAccesslog(options = {}) {
-  const { startTime, endTime, sessionId, category, provider, logPath } = options;
+export async function getUniqueSessionIds(options = {}) {
+  const entries = await readAccesslog(options);
+  const sessionIds = new Set();
 
-  const filePath = logPath || getLogPath();
-  const filters = { startTime, endTime, sessionId, category, provider };
-  let count = 0;
-
-  return new Promise((resolve, reject) => {
-    if (!fs.existsSync(filePath)) {
-      resolve(0);
-      return;
+  for (const entry of entries) {
+    if (entry.sessionId) {
+      sessionIds.add(entry.sessionId);
     }
+  }
 
-    const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
-    const rl = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity,
-    });
-
-    rl.on('line', (line) => {
-      if (!line.trim()) {
-        return;
-      }
-
-      const entry = parseLogLine(line);
-      if (entry && matchesFilters(entry, filters)) {
-        count++;
-      }
-    });
-
-    rl.on('close', () => {
-      resolve(count);
-    });
-
-    rl.on('error', (err) => {
-      reject(err);
-    });
-
-    fileStream.on('error', (err) => {
-      reject(err);
-    });
-  });
+  return Array.from(sessionIds);
 }

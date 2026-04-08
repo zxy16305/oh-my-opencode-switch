@@ -1,128 +1,139 @@
-/**
- * ModelStatsAnalyzer - Aggregates model usage statistics from accesslog + database
- */
+export function aggregateByModel(accesslogEntries) {
+  const statsMap = new Map();
 
-export class ModelStatsAnalyzer {
-  /**
-   * Aggregate by model from accesslog entries with token data from messages
-   * @param {Array} logEntries - Accesslog entries with category
-   * @param {Map} sessionMessages - Map of sessionId -> messages array
-   * @returns {Array} Model stats sorted by totalTokens DESC
-   */
-  aggregateByModel(logEntries, sessionMessages) {
-    const statsMap = new Map();
+  for (const entry of accesslogEntries) {
+    const key = `${entry.provider}|${entry.model}`;
+    const existing = statsMap.get(key);
 
-    for (const entry of logEntries) {
-      const model = entry.model || 'unknown';
-      const provider = entry.provider || 'unknown';
-      const sessionId = entry.sessionId;
-
-      // Get tokens from session messages
-      const messages = sessionMessages.get(sessionId) || [];
-      const tokens = this.aggregateTokens(messages);
-
-      const key = `${provider}/${model}`;
-      const existing = statsMap.get(key);
-
-      if (existing) {
-        existing.callCount++;
-        existing.inputTokens += tokens.input;
-        existing.outputTokens += tokens.output;
-        existing.totalTokens = existing.inputTokens + existing.outputTokens;
-      } else {
-        statsMap.set(key, {
-          model,
-          provider,
-          callCount: 1,
-          inputTokens: tokens.input,
-          outputTokens: tokens.output,
-          totalTokens: tokens.input + tokens.output,
-          efficiency: 0,
-        });
+    if (existing) {
+      existing.requests++;
+      if (entry.status >= 200 && entry.status < 400) {
+        existing.success++;
+      } else if (entry.status >= 400) {
+        existing.failure++;
       }
+      existing.durations.push(entry.duration || 0);
+      existing.ttfbs.push(entry.ttfb || 0);
+    } else {
+      statsMap.set(key, {
+        provider: entry.provider,
+        model: entry.model,
+        requests: 1,
+        success: entry.status >= 200 && entry.status < 400 ? 1 : 0,
+        failure: entry.status >= 400 ? 1 : 0,
+        durations: [entry.duration || 0],
+        ttfbs: [entry.ttfb || 0],
+      });
     }
-
-    const results = Array.from(statsMap.values());
-    for (const stats of results) {
-      stats.efficiency = this.calculateEfficiency(stats);
-    }
-
-    return results.sort((a, b) => b.totalTokens - a.totalTokens);
   }
 
-  /**
-   * Aggregate by provider only
-   */
-  aggregateByProvider(logEntries, sessionMessages) {
-    const statsMap = new Map();
+  const results = [];
+  for (const group of statsMap.values()) {
+    const sortedDurations = [...group.durations].sort((a, b) => a - b);
+    const sortedTtfbs = [...group.ttfbs].sort((a, b) => a - b);
 
-    for (const entry of logEntries) {
-      const provider = entry.provider || 'unknown';
-      const sessionId = entry.sessionId;
+    const totalDuration = sortedDurations.reduce((sum, d) => sum + d, 0);
+    const totalTtfb = sortedTtfbs.reduce((sum, t) => sum + t, 0);
 
-      const messages = sessionMessages.get(sessionId) || [];
-      const tokens = this.aggregateTokens(messages);
-
-      const existing = statsMap.get(provider);
-
-      if (existing) {
-        existing.callCount++;
-        existing.inputTokens += tokens.input;
-        existing.outputTokens += tokens.output;
-        existing.totalTokens = existing.inputTokens + existing.outputTokens;
-      } else {
-        statsMap.set(provider, {
-          model: 'all',
-          provider,
-          callCount: 1,
-          inputTokens: tokens.input,
-          outputTokens: tokens.output,
-          totalTokens: tokens.input + tokens.output,
-          efficiency: 0,
-        });
-      }
-    }
-
-    const results = Array.from(statsMap.values());
-    for (const stats of results) {
-      stats.efficiency = this.calculateEfficiency(stats);
-    }
-
-    return results.sort((a, b) => b.totalTokens - a.totalTokens);
+    results.push({
+      provider: group.provider,
+      model: group.model,
+      requests: group.requests,
+      success: group.success,
+      failure: group.failure,
+      successRate:
+        group.requests > 0 ? ((group.success / group.requests) * 100).toFixed(2) + '%' : '0.00%',
+      avgTtfb: group.requests > 0 ? Math.round(totalTtfb / group.requests) : 0,
+      ttfbP95: calculatePercentile(sortedTtfbs, 95),
+      ttfbP99: calculatePercentile(sortedTtfbs, 99),
+      avgDuration: group.requests > 0 ? Math.round(totalDuration / group.requests) : 0,
+      durationP95: calculatePercentile(sortedDurations, 95),
+      durationP99: calculatePercentile(sortedDurations, 99),
+    });
   }
 
-  /**
-   * Aggregate tokens from messages array
-   */
-  aggregateTokens(messages) {
-    let input = 0;
-    let output = 0;
-
-    for (const msg of messages) {
-      if (msg.data && msg.data.tokens) {
-        input += msg.data.tokens.input || 0;
-        output += msg.data.tokens.output || 0;
-      }
-    }
-
-    return { input, output };
-  }
-
-  /**
-   * Calculate efficiency as output/input ratio
-   */
-  calculateEfficiency(stats) {
-    if (stats.inputTokens === 0) return 0;
-    return Math.round((stats.outputTokens / stats.inputTokens) * 100) / 100;
-  }
-
-  /**
-   * Get top N models by input tokens
-   */
-  getTopModels(logEntries, sessionMessages, limit) {
-    const aggregated = this.aggregateByModel(logEntries, sessionMessages);
-    return aggregated.sort((a, b) => b.inputTokens - a.inputTokens).slice(0, limit);
-  }
+  results.sort((a, b) => b.requests - a.requests);
+  return results;
 }
 
-export const modelStatsAnalyzer = new ModelStatsAnalyzer();
+export function aggregateByProvider(accesslogEntries) {
+  const statsMap = new Map();
+
+  for (const entry of accesslogEntries) {
+    const provider = entry.provider || 'unknown';
+    const existing = statsMap.get(provider);
+
+    if (existing) {
+      existing.requests++;
+      if (entry.status >= 200 && entry.status < 400) {
+        existing.success++;
+      } else if (entry.status >= 400) {
+        existing.failure++;
+      }
+      existing.durations.push(entry.duration || 0);
+      existing.ttfbs.push(entry.ttfb || 0);
+    } else {
+      statsMap.set(provider, {
+        provider,
+        requests: 1,
+        success: entry.status >= 200 && entry.status < 400 ? 1 : 0,
+        failure: entry.status >= 400 ? 1 : 0,
+        durations: [entry.duration || 0],
+        ttfbs: [entry.ttfb || 0],
+      });
+    }
+  }
+
+  const results = [];
+  for (const group of statsMap.values()) {
+    const sortedDurations = [...group.durations].sort((a, b) => a - b);
+    const sortedTtfbs = [...group.ttfbs].sort((a, b) => a - b);
+
+    const totalDuration = sortedDurations.reduce((sum, d) => sum + d, 0);
+    const totalTtfb = sortedTtfbs.reduce((sum, t) => sum + t, 0);
+
+    results.push({
+      provider: group.provider,
+      requests: group.requests,
+      success: group.success,
+      failure: group.failure,
+      successRate:
+        group.requests > 0 ? ((group.success / group.requests) * 100).toFixed(2) + '%' : '0.00%',
+      avgTtfb: group.requests > 0 ? Math.round(totalTtfb / group.requests) : 0,
+      ttfbP95: calculatePercentile(sortedTtfbs, 95),
+      ttfbP99: calculatePercentile(sortedTtfbs, 99),
+      avgDuration: group.requests > 0 ? Math.round(totalDuration / group.requests) : 0,
+      durationP95: calculatePercentile(sortedDurations, 95),
+      durationP99: calculatePercentile(sortedDurations, 99),
+    });
+  }
+
+  results.sort((a, b) => b.requests - a.requests);
+  return results;
+}
+
+function calculatePercentile(sortedArray, percentile) {
+  if (sortedArray.length === 0) {
+    return 0;
+  }
+
+  if (sortedArray.length === 1) {
+    return sortedArray[0];
+  }
+
+  const index = (percentile / 100) * (sortedArray.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const fraction = index - lower;
+
+  if (lower === upper) {
+    return sortedArray[lower];
+  }
+
+  return sortedArray[lower] + fraction * (sortedArray[upper] - sortedArray[lower]);
+}
+
+export const modelStatsAnalyzer = {
+  aggregateByModel,
+  aggregateByProvider,
+};

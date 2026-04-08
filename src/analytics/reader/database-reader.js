@@ -172,6 +172,139 @@ export function getSessionMessages(sessionId, customPath = null) {
 }
 
 /**
+ * Get all sessions with optional time filtering
+ */
+export function getAllSessions(options = {}) {
+  const { startTime, endTime } = options;
+  const dbPath = getDatabasePath();
+
+  if (!fs.existsSync(dbPath)) {
+    return [];
+  }
+
+  try {
+    const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA journal_mode = WAL');
+
+    let query = 'SELECT id, project_id, title, directory, time_created, time_updated FROM session';
+    const params = [];
+    const conditions = [];
+
+    if (startTime) {
+      conditions.push('time_created >= ?');
+      params.push(startTime.getTime());
+    }
+
+    if (endTime) {
+      conditions.push('time_created <= ?');
+      params.push(endTime.getTime());
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY time_created DESC';
+
+    const stmt = db.prepare(query);
+    const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+
+    db.close();
+
+    return rows.map((row) => ({
+      id: row.id,
+      projectId: row.project_id,
+      title: row.title,
+      directory: row.directory,
+      timeCreated: row.time_created,
+      timeUpdated: row.time_updated,
+      durationSeconds:
+        row.time_updated && row.time_created
+          ? Math.round((row.time_updated - row.time_created) / 1000)
+          : 0,
+    }));
+  } catch (error) {
+    if (
+      error.code === 'SQLITE_BUSY' ||
+      error.message?.includes('locked') ||
+      error.message?.includes('database is locked')
+    ) {
+      console.warn('Database is locked - OpenCode may be running');
+      return [];
+    }
+
+    console.error('Error reading sessions:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Get all messages with optional time filtering
+ */
+export function getAllMessages(options = {}) {
+  const { startTime, endTime } = options;
+  const dbPath = getDatabasePath();
+
+  if (!fs.existsSync(dbPath)) {
+    return [];
+  }
+
+  try {
+    const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA journal_mode = WAL');
+
+    let query = 'SELECT id, session_id, time_created, data FROM message';
+    const params = [];
+    const conditions = [];
+
+    if (startTime) {
+      conditions.push('time_created >= ?');
+      params.push(startTime.getTime());
+    }
+
+    if (endTime) {
+      conditions.push('time_created <= ?');
+      params.push(endTime.getTime());
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY time_created ASC';
+
+    const stmt = db.prepare(query);
+    const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+
+    db.close();
+
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      timeCreated: row.time_created,
+      role: parseMessageData(row.data).role,
+      agent: parseMessageData(row.data).agent,
+      modelID: parseMessageData(row.data).modelID,
+      providerID: parseMessageData(row.data).providerID,
+      tokens: parseMessageData(row.data).tokens,
+      finish: parseMessageData(row.data).finish,
+    }));
+  } catch (error) {
+    if (
+      error.code === 'SQLITE_BUSY' ||
+      error.message?.includes('locked') ||
+      error.message?.includes('database is locked')
+    ) {
+      console.warn('Database is locked - OpenCode may be running');
+      return [];
+    }
+
+    console.error('Error reading messages:', error.message);
+    return [];
+  }
+}
+
+/**
  * Get complete session data with messages and analytics
  */
 export function getSessionWithAnalytics(sessionId, customPath = null) {

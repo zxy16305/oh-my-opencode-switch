@@ -1,88 +1,60 @@
-/**
- * SummaryStatsAnalyzer - Aggregates overall analytics summary
- */
+export function aggregateSummary(accesslogEntries, sessions, messages) {
+  const totalRequests = accesslogEntries.length;
+  const totalSessions = new Set(accesslogEntries.map((e) => e.sessionId).filter(Boolean)).size;
+  const totalMessages = messages.length;
 
-export class SummaryStatsAnalyzer {
-  /**
-   * Generate summary statistics from all data sources
-   * @param {Array} logEntries - Accesslog entries
-   * @param {Map} sessionMessages - Map of sessionId -> messages
-   * @param {Map} sessionData - Map of sessionId -> { duration, successRate }
-   * @returns {Object} Summary statistics
-   */
-  generateSummary(logEntries, sessionMessages, sessionData) {
-    const uniqueSessions = new Set(logEntries.map((e) => e.sessionId).filter(Boolean));
-    const uniqueModels = new Set(logEntries.map((e) => e.model).filter(Boolean));
-    const uniqueCategories = new Set(logEntries.map((e) => e.category).filter(Boolean));
+  const totalInputTokens = messages.reduce((sum, m) => sum + (m.tokens?.input || 0), 0);
+  const totalOutputTokens = messages.reduce((sum, m) => sum + (m.tokens?.output || 0), 0);
 
-    // Count messages
-    let totalMessages = 0;
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+  const modelCounts = new Map();
+  const agentCounts = new Map();
 
-    for (const messages of sessionMessages.values()) {
-      totalMessages += messages.length;
-      for (const msg of messages) {
-        if (msg.data?.tokens) {
-          totalInputTokens += msg.data.tokens.input || 0;
-          totalOutputTokens += msg.data.tokens.output || 0;
-        }
-      }
-    }
-
-    // Find top model
-    const modelCounts = new Map();
-    for (const entry of logEntries) {
-      const model = entry.model || 'unknown';
-      modelCounts.set(model, (modelCounts.get(model) || 0) + 1);
-    }
-    const topModel = Array.from(modelCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-
-    // Find top agent
-    const agentCounts = new Map();
-    for (const messages of sessionMessages.values()) {
-      for (const msg of messages) {
-        const agent = msg.data?.agent?.toLowerCase().trim() || 'unknown';
-        agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
-      }
-    }
-    const topAgent = Array.from(agentCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-
-    // Find top category
-    const categoryCounts = new Map();
-    for (const entry of logEntries) {
-      const category = entry.category || 'unknown';
-      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
-    }
-    const topCategory =
-      Array.from(categoryCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-
-    // Calculate overall success rate
-    let totalSuccess = 0;
-    let totalWithDuration = 0;
-    for (const session of sessionData.values()) {
-      if (session.successRate !== undefined) {
-        totalSuccess += session.successRate >= 50 ? 1 : 0;
-        totalWithDuration++;
-      }
-    }
-    const overallSuccessRate =
-      totalWithDuration > 0 ? Math.round((totalSuccess / totalWithDuration) * 100) : 0;
-
-    return {
-      totalSessions: uniqueSessions.size,
-      totalMessages,
-      totalInputTokens,
-      totalOutputTokens,
-      totalTokens: totalInputTokens + totalOutputTokens,
-      uniqueModels: uniqueModels.size,
-      uniqueCategories: uniqueCategories.size,
-      topModel,
-      topAgent,
-      topCategory,
-      overallSuccessRate,
-    };
+  for (const entry of accesslogEntries) {
+    const model = entry.model || 'unknown';
+    modelCounts.set(model, (modelCounts.get(model) || 0) + 1);
   }
+
+  for (const msg of messages) {
+    const agent = msg.agent || 'unknown';
+    agentCounts.set(agent, (agentCounts.get(agent) || 0) + 1);
+  }
+
+  const topModel = Array.from(modelCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+  const topAgent = Array.from(agentCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+  const successCount = accesslogEntries.filter((e) => e.status >= 200 && e.status < 400).length;
+  const failureCount = accesslogEntries.filter((e) => e.status >= 400).length;
+  const successRate =
+    totalRequests > 0 ? ((successCount / totalRequests) * 100).toFixed(2) + '%' : '0.00%';
+
+  const avgDuration =
+    totalRequests > 0
+      ? Math.round(accesslogEntries.reduce((sum, e) => sum + (e.duration || 0), 0) / totalRequests)
+      : 0;
+
+  const avgTtfb =
+    totalRequests > 0
+      ? Math.round(accesslogEntries.reduce((sum, e) => sum + (e.ttfb || 0), 0) / totalRequests)
+      : 0;
+
+  return {
+    totalRequests,
+    totalSessions,
+    totalMessages,
+    totalInputTokens,
+    totalOutputTokens,
+    totalTokens: totalInputTokens + totalOutputTokens,
+    topModel,
+    topAgent,
+    successRate,
+    successCount,
+    failureCount,
+    avgDuration,
+    avgTtfb,
+  };
 }
 
-export const summaryStatsAnalyzer = new SummaryStatsAnalyzer();
+export const summaryStatsAnalyzer = {
+  aggregateSummary,
+};

@@ -1,90 +1,67 @@
-/**
- * CategoryStatsAnalyzer - Aggregates category statistics from accesslog + database
- * Direct category capture (not inference-based)
- */
+export function aggregateByCategory(accesslogEntries, sessions) {
+  const sessionMap = new Map();
+  for (const session of sessions) {
+    sessionMap.set(session.id, session);
+  }
 
-export class CategoryStatsAnalyzer {
-  /**
-   * Aggregate by category from accesslog entries
-   * @param {Array} logEntries - Accesslog entries with category field
-   * @param {Map} sessionData - Map of sessionId -> { duration, successRate, messages }
-   * @returns {Array} Category stats with duration and successRate
-   */
-  aggregateByCategory(logEntries, sessionData) {
-    const categoryMap = new Map();
+  const categoryMap = new Map();
 
-    for (const entry of logEntries) {
-      const category = entry.category || 'unknown';
-      const sessionId = entry.sessionId;
-      const model = entry.model;
+  for (const entry of accesslogEntries) {
+    const category = entry.category || 'unknown';
+    const existing = categoryMap.get(category);
 
-      // Get session details from database
-      const session = sessionData.get(sessionId) || {};
-      const duration = session.durationSeconds || 0;
-      const successRate = session.successRate || 0;
-
-      const existing = categoryMap.get(category);
-      if (existing) {
-        existing.callCount++;
-        existing.totalDuration += duration;
-        existing.successCount += successRate >= 50 ? 1 : 0;
-        existing.models.add(model);
-      } else {
-        categoryMap.set(category, {
-          category,
-          callCount: 1,
-          totalDuration: duration,
-          successCount: successRate >= 50 ? 1 : 0,
-          models: new Set([model]),
-          avgDuration: 0,
-          successRate: 0,
-          modelUsed: '',
-        });
+    if (existing) {
+      existing.callCount++;
+      if (entry.status >= 200 && entry.status < 400) {
+        existing.successCount++;
       }
+      existing.totalCount++;
+      if (entry.duration) {
+        existing.durations.push(entry.duration);
+      }
+      if (entry.model) {
+        existing.models.add(entry.model);
+      }
+    } else {
+      categoryMap.set(category, {
+        category,
+        callCount: 1,
+        successCount: entry.status >= 200 && entry.status < 400 ? 1 : 0,
+        totalCount: 1,
+        durations: entry.duration ? [entry.duration] : [],
+        models: new Set(entry.model ? [entry.model] : []),
+      });
     }
-
-    // Calculate averages
-    const results = Array.from(categoryMap.values());
-    for (const stats of results) {
-      stats.avgDuration =
-        stats.callCount > 0 ? Math.round(stats.totalDuration / stats.callCount) : 0;
-      stats.successRate =
-        stats.callCount > 0 ? Math.round((stats.successCount / stats.callCount) * 100) : 0;
-      stats.modelUsed = Array.from(stats.models).join(', ');
-      delete stats.models; // Remove Set before returning
-      delete stats.totalDuration;
-      delete stats.successCount;
-    }
-
-    return results.sort((a, b) => b.callCount - a.callCount);
   }
 
-  /**
-   * Get category distribution with percentage
-   */
-  getCategoryDistribution(logEntries, sessionData) {
-    const aggregated = this.aggregateByCategory(logEntries, sessionData);
+  const results = [];
+  for (const group of categoryMap.values()) {
+    const stats = {
+      category: group.category,
+      callCount: group.callCount,
+    };
 
-    const totalCalls = aggregated.reduce((sum, stat) => sum + stat.callCount, 0);
-
-    if (totalCalls === 0) {
-      return aggregated;
+    if (group.durations.length > 0) {
+      stats.avgDuration = Math.round(
+        group.durations.reduce((sum, d) => sum + d, 0) / group.durations.length
+      );
     }
 
-    for (const stat of aggregated) {
-      stat.percentage = Math.round((stat.callCount / totalCalls) * 10000) / 100;
+    if (group.totalCount > 0) {
+      stats.successRate = Math.round((group.successCount / group.totalCount) * 10000) / 100;
     }
 
-    return aggregated;
+    if (group.models.size > 0) {
+      stats.modelUsed = Array.from(group.models).join(', ');
+    }
+
+    results.push(stats);
   }
 
-  /**
-   * Get top categories by call count
-   */
-  getTopCategories(logEntries, sessionData, limit) {
-    const aggregated = this.aggregateByCategory(logEntries, sessionData);
-    return aggregated.slice(0, limit);
-  }
+  results.sort((a, b) => b.callCount - a.callCount);
+  return results;
 }
 
-export const categoryStatsAnalyzer = new CategoryStatsAnalyzer();
+export const categoryStatsAnalyzer = {
+  aggregateByCategory,
+};

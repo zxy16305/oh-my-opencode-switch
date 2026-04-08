@@ -27,6 +27,7 @@ function formatLogEntry(entry) {
   const parts = [
     `[${entry.timestamp}]`,
     entry.sessionId ? `session=${entry.sessionId}` : 'session=-',
+    `category=${entry.category || 'unknown'}`,
     `provider=${entry.provider}`,
     `model=${entry.model}`,
     `virtualModel=${entry.virtualModel}`,

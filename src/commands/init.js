@@ -24,6 +24,9 @@ const DEFAULT_CONFIG_TEMPLATE = {
     'https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/master/assets/oh-my-opencode.schema.json',
   agents: {},
   categories: {},
+  experimental: {
+    plugins: ['./plugins/category-capture.ts'],
+  },
 };
 
 const DEFAULT_VARIABLES_JSON = {

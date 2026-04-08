@@ -29,6 +29,7 @@ import {
   handleStats,
   handleDashboard,
   handleLogsStream,
+  handleAnalytics,
   setupSSELogCallback,
 } from './internal-endpoints.js';
 
@@ -215,6 +216,11 @@ export class ProxyServerManager {
             return;
           }
 
+          if (req.url.startsWith('/_internal/analytics') && req.method === 'GET') {
+            handleAnalytics(req, res);
+            return;
+          }
+
           const apiKey = extractApiKey(req);
           const authResult = authenticate(apiKey, auth);
           if (!authResult.valid) {
@@ -242,6 +248,7 @@ export class ProxyServerManager {
 
           const route = routes[model];
           let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
+          const category = req.headers['x-opencode-category'] || null;
 
           if (!circuitBreaker.isAvailable(upstream.id)) {
             if (sessionId && route.upstreams.length > 1) {
@@ -331,6 +338,7 @@ export class ProxyServerManager {
 
               logAccess({
                 sessionId: sessionId || null,
+                category,
                 provider: upstream.provider,
                 model: upstream.model,
                 virtualModel: model,
@@ -351,6 +359,7 @@ export class ProxyServerManager {
               }
               logAccess({
                 sessionId: sessionId || null,
+                category,
                 provider: upstream.provider,
                 model: upstream.model,
                 virtualModel: model,

@@ -13,6 +13,10 @@ oh-my-opencode switch (oos) - CLI tool for managing and switching OpenCode confi
 .
 ├── bin/oos.js              # CLI entry point (Commander.js)
 ├── src/
+│   ├── analytics/          # Data analysis module
+│   │   ├── analyzer/       # Configuration analyzers
+│   │   ├── reader/         # Configuration data readers
+│   │   └── exporter/       # Data export utilities
 │   ├── core/               # Business logic (ConfigManager, ProfileManager)
 │   ├── commands/           # CLI command handlers
 │   │   ├── profile/        # Profile sub-commands
@@ -36,6 +40,7 @@ oh-my-opencode switch (oos) - CLI tool for managing and switching OpenCode confi
 | Profile logic   | src/core/ProfileManager.js | Profile metadata & management        |
 | File operations | src/utils/files.js         | JSON I/O, atomic writes              |
 | Path resolution | src/utils/paths.js         | ~ ~/.config/opencode/.oos/ structure |
+| Analytics       | src/analytics/\*           | data analysis, readers, exporters    |
 
 ## CODE MAP
 

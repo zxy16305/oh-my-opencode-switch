@@ -185,9 +185,12 @@ function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
     // Apply step penalty based on error rate thresholds
     let newWeight;
     if (errorRatePercent >= 30) {
-      // Severe error rate: reduce to 10% of original
-      newWeight = Math.max(minWeight, configuredWeight * 0.1);
-    } else if (errorRatePercent >= 10) {
+      // Severe error rate: reduce to 5% of original
+      newWeight = Math.max(minWeight, configuredWeight * 0.05);
+    } else if (errorRatePercent >= 15) {
+      // High error rate: reduce to 20% of original
+      newWeight = Math.max(minWeight, configuredWeight * 0.2);
+    } else if (errorRatePercent >= 5) {
       // Moderate error rate: reduce to 50% of original
       newWeight = Math.max(minWeight, configuredWeight * 0.5);
     } else {

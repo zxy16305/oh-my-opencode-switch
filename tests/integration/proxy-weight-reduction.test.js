@@ -50,11 +50,15 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     const errorData = new Map([['rate-limited', [429]]]);
     adjustWeightForError('test-route', upstreams, config, errorData);
 
-    // Verify weight reduced: 1 error / 1 request = 100% ≥30% → 100 * 0.1 = 10
+    // Verify weight reduced: 1 error / 1 request = 100% ≥30% → 100 * 0.05 = 5, clamped to minWeight=10
     const limitedWeight = getDynamicWeight('test-route', 'rate-limited', 100);
     const healthyWeight = getDynamicWeight('test-route', 'healthy', 100);
 
-    assert.strictEqual(limitedWeight, 10, 'Expected weight to reduce to 10 for 100% error rate');
+    assert.strictEqual(
+      limitedWeight,
+      10,
+      'Expected weight to reduce to minWeight 10 for 100% error rate'
+    );
     assert.strictEqual(healthyWeight, 100, 'Healthy upstream weight should not change');
   });
 
@@ -77,7 +81,11 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     adjustWeightForError('test-route', upstreams, config, errorData);
 
     const finalWeight = getDynamicWeight('test-route', 'persistently-limited', 100);
-    assert.strictEqual(finalWeight, 10, 'Expected weight to reduce to 10 for 100% error rate');
+    assert.strictEqual(
+      finalWeight,
+      10,
+      'Expected weight to reduce to minWeight 10 for 100% error rate'
+    );
   });
 
   test('getErrorRate returns correct count for multiple error types', () => {
@@ -187,11 +195,11 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     assert.strictEqual(getDynamicWeight('test-route', 'upstream-c', 100), 100);
   });
 
-  test('error rate between 10% and 30% applies moderate penalty', () => {
+  test('error rate between 15% and 30% applies high penalty', () => {
     const upstreams = [makeUpstream({ id: 'moderate-errors' })];
     const config = makeConfig();
 
-    // 2 errors out of 10 requests = 20% error rate (between 10% and 30%)
+    // 2 errors out of 10 requests = 20% error rate (between 15% and 30%)
     for (let i = 0; i < 10; i++) {
       incrementUpstreamRequestCount('test-route', 'moderate-errors');
     }
@@ -202,14 +210,14 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     adjustWeightForError('test-route', upstreams, config, errorData);
 
     const weight = getDynamicWeight('test-route', 'moderate-errors', 100);
-    assert.strictEqual(weight, 50, '20% error rate should reduce weight to 50% of original');
+    assert.strictEqual(weight, 20, '20% error rate should reduce weight to 20% of original');
   });
 
-  test('error rate below 10% does not reduce weight', () => {
+  test('error rate between 5% and 15% applies moderate penalty', () => {
     const upstreams = [makeUpstream({ id: 'low-errors' })];
     const config = makeConfig();
 
-    // 1 error out of 20 requests = 5% error rate (below 10%)
+    // 1 error out of 20 requests = 5% error rate (at 5% threshold)
     for (let i = 0; i < 20; i++) {
       incrementUpstreamRequestCount('test-route', 'low-errors');
     }
@@ -219,7 +227,24 @@ describe('Integration – Weight Reduction on 429 Errors', () => {
     adjustWeightForError('test-route', upstreams, config, errorData);
 
     const weight = getDynamicWeight('test-route', 'low-errors', 100);
-    assert.strictEqual(weight, 100, '5% error rate should not reduce weight');
+    assert.strictEqual(weight, 50, '5% error rate should reduce weight to 50% of original');
+  });
+
+  test('error rate below 5% does not reduce weight', () => {
+    const upstreams = [makeUpstream({ id: 'very-low-errors' })];
+    const config = makeConfig();
+
+    // 1 error out of 50 requests = 2% error rate (below 5%)
+    for (let i = 0; i < 50; i++) {
+      incrementUpstreamRequestCount('test-route', 'very-low-errors');
+    }
+    recordUpstreamError('test-route', 'very-low-errors', 429);
+
+    const errorData = new Map([['very-low-errors', [429]]]);
+    adjustWeightForError('test-route', upstreams, config, errorData);
+
+    const weight = getDynamicWeight('test-route', 'very-low-errors', 100);
+    assert.strictEqual(weight, 100, '2% error rate should not reduce weight');
   });
 
   test('when errorWeightReduction is disabled, 429 does not reduce weight', () => {

@@ -87,8 +87,8 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
     };
 
     const { recordUpstreamError } = await import('../../src/proxy/stats-collector.js');
-    recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
-    recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
+    recordUpstreamError(sm, 'route1', upstream.id, 502);
+    recordUpstreamError(sm, 'route1', upstream.id, 502);
 
     const effectiveWeight = calculateEffectiveWeight({
       sm,
@@ -117,7 +117,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
 
     const { recordUpstreamError } = await import('../../src/proxy/stats-collector.js');
     for (let i = 0; i < 10; i++) {
-      recordUpstreamError(sm, 'route1', upstream.id, new Error('test error'));
+      recordUpstreamError(sm, 'route1', upstream.id, 502);
     }
 
     const effectiveWeight = calculateEffectiveWeight({

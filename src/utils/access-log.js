@@ -24,10 +24,12 @@ function formatTimestamp() {
 }
 
 function formatLogEntry(entry) {
+  // Sanitize agent for log parsing: replace spaces and parens with underscores
+  const safeAgent = entry.agent ? entry.agent.replace(/[() ]/g, '_') : 'unknown';
   const parts = [
     `[${entry.timestamp}]`,
     entry.sessionId ? `session=${entry.sessionId}` : 'session=-',
-    entry.agent ? `agent=${entry.agent}` : 'agent=unknown',
+    `agent=${safeAgent}`,
     `category=${entry.category || 'unknown'}`,
     `provider=${entry.provider}`,
     `model=${entry.model}`,

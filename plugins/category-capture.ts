@@ -9,6 +9,16 @@ import { appendVerifiedRecord } from '../src/utils/category-verified.js';
  * Agent: Use input.agent directly (100% reliable)
  */
 
+function sanitizeForHeader(value) {
+  if (!value) return value;
+  return value
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/[() ]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
 const categoryQueue = new Map<
   string,
   Array<{
@@ -67,13 +77,13 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
 
         output.headers['x-opencode-category'] = category;
         if (agent) {
-          output.headers['x-opencode-agent'] = agent;
+          output.headers['x-opencode-agent'] = sanitizeForHeader(agent);
         }
       } catch (error) {
         console.error('[category-capture] Error in chat.headers:', error);
         output.headers['x-opencode-category'] = 'default';
         if (input?.agent) {
-          output.headers['x-opencode-agent'] = input.agent;
+          output.headers['x-opencode-agent'] = sanitizeForHeader(input.agent);
         }
       }
     },

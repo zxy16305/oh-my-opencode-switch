@@ -69,13 +69,67 @@ describe('readAccesslog', () => {
 
   it('should parse entries with category field', async () => {
     writeTestLog([
-      '[2026-04-08T10:00:00.000] session=sess1 provider=ali model=glm-4 virtualModel=lb-mixed status=200 ttfb=100ms duration=1000ms category=chat',
+      '[2026-04-08T10:00:00.000] session=sess1 category=chat provider=ali model=glm-4 virtualModel=lb-mixed status=200 ttfb=100ms duration=1000ms',
     ]);
 
     const result = await readAccesslog();
 
     assert.equal(result.length, 1);
     assert.equal(result[0].category, 'chat');
+  });
+
+  it('should parse entries with agent field', async () => {
+    writeTestLog([
+      '[2026-04-08T10:00:00.000] session=sess1 agent=explore category=quick provider=ali model=glm-4 virtualModel=lb-mixed status=200 ttfb=100ms duration=1000ms',
+    ]);
+
+    const result = await readAccesslog();
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0].agent, 'explore');
+    assert.equal(result[0].category, 'quick');
+  });
+
+  it('should parse entries with agent but no category', async () => {
+    writeTestLog([
+      '[2026-04-08T10:00:00.000] session=sess1 agent=build provider=ali model=glm-4 virtualModel=lb-mixed status=200 ttfb=100ms duration=1000ms',
+    ]);
+
+    const result = await readAccesslog();
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0].agent, 'build');
+    assert.equal(result[0].category, null);
+  });
+
+  it('should handle null agent when not present', async () => {
+    writeTestLog([
+      '[2026-04-08T10:00:00.000] session=sess1 category=chat provider=ali model=glm-4 virtualModel=lb-mixed status=200 ttfb=100ms duration=1000ms',
+    ]);
+
+    const result = await readAccesslog();
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0].agent, null);
+    assert.equal(result[0].category, 'chat');
+  });
+
+  it('should parse entries with all agent types', async () => {
+    const agentTypes = ['build', 'oracle', 'librarian', 'explore', 'metis', 'momus', 'hephaestus'];
+
+    const logLines = agentTypes.map(
+      (agent, i) =>
+        `[2026-04-08T10:0${i}:00.000] session=sess${i} agent=${agent} provider=ali model=glm-4 virtualModel=lb status=200 ttfb=100ms duration=1000ms`
+    );
+
+    writeTestLog(logLines);
+
+    const result = await readAccesslog();
+
+    assert.equal(result.length, agentTypes.length);
+    agentTypes.forEach((agent, i) => {
+      assert.equal(result[i].agent, agent, `Agent should be ${agent}`);
+    });
   });
 
   it('should skip invalid log lines', async () => {

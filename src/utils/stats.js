@@ -28,7 +28,7 @@ export function parseTimeRange(last) {
 }
 
 const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
+  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
 
 export function parseLogLine(line) {
   const match = LOG_LINE_PATTERN.exec(line);
@@ -36,12 +36,24 @@ export function parseLogLine(line) {
     return null;
   }
 
-  const [, timestamp, sessionId, category, provider, model, virtualModel, status, ttfb, duration] =
-    match;
+  const [
+    ,
+    timestamp,
+    sessionId,
+    agent,
+    category,
+    provider,
+    model,
+    virtualModel,
+    status,
+    ttfb,
+    duration,
+  ] = match;
 
   return {
     timestamp: new Date(timestamp),
     sessionId: sessionId === '-' ? null : sessionId,
+    agent: agent || 'unknown',
     category: category || 'unknown',
     provider,
     model,

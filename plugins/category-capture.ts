@@ -7,8 +7,8 @@ import type { Plugin } from '@opencode-ai/plugin';
  * This provides a more reliable capture mechanism than inference-based approaches.
  */
 
-// In-memory storage: sessionID -> category
-const categoryMap = new Map<string, string>();
+// In-memory storage: sessionID -> {category, agent}
+const categoryMap = new Map<string, { category: string; agent: string | null }>();
 
 export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
   return {
@@ -21,12 +21,13 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
         if (input.tool !== 'task') return;
 
         let category = output.args?.category;
-
         if (!category) {
           category = 'default';
         }
 
-        categoryMap.set(input.sessionID, category);
+        const agent = output.args?.subagent_type || null;
+
+        categoryMap.set(input.sessionID, { category, agent });
       } catch (error) {
         console.error('[category-capture] Error capturing category:', error);
       }
@@ -45,19 +46,23 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
           return context.headers || {};
         }
 
-        let category = categoryMap.get(sessionID);
+        const entry = categoryMap.get(sessionID);
 
+        let category = entry?.category;
         if (!category) {
           category = 'default';
         }
 
         const headers = context.headers || {};
         headers['x-opencode-category'] = category;
+        if (entry?.agent) {
+          headers['x-opencode-agent'] = entry.agent;
+        }
 
         return headers;
       } catch (error) {
         console.error('[category-capture] Error injecting header:', error);
-        return context.headers || {};
+        return context?.headers || {};
       }
     },
 

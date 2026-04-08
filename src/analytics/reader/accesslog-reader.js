@@ -8,7 +8,7 @@ import { getLogPath } from '../../utils/access-log.js';
  */
 
 const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?(?:\s+category=(\S+))?/;
+  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
 
 /**
  * Parse a single log line into an entry object
@@ -21,12 +21,24 @@ function parseLogLine(line) {
     return null;
   }
 
-  const [, timestamp, sessionId, provider, model, virtualModel, status, ttfb, duration, category] =
-    match;
+  const [
+    ,
+    timestamp,
+    sessionId,
+    agent,
+    category,
+    provider,
+    model,
+    virtualModel,
+    status,
+    ttfb,
+    duration,
+  ] = match;
 
   return {
     timestamp: new Date(timestamp),
     sessionId: sessionId === '-' ? null : sessionId,
+    agent: agent || null,
     provider,
     model,
     virtualModel,

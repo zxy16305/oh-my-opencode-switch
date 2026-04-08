@@ -249,6 +249,7 @@ export class ProxyServerManager {
           const route = routes[model];
           let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
           const category = req.headers['x-opencode-category'] || null;
+          const agent = req.headers['x-opencode-agent'] || null;
 
           if (!circuitBreaker.isAvailable(upstream.id)) {
             if (sessionId && route.upstreams.length > 1) {
@@ -338,6 +339,7 @@ export class ProxyServerManager {
 
               logAccess({
                 sessionId: sessionId || null,
+                agent,
                 category,
                 provider: upstream.provider,
                 model: upstream.model,
@@ -359,6 +361,7 @@ export class ProxyServerManager {
               }
               logAccess({
                 sessionId: sessionId || null,
+                agent,
                 category,
                 provider: upstream.provider,
                 model: upstream.model,

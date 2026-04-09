@@ -42,6 +42,7 @@
       }
       table {
         width: 100%;
+        table-layout: auto;
         border-collapse: collapse;
         font-size: 0.95rem;
       }
@@ -53,19 +54,41 @@
         color: #555;
         border-bottom: 2px solid #e0e0e0;
       }
-      th:nth-child(3) {
+      th:nth-child(2) {
         min-width: 180px;
+        white-space: nowrap;
       }
+      th:nth-child(3),
       th:nth-child(4),
       th:nth-child(5),
-      th:nth-child(6) {
+      th:nth-child(6),
+      th:nth-child(7) {
         text-align: right;
-        width: 100px;
+        min-width: 80px;
       }
-      th:nth-child(7),
-      th:nth-child(8) {
+      th:nth-child(8),
+      th:nth-child(9) {
         text-align: right;
-        width: 80px;
+        min-width: 70px;
+      }
+      th:nth-child(10) {
+        text-align: right;
+        min-width: 80px;
+      }
+      th:nth-child(11),
+      th:nth-child(12) {
+        text-align: right;
+        min-width: 70px;
+      }
+      th:nth-child(13) {
+        text-align: center;
+        min-width: 80px;
+      }
+      .col-folded {
+        display: none;
+      }
+      .col-visible {
+        display: table-cell;
       }
       td {
         padding: 14px 12px;
@@ -105,16 +128,17 @@
       }
       #logTable th:nth-child(3),
       #logTable td:nth-child(3) {
-        width: 100px;
+        width: 160px;
       }
       #logTable th:nth-child(4),
       #logTable td:nth-child(4) {
-        width: 140px;
+        width: 70px;
+        text-align: center;
       }
       #logTable th:nth-child(5),
       #logTable td:nth-child(5) {
-        width: 70px;
-        text-align: center;
+        width: 80px;
+        text-align: right;
       }
       #logTable th:nth-child(6),
       #logTable td:nth-child(6) {
@@ -123,11 +147,6 @@
       }
       #logTable th:nth-child(7),
       #logTable td:nth-child(7) {
-        width: 80px;
-        text-align: right;
-      }
-      #logTable th:nth-child(8),
-      #logTable td:nth-child(8) {
         width: 200px;
         font-family: monospace;
         font-size: 0.75rem;
@@ -191,28 +210,42 @@
     <div class="updated" id="updated">等待数据加载中...</div>
     <div class="container">
       <div class="card">
-        <h2>上游数据</h2>
-        <table>
+        <h2 style="display: flex; justify-content: space-between; align-items: center">
+          上游数据
+          <span
+            id="expandBtn"
+            style="
+              font-size: 0.8rem;
+              font-weight: 400;
+              color: #666;
+              cursor: pointer;
+              user-select: none;
+            "
+            role="button"
+            tabindex="0"
+            aria-label="展开折叠统计列"
+            >展示更多 ▾</span
+          >
+        </h2>
+        <table id="dataTable">
           <thead>
             <tr>
               <th>Route</th>
-              <th>Provider</th>
-              <th>Model</th>
-              <th>Requests</th>
-              <th>最近1小时</th>
-              <th>Sessions</th>
-              <th>Errors</th>
-              <th>Avg TTFB</th>
-              <th>TTFB P95</th>
-              <th>TTFB P99</th>
-              <th>Avg Duration</th>
-              <th>Duration P95</th>
-              <th>Duration P99</th>
-              <th>配置权重</th>
-              <th>当前权重</th>
+              <th>Provider/Model</th>
+              <th>Req</th>
+              <th>1h</th>
+              <th>Sess</th>
+              <th>Err</th>
+              <th>TTFB</th>
+              <th class="col-folded">T95</th>
+              <th class="col-folded">T99</th>
+              <th>Dur</th>
+              <th class="col-folded">D95</th>
+              <th class="col-folded">D99</th>
+              <th>Weight</th>
             </tr>
           </thead>
-          <tbody id="dataTable"></tbody>
+          <tbody id="dataTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -225,8 +258,7 @@
               <tr>
                 <th>时间戳</th>
                 <th>路由</th>
-                <th>提供商</th>
-                <th>模型</th>
+                <th>Provider/Model</th>
                 <th>状态码</th>
                 <th>TTFB</th>
                 <th>耗时</th>
@@ -235,7 +267,7 @@
             </thead>
             <tbody id="logTableBody">
               <tr class="log-empty">
-                <td colspan="8" style="text-align: center; color: #999; padding: 40px">
+                <td colspan="7" style="text-align: center; color: #999; padding: 40px">
                   等待日志数据...
                 </td>
               </tr>
@@ -247,6 +279,73 @@
     <footer>自动更新间隔：10秒轮询</footer>
     <script>
       const POLL_INTERVAL = 10000;
+      let isFolded = true;
+
+      function toggleFoldedColumns() {
+        isFolded = !isFolded;
+
+        // 更新表头折叠列 (T95, T99, D95, D99)
+        const thead = document.querySelector('#dataTable thead tr');
+        if (thead) {
+          const ths = thead.querySelectorAll('th');
+          // 表头折叠列索引: 7(T95), 8(T99), 10(D95), 11(D99)
+          [7, 8, 10, 11].forEach((idx) => {
+            if (ths[idx]) {
+              ths[idx].className = isFolded ? 'col-folded' : 'col-visible';
+            }
+          });
+        }
+
+        // 更新数据行折叠列
+        const tbody = document.getElementById('dataTableBody');
+        if (tbody) {
+          const rows = tbody.querySelectorAll('tr');
+          rows.forEach((row) => {
+            const tds = row.querySelectorAll('td');
+            const firstTd = tds[0];
+            // 检查是否是第一行（有 rowspan 属性）
+            const isFirstRow = firstTd && firstTd.hasAttribute('rowspan');
+
+            if (isFirstRow) {
+              // 第一行有 Route 列，折叠列索引: 7, 8, 10, 11
+              [7, 8, 10, 11].forEach((idx) => {
+                if (tds[idx]) {
+                  tds[idx].className = isFolded ? 'col-folded' : 'col-visible';
+                }
+              });
+            } else {
+              // 后续行没有 Route 列，折叠列索引: 6, 7, 9, 10
+              [6, 7, 9, 10].forEach((idx) => {
+                if (tds[idx]) {
+                  tds[idx].className = isFolded ? 'col-folded' : 'col-visible';
+                }
+              });
+            }
+          });
+        }
+
+        updateExpandButtonText();
+      }
+
+      function updateExpandButtonText() {
+        const btn = document.getElementById('expandBtn');
+        if (btn) {
+          btn.textContent = isFolded ? '展示更多 ▾' : '收起 ▴';
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('expandBtn');
+        if (btn) {
+          btn.addEventListener('click', toggleFoldedColumns);
+          btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleFoldedColumns();
+            }
+          });
+        }
+      });
 
       function aggregateUpstreams(data) {
         const upstreams = [];
@@ -259,7 +358,7 @@
       }
 
       function renderTable(upstreams) {
-        const tbody = document.getElementById('dataTable');
+        const tbody = document.getElementById('dataTableBody');
         tbody.innerHTML = '';
 
         const routeGroups = {};
@@ -269,6 +368,8 @@
           }
           routeGroups[u.routeName].upstreams.push(u);
         });
+
+        const foldedClass = isFolded ? 'col-folded' : 'col-visible';
 
         for (const [routeName, group] of Object.entries(routeGroups)) {
           const upstreamCount = group.upstreams.length;
@@ -288,41 +389,41 @@
             const durationP99 = u.durationP99 ?? 0;
             const sampleCount = u.sampleCount ?? 0;
 
+            // 合并列：Provider/Model, Weight
+            const providerModel = `${u.provider || '-'}/${u.model || '-'}`;
+            const weight = `${u.currentWeight}/${u.configuredWeight ?? u.currentWeight}`;
+
             if (idx === 0) {
               tr.innerHTML = `
-              <td rowspan="${upstreamCount}" style="background:#f8fafc;font-weight:600;border-right:2px solid #e2e8f0;vertical-align:top;padding-top:16px;min-width:120px;">${routeName}<br/><small style="color:#64748b;font-weight:400;">${strategy}</small></td>
-              <td style="${groupBorderStyle}">${u.provider || '-'}</td>
-              <td style="${groupBorderStyle}">${u.model || '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${errorCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
-            `;
+                    <td rowspan="${upstreamCount}" style="background:#f8fafc;font-weight:600;border-right:2px solid #e2e8f0;vertical-align:top;padding-top:16px;min-width:120px;">${routeName}<br/><small style="color:#64748b;font-weight:400;">${strategy}</small></td>
+                    <td style="${groupBorderStyle}">${providerModel}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.requestCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.sessionCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${errorCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${weight}</td>
+                  `;
             } else {
               tr.innerHTML = `
-              <td style="${groupBorderStyle}">${u.provider || '-'}</td>
-              <td style="${groupBorderStyle}">${u.model || '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.requestCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:100px;${groupBorderStyle}">${u.sessionCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${errorCount}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.configuredWeight ?? u.currentWeight}</td>
-              <td style="text-align:right;font-variant-numeric:tabular-nums;min-width:80px;${groupBorderStyle}">${u.currentWeight}</td>
-            `;
+                    <td style="${groupBorderStyle}">${providerModel}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.requestCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.recentRequestCount ?? 0}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${u.sessionCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${errorCount}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgTtfb) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(ttfbP95) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(ttfbP99) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${weight}</td>
+                  `;
             }
 
             tbody.appendChild(tr);
@@ -390,15 +491,14 @@
         const tr = document.createElement('tr');
         tr.className = 'log-row';
         tr.innerHTML = `
-          <td>${formatTimestamp(log.timestamp)}</td>
-          <td>${log.virtualModel || '-'}</td>
-          <td>${log.provider || '-'}</td>
-          <td>${log.model || '-'}</td>
-          <td><span class="${getStatusClass(log.status)}">${log.status}</span></td>
-          <td>${formatDuration(log.ttfb)}</td>
-          <td>${formatDuration(log.duration)}</td>
-          <td>${log.sessionId || '-'}</td>
-        `;
+                <td>${formatTimestamp(log.timestamp)}</td>
+                <td>${log.virtualModel || '-'}</td>
+                <td>${log.provider || '-'}/${log.model || '-'}</td>
+                <td><span class="${getStatusClass(log.status)}">${log.status}</span></td>
+                <td>${formatDuration(log.ttfb)}</td>
+                <td>${formatDuration(log.duration)}</td>
+                <td>${log.sessionId || '-'}</td>
+              `;
 
         if (prepend) {
           tbody.insertBefore(tr, tbody.firstChild);
@@ -420,12 +520,12 @@
         // Clear table for initial load
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = `
-          <tr class="log-empty">
-            <td colspan="8" style="text-align: center; color: #999; padding: 40px">
-              等待日志数据...
-            </td>
-          </tr>
-        `;
+                <tr class="log-empty">
+                  <td colspan="7" style="text-align: center; color: #999; padding: 40px">
+                    等待日志数据...
+                  </td>
+                </tr>
+              `;
         isInitialLoad = true;
 
         eventSource = new EventSource('/_internal/logs/stream');

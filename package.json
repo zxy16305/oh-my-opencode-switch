@@ -8,9 +8,9 @@
     "oos": "./bin/oos.js"
   },
   "scripts": {
-    "test": "node --no-warnings --test tests/**/*.test.js",
-    "test:unit": "node --no-warnings --test tests/unit/**/*.test.js",
-    "test:integration": "node --no-warnings --test tests/integration/**/*.test.js",
+    "test": "node --import tsx --test tests/**/*.test.js",
+    "test:unit": "node --import tsx --test tests/unit/**/*.test.js",
+    "test:integration": "node --import tsx --test tests/integration/**/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

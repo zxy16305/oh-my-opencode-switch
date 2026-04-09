@@ -42,7 +42,7 @@ async function callChatHeaders(hooks, inputContext) {
   return output;
 }
 
-function simulateSessionCreated(hooks, parentId, childId) {
+function simulateSessionCreated(hooks, parentId, childId, title) {
   return hooks['event']({
     event: {
       type: 'session.created',
@@ -50,6 +50,7 @@ function simulateSessionCreated(hooks, parentId, childId) {
         info: {
           id: childId,
           parentID: parentId,
+          ...(title !== undefined && { title }),
         },
       },
     },
@@ -167,6 +168,61 @@ describe('Category Capture Plugin - Dual Guarantee', () => {
         headers: {},
       });
       assert.equal(output.headers['x-opencode-category'], 'default');
+    });
+  });
+
+  describe('Description-based matching', () => {
+    it('should match category by description', async () => {
+      await hooks['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-desc', callID: 'call-desc' },
+        { args: { category: 'deep', description: 'Analyze codebase' } }
+      );
+
+      await simulateSessionCreated(hooks, 'parent-desc', 'child-desc', 'Analyze codebase');
+
+      const output = await callChatHeaders(hooks, { sessionID: 'child-desc' });
+      assert.equal(output.headers['x-opencode-category'], 'deep');
+    });
+
+    it('should handle concurrent tasks with different descriptions (reverse order)', async () => {
+      // Enqueue two tasks with different descriptions
+      await hooks['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-concurrent', callID: 'call-a' },
+        { args: { category: 'quick', description: 'Task A' } }
+      );
+      await hooks['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-concurrent', callID: 'call-b' },
+        { args: { category: 'deep', description: 'Task B' } }
+      );
+
+      // Sessions created in REVERSE order - this is the bug scenario
+      await simulateSessionCreated(hooks, 'parent-concurrent', 'child-b', 'Task B');
+      await simulateSessionCreated(hooks, 'parent-concurrent', 'child-a', 'Task A');
+
+      // Verify correct matching despite reverse order
+      const outputB = await callChatHeaders(hooks, { sessionID: 'child-b' });
+      assert.equal(outputB.headers['x-opencode-category'], 'deep');
+
+      const outputA = await callChatHeaders(hooks, { sessionID: 'child-a' });
+      assert.equal(outputA.headers['x-opencode-category'], 'quick');
+    });
+
+    it('should fall back to FIFO when description does not match', async () => {
+      await hooks['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-fallback', callID: 'call-fb1' },
+        { args: { category: 'quick', description: 'Task FB1' } }
+      );
+      await hooks['tool.execute.before'](
+        { tool: 'task', sessionID: 'parent-fallback', callID: 'call-fb2' },
+        { args: { category: 'deep', description: 'Task FB2' } }
+      );
+
+      // Session with title that doesn't match any description - should fall back to FIFO
+      await simulateSessionCreated(hooks, 'parent-fallback', 'child-fb1', 'Unknown Title');
+
+      // Should get first item (quick) since no description matched
+      const output1 = await callChatHeaders(hooks, { sessionID: 'child-fb1' });
+      assert.equal(output1.headers['x-opencode-category'], 'quick');
     });
   });
 

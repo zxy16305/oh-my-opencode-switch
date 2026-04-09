@@ -23,6 +23,7 @@ const categoryQueue = new Map<
   string,
   Array<{
     category: string;
+    description: string;
     callID: string;
     timestamp: number;
   }>
@@ -45,6 +46,7 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
       }
       categoryQueue.get(parentID)!.push({
         category,
+        description: output.args?.description || '',
         callID,
         timestamp: Date.now(),
       });
@@ -58,7 +60,14 @@ export const CategoryCapturePlugin: Plugin = async ({ directory }) => {
 
       const queue = categoryQueue.get(session.parentID);
       if (queue?.length) {
-        const item = queue.shift()!;
+        const title = session.title || '';
+        let matchedIndex = queue.findIndex(
+          (item) => item.description && item.description === title
+        );
+        if (matchedIndex === -1) {
+          matchedIndex = 0;
+        }
+        const item = queue.splice(matchedIndex, 1)[0];
         childToCategory.set(session.id, item.category);
 
         if (queue.length === 0) {

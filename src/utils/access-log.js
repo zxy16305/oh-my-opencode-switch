@@ -23,14 +23,13 @@ function formatTimestamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 }
 
-function formatLogEntry(entry) {
+export function formatLogEntry(entry) {
   // Sanitize agent for log parsing: replace spaces and parens with underscores
-  const safeAgent = entry.agent ? entry.agent.replace(/[() ]/g, '_') : 'unknown';
   const parts = [
     `[${entry.timestamp}]`,
     entry.sessionId ? `session=${entry.sessionId}` : 'session=-',
-    `agent=${safeAgent}`,
-    `category=${entry.category || 'unknown'}`,
+    entry.agent ? `agent=${entry.agent.replace(/[() ]/g, '_')}` : '',
+    entry.category ? `category=${entry.category}` : '',
     `provider=${entry.provider}`,
     `model=${entry.model}`,
     `virtualModel=${entry.virtualModel}`,

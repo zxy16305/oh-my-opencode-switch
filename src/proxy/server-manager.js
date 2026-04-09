@@ -8,8 +8,8 @@ import {
   recordUpstreamStats,
   adjustWeightForError,
   adjustWeightForLatency,
-  startWeightRecovery,
-  stopWeightRecovery,
+  incrementSuccessCount,
+  resetSuccessCount,
   startWeightCheck,
   stopWeightCheck,
 } from './router.js';
@@ -47,7 +47,6 @@ function createInstanceState(config = {}) {
     circuitBreaker: null,
     periodicWeightAdjustTimer: null,
     timeSlotSaveTimer: null,
-    routeRecoveryTimers: new Map(),
     routeCheckTimers: new Map(),
     sseClients: new Set(),
     timeSlotCalculator: createTimeSlotWeightCalculator({ config: config.timeSlotWeight || {} }),
@@ -313,11 +312,14 @@ export class ProxyServerManager {
                 recordUpstreamError(model, upstream.id, proxyRes.statusCode);
                 const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
                 adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
+                resetSuccessCount(model, upstream.id);
                 if (config.timeSlotWeight?.enabled) {
                   timeSlotCalculator.recordFailure(upstream.provider);
                 }
               } else {
                 circuitBreaker.recordSuccess(upstream.id);
+                const configuredWeight = upstream.weight ?? 100;
+                incrementSuccessCount(model, upstream.id, configuredWeight);
                 recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
                 const latencyData = new Map();
                 for (const u of route.upstreams) {
@@ -355,6 +357,7 @@ export class ProxyServerManager {
               recordUpstreamError(model, upstream.id, 502);
               const errorData = new Map([[upstream.id, [502]]]);
               adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
+              resetSuccessCount(model, upstream.id);
               logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
               if (config.timeSlotWeight?.enabled) {
                 timeSlotCalculator.recordFailure(upstream.provider);
@@ -407,11 +410,6 @@ export class ProxyServerManager {
       }
 
       for (const [routeKey, route] of Object.entries(routes)) {
-        const recoveryTimer = startWeightRecovery(routeKey, route.upstreams, route.dynamicWeight);
-        if (recoveryTimer) {
-          inst.routeRecoveryTimers.set(routeKey, recoveryTimer);
-        }
-
         const checkTimer = startWeightCheck(routeKey, route.upstreams, route.dynamicWeight);
         if (checkTimer) {
           inst.routeCheckTimers.set(routeKey, checkTimer);
@@ -465,11 +463,6 @@ export class ProxyServerManager {
       });
     }
 
-    for (const [routeKey] of inst.routeRecoveryTimers) {
-      stopWeightRecovery(routeKey);
-    }
-    inst.routeRecoveryTimers.clear();
-
     for (const [routeKey] of inst.routeCheckTimers) {
       stopWeightCheck(routeKey);
     }
@@ -504,11 +497,6 @@ export class ProxyServerManager {
           logger.error(`[${name}] Failed to persist time slot data on stop: ${err.message}`);
         });
       }
-
-      for (const [routeKey] of inst.routeRecoveryTimers) {
-        stopWeightRecovery(routeKey);
-      }
-      inst.routeRecoveryTimers.clear();
 
       for (const [routeKey] of inst.routeCheckTimers) {
         stopWeightCheck(routeKey);

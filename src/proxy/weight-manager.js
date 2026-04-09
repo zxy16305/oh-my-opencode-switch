@@ -43,6 +43,8 @@ function getDynamicWeight(state, routeKey, upstreamId, initialWeight = 100) {
       lastStaticWeight: initialWeight,
       lastAdjustment: Date.now(),
       requestCount: 0,
+      consecutiveSuccessCount: 0,
+      currentWeightLevel: 'normal',
     });
     return initialWeight;
   }
@@ -79,8 +81,119 @@ function setDynamicWeight(state, routeKey, upstreamId, weight) {
       currentWeight: weight,
       lastAdjustment: Date.now(),
       requestCount: 0,
+      consecutiveSuccessCount: 0,
+      currentWeightLevel: 'normal',
     });
   }
+}
+
+function getConsecutiveSuccessCount(state, routeKey, upstreamId) {
+  const key = `${routeKey}:${upstreamId}`;
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  return weightState?.consecutiveSuccessCount ?? 0;
+}
+
+function setConsecutiveSuccessCount(state, routeKey, upstreamId, count) {
+  const key = `${routeKey}:${upstreamId}`;
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  if (weightState) {
+    weightState.consecutiveSuccessCount = count;
+  } else {
+    dynamicWeightState.set(key, {
+      currentWeight: 100,
+      lastAdjustment: Date.now(),
+      requestCount: 0,
+      consecutiveSuccessCount: count,
+      currentWeightLevel: 'normal',
+    });
+  }
+}
+
+function getCurrentWeightLevel(state, routeKey, upstreamId, configuredWeight = 100) {
+  const key = `${routeKey}:${upstreamId}`;
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  if (!weightState) return 'normal';
+  const ratio = weightState.currentWeight / configuredWeight;
+  if (ratio <= 0.075) return 'min';
+  if (ratio <= 0.35) return 'medium';
+  if (ratio <= 0.75) return 'half';
+  return 'normal';
+}
+
+function setCurrentWeightLevel(state, routeKey, upstreamId, level) {
+  const key = `${routeKey}:${upstreamId}`;
+  const dynamicWeightState = state.getDynamicWeightState();
+  const weightState = dynamicWeightState.get(key);
+  if (weightState) {
+    weightState.currentWeightLevel = level;
+  } else {
+    dynamicWeightState.set(key, {
+      currentWeight: 100,
+      lastAdjustment: Date.now(),
+      requestCount: 0,
+      consecutiveSuccessCount: 0,
+      currentWeightLevel: level,
+    });
+  }
+}
+
+/**
+ * Increment consecutive success count and trigger recovery at threshold
+ * @param {StateManager} state - State manager instance
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ * @param {number} configuredWeight - Original configured weight for recovery calculation
+ */
+function incrementSuccessCount(state, routeKey, upstreamId, configuredWeight = 100) {
+  adjustWeightForSuccess(state, routeKey, upstreamId, configuredWeight);
+}
+
+/**
+ * Reset consecutive success count to 0
+ * @param {StateManager} state - State manager instance
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ */
+function resetSuccessCount(state, routeKey, upstreamId) {
+  setConsecutiveSuccessCount(state, routeKey, upstreamId, 0);
+}
+
+/**
+ * Staircase weight recovery: increments count, promotes one level at threshold (5)
+ * min(5%) → medium(20%) → half(50%) → normal(100%)
+ * @param {StateManager} state - State manager instance
+ * @param {string} routeKey
+ * @param {string} upstreamId
+ * @param {number} configuredWeight - Original configured weight
+ */
+function adjustWeightForSuccess(state, routeKey, upstreamId, configuredWeight) {
+  const currentCount = getConsecutiveSuccessCount(state, routeKey, upstreamId);
+  const newCount = currentCount + 1;
+  setConsecutiveSuccessCount(state, routeKey, upstreamId, newCount);
+
+  if (newCount < 5) return;
+
+  const level = getCurrentWeightLevel(state, routeKey, upstreamId, configuredWeight);
+  let newWeight, newLevel;
+  if (level === 'min') {
+    newWeight = configuredWeight * 0.2;
+    newLevel = 'medium';
+  } else if (level === 'medium') {
+    newWeight = configuredWeight * 0.5;
+    newLevel = 'half';
+  } else if (level === 'half') {
+    newWeight = configuredWeight;
+    newLevel = 'normal';
+  } else {
+    setConsecutiveSuccessCount(state, routeKey, upstreamId, 0);
+    return;
+  }
+  setDynamicWeight(state, routeKey, upstreamId, newWeight);
+  setCurrentWeightLevel(state, routeKey, upstreamId, newLevel);
+  setConsecutiveSuccessCount(state, routeKey, upstreamId, 0);
 }
 
 /**
@@ -184,21 +297,22 @@ function adjustWeightForError(state, routeKey, upstreams, config, errorData) {
 
     // Apply step penalty based on error rate thresholds
     let newWeight;
+    let weightLevel;
     if (errorRatePercent >= 30) {
-      // Severe error rate: reduce to 5% of original
       newWeight = Math.max(minWeight, configuredWeight * 0.05);
+      weightLevel = 'min';
     } else if (errorRatePercent >= 15) {
-      // High error rate: reduce to 20% of original
       newWeight = Math.max(minWeight, configuredWeight * 0.2);
+      weightLevel = 'medium';
     } else if (errorRatePercent >= 5) {
-      // Moderate error rate: reduce to 50% of original
       newWeight = Math.max(minWeight, configuredWeight * 0.5);
+      weightLevel = 'half';
     } else {
-      // Error rate below threshold: no adjustment
       continue;
     }
 
     setDynamicWeight(state, routeKey, upstream.id, newWeight);
+    setCurrentWeightLevel(state, routeKey, upstream.id, weightLevel);
   }
 }
 
@@ -316,7 +430,7 @@ function startWeightCheck(state, routeKey, upstreams, config) {
         adjustWeightForError(state, routeKey, upstreams, config, errorData);
       }
     } catch (_error) {
-      // no-empty eslint exception
+      // eslint-disable-line no-empty
     }
   }, checkInterval * 1000);
 
@@ -343,6 +457,13 @@ export {
   DEFAULT_DYNAMIC_WEIGHT_CONFIG,
   getDynamicWeight,
   setDynamicWeight,
+  getConsecutiveSuccessCount,
+  setConsecutiveSuccessCount,
+  getCurrentWeightLevel,
+  setCurrentWeightLevel,
+  incrementSuccessCount,
+  resetSuccessCount,
+  adjustWeightForSuccess,
   adjustWeightForLatency,
   adjustWeightForError,
   startWeightRecovery,

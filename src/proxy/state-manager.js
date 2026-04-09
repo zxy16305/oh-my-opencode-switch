@@ -26,7 +26,7 @@ export class StateManager {
     this.roundRobinCounters = new Map();
 
     // Dynamic weight state per route:upstream
-    /** @type {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>} */
+    /** @type {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' }>} */
     this.dynamicWeightState = new Map();
 
     // Recovery timers per route
@@ -92,10 +92,21 @@ export class StateManager {
 
   /**
    * Get the dynamic weight state map
-   * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
+   * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' }>}
    */
   getDynamicWeightState() {
     return this.dynamicWeightState;
+  }
+
+  /**
+   * Get dynamic weight state for a specific upstream
+   * @param {string} routeKey - Route identifier
+   * @param {string} upstreamId - Upstream identifier
+   * @returns {{ currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' } | undefined}
+   */
+  getDynamicWeightStateFor(routeKey, upstreamId) {
+    const key = `${routeKey}:${upstreamId}`;
+    return this.dynamicWeightState.get(key);
   }
 
   /**
@@ -311,6 +322,10 @@ export function getRoundRobinCounters() {
 
 export function getDynamicWeightState() {
   return stateManager.getDynamicWeightState();
+}
+
+export function getDynamicWeightStateFor(routeKey, upstreamId) {
+  return stateManager.getDynamicWeightStateFor(routeKey, upstreamId);
 }
 
 export function getRecoveryTimers() {

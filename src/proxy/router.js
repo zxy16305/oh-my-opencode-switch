@@ -18,7 +18,17 @@ import {
   stopWeightRecovery as _stopWeightRecovery,
   startWeightCheck as _startWeightCheck,
   stopWeightCheck as _stopWeightCheck,
+  getConsecutiveSuccessCount as _getConsecutiveSuccessCount,
+  setConsecutiveSuccessCount as _setConsecutiveSuccessCount,
+  getCurrentWeightLevel as _getCurrentWeightLevel,
+  setCurrentWeightLevel as _setCurrentWeightLevel,
+  incrementSuccessCount as _incrementSuccessCount,
+  resetSuccessCount as _resetSuccessCount,
+  adjustWeightForSuccess as _adjustWeightForSuccess,
 } from './weight-manager.js';
+
+// Import state-manager functions
+import { getDynamicWeightStateFor as _getDynamicWeightStateFor } from './state-manager.js';
 
 // Import internal versions of session-manager functions (with _ prefix)
 import {
@@ -129,6 +139,41 @@ export function getDynamicWeight(routeKey, upstreamId, initialWeight = 100, stat
 export function setDynamicWeight(routeKey, upstreamId, weight, state = null) {
   const sm = state ?? stateManager;
   _setDynamicWeight(sm, routeKey, upstreamId, weight);
+}
+
+export function getConsecutiveSuccessCount(routeKey, upstreamId, state = null) {
+  const sm = state ?? stateManager;
+  return _getConsecutiveSuccessCount(sm, routeKey, upstreamId);
+}
+
+export function setConsecutiveSuccessCount(routeKey, upstreamId, count, state = null) {
+  const sm = state ?? stateManager;
+  _setConsecutiveSuccessCount(sm, routeKey, upstreamId, count);
+}
+
+export function getCurrentWeightLevel(routeKey, upstreamId, configuredWeight = 100, state = null) {
+  const sm = state ?? stateManager;
+  return _getCurrentWeightLevel(sm, routeKey, upstreamId, configuredWeight);
+}
+
+export function setCurrentWeightLevel(routeKey, upstreamId, level, state = null) {
+  const sm = state ?? stateManager;
+  _setCurrentWeightLevel(sm, routeKey, upstreamId, level);
+}
+
+export function incrementSuccessCount(routeKey, upstreamId, configuredWeight = 100, state = null) {
+  const sm = state ?? stateManager;
+  _incrementSuccessCount(sm, routeKey, upstreamId, configuredWeight);
+}
+
+export function resetSuccessCount(routeKey, upstreamId, state = null) {
+  const sm = state ?? stateManager;
+  _resetSuccessCount(sm, routeKey, upstreamId);
+}
+
+export function adjustWeightForSuccess(routeKey, upstreamId, configuredWeight, state = null) {
+  const sm = state ?? stateManager;
+  _adjustWeightForSuccess(sm, routeKey, upstreamId, configuredWeight);
 }
 
 /**
@@ -389,12 +434,20 @@ export function selectUpstreamWeighted(upstreams, _state = null) {
 }
 
 /**
- * Get dynamic weight state (wrapper with optional state param)
+ * Get dynamic weight state
+ * @param {string} [routeKey] - Route identifier (optional, returns specific upstream state)
+ * @param {string} [upstreamId] - Upstream identifier (optional, returns specific upstream state)
  * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number }>}
+ * @returns {Map|object|undefined} Weight state map, or specific upstream state if routeKey/upstreamId provided
  */
-export function getDynamicWeightState(state = null) {
+export function getDynamicWeightState(routeKey, upstreamId, state = null) {
   const sm = state ?? stateManager;
+  if (routeKey !== undefined && upstreamId !== undefined) {
+    return sm.getDynamicWeightStateFor(routeKey, upstreamId);
+  }
+  if (routeKey?.getDynamicWeightState) {
+    return routeKey.getDynamicWeightState();
+  }
   return sm.getDynamicWeightState();
 }
 

@@ -10,7 +10,7 @@ import { ProxyServerManager } from '../proxy/server-manager.js';
 
 const serverManager = new ProxyServerManager();
 
-const timeSlotCalculator = createTimeSlotWeightCalculator();
+export const timeSlotCalculator = createTimeSlotWeightCalculator();
 
 export async function startAction(options = {}) {
   await serverManager.start(options);

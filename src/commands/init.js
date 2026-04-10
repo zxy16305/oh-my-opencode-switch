@@ -1,7 +1,6 @@
 import path from 'path';
 import {
   getOosDir,
-  getSourceConfigPath,
   getProfilesDir,
   getProfilesMetadataPath,
   getTemplatePath,
@@ -45,7 +44,6 @@ export async function initAction(_options) {
   const oosDir = getOosDir();
   const profilesDir = getProfilesDir();
   const profilesMetaPath = getProfilesMetadataPath();
-  const sourceConfigPath = getSourceConfigPath();
 
   // Check if already initialized
   const metaExists = await exists(profilesMetaPath);

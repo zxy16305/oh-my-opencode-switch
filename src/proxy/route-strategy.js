@@ -144,9 +144,19 @@ export function selectUpstreamRandom(upstreams) {
 /**
  * Select upstream using weighted strategy
  * @param {Upstream[]} upstreams - Array of available upstreams with optional weights
+ * @param {StateManager} [state] - Optional state manager instance
+ * @param {string} [routeKey] - Route key for weight calculations
+ * @param {object} [dynamicWeightConfig] - Optional dynamic weight config
+ * @param {object} [timeSlotWeightConfig] - Optional time slot weight config
  * @returns {Upstream} Selected upstream
  */
-export function selectUpstreamWeighted(upstreams) {
+export function selectUpstreamWeighted(
+  upstreams,
+  state = null,
+  routeKey = null,
+  dynamicWeightConfig = null,
+  timeSlotWeightConfig = null
+) {
   if (!upstreams || upstreams.length === 0) {
     throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
   }
@@ -155,17 +165,39 @@ export function selectUpstreamWeighted(upstreams) {
     return upstreams[0];
   }
 
-  const totalWeight = upstreams.reduce((sum, u) => sum + (u.weight ?? 100), 0);
+  const sm = getState(state);
+
+  const upstreamsWithWeights = upstreams.map((upstream) => {
+    const staticWeight = upstream.weight ?? 100;
+    const effectiveWeight = calculateEffectiveWeight({
+      sm,
+      routeKey,
+      upstream,
+      staticWeight,
+      dynamicWeightConfig,
+      timeSlotWeightConfig,
+      upstreams,
+    });
+    return { upstream, effectiveWeight };
+  });
+
+  const validUpstreams = upstreamsWithWeights.filter((u) => u.effectiveWeight > 0);
+
+  if (validUpstreams.length === 0) {
+    throw new RouterError('No valid upstreams available', 'NO_VALID_UPSTREAMS');
+  }
+
+  const totalWeight = validUpstreams.reduce((sum, u) => sum + u.effectiveWeight, 0);
   let random = Math.random() * totalWeight;
 
-  for (const upstream of upstreams) {
-    random -= upstream.weight ?? 100;
+  for (const { upstream, effectiveWeight } of validUpstreams) {
+    random -= effectiveWeight;
     if (random <= 0) {
       return upstream;
     }
   }
 
-  return upstreams[upstreams.length - 1];
+  return validUpstreams[validUpstreams.length - 1].upstream;
 }
 
 /**

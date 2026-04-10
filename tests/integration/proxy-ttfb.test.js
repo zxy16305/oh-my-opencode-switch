@@ -11,12 +11,10 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import { createServer, shutdownServer, forwardRequest } from '../../src/proxy/server.js';
 import { routeRequest } from '../../src/proxy/router.js';
-import { logAccess, readLogs, clearLogs, getLogPath } from '../../src/utils/access-log.js';
+import { logAccess, readLogs } from '../../src/utils/access-log.js';
 import { generateStats, parseLogLine, parseTimeRange } from '../../src/utils/stats.js';
 import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 

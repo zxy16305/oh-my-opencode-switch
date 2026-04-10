@@ -4,6 +4,7 @@
  */
 
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
+import { getTimeSlotType } from '../utils/time-slot-detector.js';
 import { getDynamicWeight as _getDynamicWeight } from './weight-manager.js';
 import {
   getErrorRate as _getErrorRate,
@@ -46,6 +47,21 @@ export function calculateEffectiveWeight(params) {
   } = params;
 
   let effectiveWeight = staticWeight;
+
+  // NEW: Time-slot static weight configuration (cost control)
+  // This is DIFFERENT from the existing timeSlotWeightConfig (error-rate dynamic)
+  // upstream.timeSlotWeights is at upstream level, timeSlotWeightConfig is at route level
+  const timeSlotWeights = upstream?.timeSlotWeights;
+  if (timeSlotWeights) {
+    const currentHour = new Date().getHours();
+    const slotType = getTimeSlotType(currentHour); // 'high', 'medium', 'low'
+    const slotWeight = timeSlotWeights[slotType];
+    if (slotWeight !== undefined) {
+      // Slot-specific weight REPLACES upstream.weight (not multiplier)
+      effectiveWeight = slotWeight;
+    }
+    // If slotType not in config (partial config), keep effectiveWeight as-is (upstream.weight)
+  }
 
   // Apply time slot weight if enabled (before dynamic weight)
   if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {

@@ -23,7 +23,11 @@
     "lb-mixed": {
       "strategy": "round-robin",
       "upstreams": [
-        { "provider": "ali", "model": "glm-4.7" },
+        {
+          "provider": "ali",
+          "model": "glm-4.7",
+          "timeSlotWeights": { "high": 50, "medium": 100, "low": 150 }
+        },
         { "provider": "baidu", "model": "qianfan-code-latest" }
       ]
     }

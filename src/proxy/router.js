@@ -662,7 +662,13 @@ export function routeRequest(model, config, request, body = null, state = null) 
       selectedUpstream = selectUpstreamRandom(upstreams, sm);
       break;
     case 'weighted':
-      selectedUpstream = selectUpstreamWeighted(upstreams, sm);
+      selectedUpstream = selectUpstreamWeighted(
+        upstreams,
+        sm,
+        model,
+        dynamicWeight,
+        timeSlotWeight
+      );
       break;
     default:
       selectedUpstream = selectUpstreamRoundRobin(upstreams, model, sm);

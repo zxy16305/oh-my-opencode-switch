@@ -70,6 +70,28 @@
           "type": "object",
           "additionalProperties": true,
           "description": "Additional metadata for this upstream"
+        },
+        "timeSlotWeights": {
+          "type": "object",
+          "description": "Time-slot weight configuration for cost control. When configured, replaces upstream.weight based on current time slot.",
+          "properties": {
+            "high": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Weight for high load periods (10-11, 13-17)"
+            },
+            "medium": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Weight for medium load periods (8-9, 12, 18-20)"
+            },
+            "low": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Weight for low load periods (21-23, 0-7)"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": ["provider", "model"],

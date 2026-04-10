@@ -16,6 +16,14 @@ export const upstreamSchema = z.object({
   apiKey: z.string().optional(),
   weight: z.number().int().min(1).max(1000).optional().default(100),
   metadata: z.record(z.unknown()).optional(),
+  timeSlotWeights: z
+    .object({
+      high: z.number().min(0).optional(),
+      medium: z.number().min(0).optional(),
+      low: z.number().min(0).optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 /**

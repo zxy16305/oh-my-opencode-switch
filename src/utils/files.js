@@ -70,11 +70,13 @@ export async function writeJsonWithComments(filePath, data) {
     let existingContent = null;
     try {
       existingContent = await fs.readFile(filePath, 'utf8');
-    } catch {}
+    } catch {
+      // File doesn't exist or can't be read - will create new
+    }
 
     let content;
     if (existingContent) {
-      const parsed = commentJson.parse(existingContent, null, true);
+      commentJson.parse(existingContent, null, true);
       content = commentJson.stringify(data, null, 2);
     } else {
       content = commentJson.stringify(data, null, 2);

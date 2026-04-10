@@ -18,8 +18,6 @@ import {
   adjustWeightForSuccess,
 } from '../../../src/proxy/router.js';
 
-import { makeUpstream } from '../../helpers/proxy-fixtures.js';
-
 // ===========================================================================
 // Tests for consecutive success count and weight recovery
 // ===========================================================================
@@ -315,7 +313,6 @@ describe('Weight Recovery – state structure', () => {
   test('dynamicWeightState maintains other state fields', () => {
     const routeKey = 'route1';
     const upstreamId = 'upstream1';
-    const initialWeight = 100;
 
     // Set weight (creates state)
     setDynamicWeight(routeKey, upstreamId, 50);
@@ -402,7 +399,6 @@ describe('Step Recovery – adjustWeightForSuccess', () => {
 
   test('5 consecutive successes at level-min recover to level-medium (20%)', () => {
     const configuredWeight = 100;
-    const upstream = makeUpstream({ id: 'test', weight: configuredWeight });
 
     // Start at level-min (5%)
     setDynamicWeight('route1', 'test', configuredWeight * 0.05);
@@ -420,7 +416,6 @@ describe('Step Recovery – adjustWeightForSuccess', () => {
 
   test('5 consecutive successes at level-medium recover to level-half (50%)', () => {
     const configuredWeight = 100;
-    const upstream = makeUpstream({ id: 'test', weight: configuredWeight });
 
     // Start at level-medium (20%)
     setDynamicWeight('route1', 'test', configuredWeight * 0.2);
@@ -438,7 +433,6 @@ describe('Step Recovery – adjustWeightForSuccess', () => {
 
   test('5 consecutive successes at level-half recover to level-normal (100%)', () => {
     const configuredWeight = 100;
-    const upstream = makeUpstream({ id: 'test', weight: configuredWeight });
 
     // Start at level-half (50%)
     setDynamicWeight('route1', 'test', configuredWeight * 0.5);
@@ -505,7 +499,6 @@ describe('Step Recovery – adjustWeightForSuccess', () => {
 
   test('custom weight (200) recovers proportionally', () => {
     const configuredWeight = 200;
-    const upstream = makeUpstream({ id: 'test', weight: configuredWeight });
 
     // Start at level-min (5% of 200 = 10)
     setDynamicWeight('route1', 'test', configuredWeight * 0.05);

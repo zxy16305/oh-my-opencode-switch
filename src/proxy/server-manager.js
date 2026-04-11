@@ -1,4 +1,4 @@
-import { createServer, shutdownServer, isPortAvailable } from './server.js';
+import { createServer, shutdownServer, isPortAvailable, forwardRequest } from './server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
@@ -6,24 +6,17 @@ import {
   recordUpstreamError,
   recordUpstreamLatency,
   recordUpstreamStats,
-  adjustWeightForError,
-  adjustWeightForLatency,
-  incrementSuccessCount,
-  resetSuccessCount,
-  startWeightCheck,
-  stopWeightCheck,
+  weightManager,
 } from './router.js';
-import { forwardRequest } from './server.js';
 import { CircuitBreaker } from './circuitbreaker.js';
 import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
 import { exists } from '../utils/files.js';
 import { logAccess } from '../utils/access-log.js';
 import { diffProxyConfigs } from '../utils/config-diff.js';
-import { getLatencyAvg } from './stats-collector.js';
-import { stateManager } from './state-manager.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
+import { calculateErrorAdjustment } from './weight/index.js';
 import {
   handleDebug,
   handleStats,
@@ -47,9 +40,10 @@ function createInstanceState(config = {}) {
     circuitBreaker: null,
     periodicWeightAdjustTimer: null,
     timeSlotSaveTimer: null,
-    routeCheckTimers: new Map(),
     sseClients: new Set(),
     timeSlotCalculator: createTimeSlotWeightCalculator({ config: config.timeSlotWeight || {} }),
+    timeSlotCheckTimer: null,
+    errorRateCheckTimer: null,
   };
 }
 
@@ -132,6 +126,7 @@ export class ProxyServerManager {
     }
 
     inst._currentRoutes = routes;
+    weightManager.initRoutes(routes);
 
     inst.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
 
@@ -310,25 +305,14 @@ export class ProxyServerManager {
               if (proxyRes.statusCode >= 400) {
                 circuitBreaker.recordFailure(upstream.id);
                 recordUpstreamError(model, upstream.id, proxyRes.statusCode);
-                const errorData = new Map([[upstream.id, [proxyRes.statusCode]]]);
-                adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
-                resetSuccessCount(model, upstream.id);
+                weightManager.recordError(model, upstream.id, proxyRes.statusCode);
                 if (config.timeSlotWeight?.enabled) {
                   timeSlotCalculator.recordFailure(upstream.provider);
                 }
               } else {
                 circuitBreaker.recordSuccess(upstream.id);
-                const configuredWeight = upstream.weight ?? 100;
-                incrementSuccessCount(model, upstream.id, configuredWeight);
                 recordUpstreamLatency(model, upstream.id, Date.now() - startTime);
-                const latencyData = new Map();
-                for (const u of route.upstreams) {
-                  const avg = getLatencyAvg(stateManager, routeKey, u.id);
-                  if (avg > 0) {
-                    latencyData.set(u.id, { avgDuration: avg });
-                  }
-                }
-                adjustWeightForLatency(model, route.upstreams, route.dynamicWeight, latencyData);
+                weightManager.recordSuccess(model, upstream.id, Date.now() - startTime);
                 if (config.timeSlotWeight?.enabled) {
                   timeSlotCalculator.recordSuccess(upstream.provider);
                 }
@@ -355,9 +339,7 @@ export class ProxyServerManager {
             onError: (err) => {
               circuitBreaker.recordFailure(upstream.id);
               recordUpstreamError(model, upstream.id, 502);
-              const errorData = new Map([[upstream.id, [502]]]);
-              adjustWeightForError(model, route.upstreams, route.dynamicWeight, errorData);
-              resetSuccessCount(model, upstream.id);
+              weightManager.recordError(model, upstream.id, 502);
               logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
               if (config.timeSlotWeight?.enabled) {
                 timeSlotCalculator.recordFailure(upstream.provider);
@@ -409,13 +391,6 @@ export class ProxyServerManager {
         logger.warn('No routes configured');
       }
 
-      for (const [routeKey, route] of Object.entries(routes)) {
-        const checkTimer = startWeightCheck(routeKey, route.upstreams, route.dynamicWeight);
-        if (checkTimer) {
-          inst.routeCheckTimers.set(routeKey, checkTimer);
-        }
-      }
-
       if (config.timeSlotWeight?.enabled) {
         await inst.timeSlotCalculator.load();
         const HOUR_MS = 60 * 60 * 1000;
@@ -425,6 +400,32 @@ export class ProxyServerManager {
           });
         }, HOUR_MS);
       }
+
+      const timeSlotCheckTimer = setInterval(() => {
+        weightManager.checkTimeSlotChange(routes);
+      }, 60000);
+      timeSlotCheckTimer.unref();
+      inst.timeSlotCheckTimer = timeSlotCheckTimer;
+
+      const errorRateCheckTimer = setInterval(() => {
+        for (const [routeKey, route] of Object.entries(routes)) {
+          for (const upstream of route.upstreams) {
+            const state = weightManager.getState(routeKey, upstream.id);
+            if (state && state.errors.length > 0) {
+              const adjustment = calculateErrorAdjustment(state, {
+                errorWindowMs: weightManager.config.errorWindowMs,
+                minWeight: weightManager.config.minWeight,
+              });
+              if (adjustment) {
+                state.currentWeight = adjustment.newWeight;
+                state.level = adjustment.level;
+              }
+            }
+          }
+        }
+      }, 10000);
+      errorRateCheckTimer.unref();
+      inst.errorRateCheckTimer = errorRateCheckTimer;
 
       this.setupGracefulShutdown(config, instanceName);
     } catch (error) {
@@ -453,6 +454,16 @@ export class ProxyServerManager {
       inst.periodicWeightAdjustTimer = null;
     }
 
+    if (inst.timeSlotCheckTimer) {
+      clearInterval(inst.timeSlotCheckTimer);
+      inst.timeSlotCheckTimer = null;
+    }
+
+    if (inst.errorRateCheckTimer) {
+      clearInterval(inst.errorRateCheckTimer);
+      inst.errorRateCheckTimer = null;
+    }
+
     if (inst.timeSlotSaveTimer) {
       clearInterval(inst.timeSlotSaveTimer);
       inst.timeSlotSaveTimer = null;
@@ -462,11 +473,6 @@ export class ProxyServerManager {
         );
       });
     }
-
-    for (const [routeKey] of inst.routeCheckTimers) {
-      stopWeightCheck(routeKey);
-    }
-    inst.routeCheckTimers.clear();
 
     if (inst.server) {
       await shutdownServer(inst.server);
@@ -490,6 +496,16 @@ export class ProxyServerManager {
         inst.periodicWeightAdjustTimer = null;
       }
 
+      if (inst.timeSlotCheckTimer) {
+        clearInterval(inst.timeSlotCheckTimer);
+        inst.timeSlotCheckTimer = null;
+      }
+
+      if (inst.errorRateCheckTimer) {
+        clearInterval(inst.errorRateCheckTimer);
+        inst.errorRateCheckTimer = null;
+      }
+
       if (inst.timeSlotSaveTimer) {
         clearInterval(inst.timeSlotSaveTimer);
         inst.timeSlotSaveTimer = null;
@@ -497,11 +513,6 @@ export class ProxyServerManager {
           logger.error(`[${name}] Failed to persist time slot data on stop: ${err.message}`);
         });
       }
-
-      for (const [routeKey] of inst.routeCheckTimers) {
-        stopWeightCheck(routeKey);
-      }
-      inst.routeCheckTimers.clear();
 
       await shutdownServer(inst.server);
       logger.success(`[${name}] Proxy server stopped (was on port ${inst.port})`);

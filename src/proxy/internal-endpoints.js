@@ -1,11 +1,12 @@
 import {
-  getDynamicWeightState,
   getUpstreamSessionCounts,
   getUpstreamRequestCounts,
   getUpstreamSlidingWindowCounts,
   getSessionUpstreamMap,
   getUpstreamStats,
+  weightManager,
 } from './router.js';
+import { getConfiguredWeight } from './weight-calculator.js';
 import { logger } from '../utils/logger.js';
 import { logBuffer } from '../utils/log-buffer.js';
 import { onLogAdded } from '../utils/access-log.js';
@@ -66,7 +67,7 @@ export function handleDebug(req, res, routes, circuitBreaker) {
     return;
   }
 
-  const weightState = getDynamicWeightState();
+  const weightState = weightManager.getAllStates();
   const sessionCounts = getUpstreamSessionCounts();
   const circuitStates = circuitBreaker?.getStates?.() || new Map();
 
@@ -85,11 +86,12 @@ export function handleDebug(req, res, routes, circuitBreaker) {
         const routeSessions = sessionCounts.get(routeName);
         const sessionCount = routeSessions?.get(upstream.id) ?? 0;
 
+        const wmState = weightManager?.getState(routeName, upstream.id);
         return {
           id: upstream.id,
           provider: upstream.provider,
           model: upstream.model,
-          currentWeight: weightEntry?.currentWeight ?? 100,
+          currentWeight: wmState?.currentWeight ?? weightEntry?.currentWeight ?? 100,
           sessionCount,
         };
       }),
@@ -126,7 +128,7 @@ export function handleStats(req, res, routes, _circuitBreaker) {
   const requestCounts = getUpstreamRequestCounts();
   const slidingWindowCounts = getUpstreamSlidingWindowCounts();
   const sessionCounts = getUpstreamSessionCounts();
-  const weightState = getDynamicWeightState();
+  const weightState = weightManager.getAllStates();
   const sessionMap = getSessionUpstreamMap();
 
   const sessions = {};
@@ -161,6 +163,7 @@ export function handleStats(req, res, routes, _circuitBreaker) {
           ? routeSlidingCounts.filter((entry) => now - entry.timestamp <= windowMs).length
           : 0;
 
+        const wmState = weightManager?.getState(routeName, upstream.id);
         return {
           id: upstream.id,
           provider: upstream.provider,
@@ -176,8 +179,9 @@ export function handleStats(req, res, routes, _circuitBreaker) {
           durationP95: stats.durationP95,
           durationP99: stats.durationP99,
           sampleCount: stats.sampleCount,
-          currentWeight: weightEntry?.currentWeight ?? upstream.weight ?? 100,
-          configuredWeight: upstream.weight ?? 100,
+          currentWeight:
+            wmState?.currentWeight ?? weightEntry?.currentWeight ?? getConfiguredWeight(upstream),
+          configuredWeight: wmState?.configuredWeight ?? getConfiguredWeight(upstream),
         };
       }),
     };

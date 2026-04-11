@@ -5,8 +5,7 @@
 
 /**
  * StateManager class that manages all instance-level state for the proxy.
- * Handles session tracking, load balancing counters, circuit breaker state,
- * recovery timers, and statistics collection.
+ * Handles session tracking, load balancing counters, and statistics collection.
  */
 export class StateManager {
   /**
@@ -24,18 +23,6 @@ export class StateManager {
     // Round-robin counters per route
     /** @type {Map<string, number>} */
     this.roundRobinCounters = new Map();
-
-    // Dynamic weight state per route:upstream
-    /** @type {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' }>} */
-    this.dynamicWeightState = new Map();
-
-    // Recovery timers per route
-    /** @type {Map<string, NodeJS.Timeout>} */
-    this.recoveryTimers = new Map();
-
-    // Weight check timers per route
-    /** @type {Map<string, NodeJS.Timeout>} */
-    this.checkTimers = new Map();
 
     // Statistics state per route:upstream
     /** @type {Map<string, { ttfbSamples: number[], durationSamples: number[], errorCount: number }>} */
@@ -88,41 +75,6 @@ export class StateManager {
    */
   getRoundRobinCounters() {
     return this.roundRobinCounters;
-  }
-
-  /**
-   * Get the dynamic weight state map
-   * @returns {Map<string, { currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' }>}
-   */
-  getDynamicWeightState() {
-    return this.dynamicWeightState;
-  }
-
-  /**
-   * Get dynamic weight state for a specific upstream
-   * @param {string} routeKey - Route identifier
-   * @param {string} upstreamId - Upstream identifier
-   * @returns {{ currentWeight: number, lastAdjustment: number, requestCount: number, consecutiveSuccessCount: number, currentWeightLevel: 'min' | 'medium' | 'half' | 'normal' } | undefined}
-   */
-  getDynamicWeightStateFor(routeKey, upstreamId) {
-    const key = `${routeKey}:${upstreamId}`;
-    return this.dynamicWeightState.get(key);
-  }
-
-  /**
-   * Get the recovery timers map
-   * @returns {Map<string, NodeJS.Timeout>}
-   */
-  getRecoveryTimers() {
-    return this.recoveryTimers;
-  }
-
-  /**
-   * Get the check timers map
-   * @returns {Map<string, NodeJS.Timeout>}
-   */
-  getCheckTimers() {
-    return this.checkTimers;
   }
 
   /**
@@ -198,48 +150,6 @@ export class StateManager {
   }
 
   /**
-   * Add a recovery timer for a route
-   * @param {string} routeKey - Route identifier
-   * @param {NodeJS.Timeout} timer - Timer instance
-   */
-  addRecoveryTimer(routeKey, timer) {
-    this.recoveryTimers.set(routeKey, timer);
-  }
-
-  /**
-   * Remove and clear a recovery timer for a route
-   * @param {string} routeKey - Route identifier
-   */
-  removeRecoveryTimer(routeKey) {
-    const timer = this.recoveryTimers.get(routeKey);
-    if (timer) {
-      clearTimeout(timer);
-      this.recoveryTimers.delete(routeKey);
-    }
-  }
-
-  /**
-   * Add a check timer for a route
-   * @param {string} routeKey - Route identifier
-   * @param {NodeJS.Timeout} timer - Timer instance
-   */
-  addCheckTimer(routeKey, timer) {
-    this.checkTimers.set(routeKey, timer);
-  }
-
-  /**
-   * Remove and clear a check timer for a route
-   * @param {string} routeKey - Route identifier
-   */
-  removeCheckTimer(routeKey) {
-    const timer = this.checkTimers.get(routeKey);
-    if (timer) {
-      clearInterval(timer);
-      this.checkTimers.delete(routeKey);
-    }
-  }
-
-  /**
    * Reset all state to initial values
    * Clears all maps and stops all timers/intervals
    */
@@ -248,24 +158,11 @@ export class StateManager {
     this.sessionMap.clear();
     this.upstreamSessionCounts.clear();
     this.roundRobinCounters.clear();
-    this.dynamicWeightState.clear();
     this.statsState.clear();
     this.errorState.clear();
     this.latencyState.clear();
     this.upstreamRequestCounts.clear();
     this.upstreamSlidingWindowCounts.clear();
-
-    // Clear and stop all recovery timers
-    for (const timer of this.recoveryTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.recoveryTimers.clear();
-
-    // Clear and stop all check timers
-    for (const timer of this.checkTimers.values()) {
-      clearInterval(timer);
-    }
-    this.checkTimers.clear();
 
     // Clear and stop cleanup interval
     if (this.cleanupInterval) {
@@ -318,22 +215,6 @@ export function getUpstreamSessionCounts() {
 
 export function getRoundRobinCounters() {
   return stateManager.getRoundRobinCounters();
-}
-
-export function getDynamicWeightState() {
-  return stateManager.getDynamicWeightState();
-}
-
-export function getDynamicWeightStateFor(routeKey, upstreamId) {
-  return stateManager.getDynamicWeightStateFor(routeKey, upstreamId);
-}
-
-export function getRecoveryTimers() {
-  return stateManager.getRecoveryTimers();
-}
-
-export function getCheckTimers() {
-  return stateManager.getCheckTimers();
 }
 
 export function getStatsState() {

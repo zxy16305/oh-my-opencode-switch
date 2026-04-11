@@ -8,28 +8,6 @@ import { RouterError } from './errors.js';
 import { stateManager } from './state-manager.js';
 import { routeSchema, routesConfigSchema } from './schemas.js';
 
-// Import internal versions of weight-manager functions (with _ prefix)
-import {
-  getDynamicWeight as _getDynamicWeight,
-  setDynamicWeight as _setDynamicWeight,
-  adjustWeightForLatency as _adjustWeightForLatency,
-  adjustWeightForError as _adjustWeightForError,
-  startWeightRecovery as _startWeightRecovery,
-  stopWeightRecovery as _stopWeightRecovery,
-  startWeightCheck as _startWeightCheck,
-  stopWeightCheck as _stopWeightCheck,
-  getConsecutiveSuccessCount as _getConsecutiveSuccessCount,
-  setConsecutiveSuccessCount as _setConsecutiveSuccessCount,
-  getCurrentWeightLevel as _getCurrentWeightLevel,
-  setCurrentWeightLevel as _setCurrentWeightLevel,
-  incrementSuccessCount as _incrementSuccessCount,
-  resetSuccessCount as _resetSuccessCount,
-  adjustWeightForSuccess as _adjustWeightForSuccess,
-} from './weight-manager.js';
-
-// Import state-manager functions
-import { getDynamicWeightStateFor as _getDynamicWeightStateFor } from './state-manager.js';
-
 // Import internal versions of session-manager functions (with _ prefix)
 import {
   getSessionId as _getSessionId,
@@ -41,13 +19,13 @@ import {
 } from './session-manager.js';
 
 // Import internal versions of route-strategy functions (with _ prefix)
+import { selectLeastLoadedUpstream as _selectLeastLoadedUpstream } from './route-strategy.js';
 import {
-  selectLeastLoadedUpstream as _selectLeastLoadedUpstream,
-  selectUpstreamRoundRobin as _selectUpstreamRoundRobin,
-  selectUpstreamRandom as _selectUpstreamRandom,
-  selectUpstreamWeighted as _selectUpstreamWeighted,
-} from './route-strategy.js';
-import { calculateEffectiveWeight } from './weight-calculator.js';
+  calculateEffectiveWeight,
+  getConfiguredWeight,
+  setWeightManager,
+} from './weight-calculator.js';
+import { WeightManager } from './weight/index.js';
 
 // Import internal versions of stats-collector functions (with _ prefix)
 import {
@@ -68,6 +46,9 @@ import {
 
 // Import failover handler
 import { failoverStickySession as _failoverStickySession } from './failover-handler.js';
+
+const weightManager = new WeightManager();
+setWeightManager(weightManager);
 
 export { RouterError } from './errors.js';
 
@@ -114,138 +95,6 @@ export function getSessionId(request, body = null, _state = null) {
  */
 export function hashSessionToBackend(sessionId, backendCount, _state = null) {
   return _hashSessionToBackend(sessionId, backendCount);
-}
-
-/**
- * Wrapper for getDynamicWeight with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} [initialWeight=100] - Initial weight value
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {number} Current weight
- */
-export function getDynamicWeight(routeKey, upstreamId, initialWeight = 100, state = null) {
-  const sm = state ?? stateManager;
-  return _getDynamicWeight(sm, routeKey, upstreamId, initialWeight);
-}
-
-/**
- * Wrapper for setDynamicWeight with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} weight - Weight value to set
- * @param {StateManager} [state] - Optional state manager instance
- */
-export function setDynamicWeight(routeKey, upstreamId, weight, state = null) {
-  const sm = state ?? stateManager;
-  _setDynamicWeight(sm, routeKey, upstreamId, weight);
-}
-
-export function getConsecutiveSuccessCount(routeKey, upstreamId, state = null) {
-  const sm = state ?? stateManager;
-  return _getConsecutiveSuccessCount(sm, routeKey, upstreamId);
-}
-
-export function setConsecutiveSuccessCount(routeKey, upstreamId, count, state = null) {
-  const sm = state ?? stateManager;
-  _setConsecutiveSuccessCount(sm, routeKey, upstreamId, count);
-}
-
-export function getCurrentWeightLevel(routeKey, upstreamId, configuredWeight = 100, state = null) {
-  const sm = state ?? stateManager;
-  return _getCurrentWeightLevel(sm, routeKey, upstreamId, configuredWeight);
-}
-
-export function setCurrentWeightLevel(routeKey, upstreamId, level, state = null) {
-  const sm = state ?? stateManager;
-  _setCurrentWeightLevel(sm, routeKey, upstreamId, level);
-}
-
-export function incrementSuccessCount(routeKey, upstreamId, configuredWeight = 100, state = null) {
-  const sm = state ?? stateManager;
-  _incrementSuccessCount(sm, routeKey, upstreamId, configuredWeight);
-}
-
-export function resetSuccessCount(routeKey, upstreamId, state = null) {
-  const sm = state ?? stateManager;
-  _resetSuccessCount(sm, routeKey, upstreamId);
-}
-
-export function adjustWeightForSuccess(routeKey, upstreamId, configuredWeight, state = null) {
-  const sm = state ?? stateManager;
-  _adjustWeightForSuccess(sm, routeKey, upstreamId, configuredWeight);
-}
-
-/**
- * Wrapper for adjustWeightForLatency with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {Upstream[]} upstreams - Array of upstreams
- * @param {object} config - Dynamic weight config
- * @param {Map<string, {avgDuration: number}>} latencyData - Latency data map
- * @param {StateManager} [state] - Optional state manager instance
- */
-export function adjustWeightForLatency(routeKey, upstreams, config, latencyData, state = null) {
-  const sm = state ?? stateManager;
-  _adjustWeightForLatency(sm, routeKey, upstreams, config, latencyData);
-}
-
-/**
- * Wrapper for adjustWeightForError with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {Upstream[]} upstreams - Array of upstreams
- * @param {object} config - Dynamic weight config
- * @param {Map<string, number[]>} errorData - Error data map
- * @param {StateManager} [state] - Optional state manager instance
- */
-export function adjustWeightForError(routeKey, upstreams, config, errorData, state = null) {
-  const sm = state ?? stateManager;
-  _adjustWeightForError(sm, routeKey, upstreams, config, errorData);
-}
-
-/**
- * Wrapper for startWeightRecovery with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {Upstream[]} upstreams - Array of upstreams
- * @param {object} config - Dynamic weight config
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {NodeJS.Timeout | null} Timer instance
- */
-export function startWeightRecovery(routeKey, upstreams, config, state = null) {
-  const sm = state ?? stateManager;
-  return _startWeightRecovery(sm, routeKey, upstreams, config);
-}
-
-/**
- * Wrapper for stopWeightRecovery with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {StateManager} [state] - Optional state manager instance
- */
-export function stopWeightRecovery(routeKey, state = null) {
-  const sm = state ?? stateManager;
-  _stopWeightRecovery(sm, routeKey);
-}
-
-/**
- * Wrapper for startWeightCheck with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {Upstream[]} upstreams - Array of upstreams
- * @param {object} config - Dynamic weight config
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {NodeJS.Timeout | null} Timer instance
- */
-export function startWeightCheck(routeKey, upstreams, config, state = null) {
-  const sm = state ?? stateManager;
-  return _startWeightCheck(sm, routeKey, upstreams, config);
-}
-
-/**
- * Wrapper for stopWeightCheck with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {StateManager} [state] - Optional state manager instance
- */
-export function stopWeightCheck(routeKey, state = null) {
-  const sm = state ?? stateManager;
-  _stopWeightCheck(sm, routeKey);
 }
 
 /**
@@ -402,66 +251,6 @@ export function getUpstreamStats(routeKey, upstreamId, state = null) {
 }
 
 /**
- * Select upstream using round-robin strategy (wrapper with optional state param)
- * @param {Upstream[]} upstreams - Array of available upstreams
- * @param {string} routeKey - Route key for counter tracking
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamRoundRobin(upstreams, routeKey, state = null) {
-  const sm = state ?? stateManager;
-  return _selectUpstreamRoundRobin(sm, upstreams, routeKey);
-}
-
-/**
- * Select upstream using random strategy
- * @param {Upstream[]} upstreams - Array of available upstreams
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamRandom(upstreams, _state = null) {
-  return _selectUpstreamRandom(upstreams);
-}
-
-/**
- * Select upstream using weighted strategy
- * @param {Upstream[]} upstreams - Array of available upstreams with optional weights
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamWeighted(upstreams, _state = null) {
-  return _selectUpstreamWeighted(upstreams);
-}
-
-/**
- * Get dynamic weight state
- * @param {string} [routeKey] - Route identifier (optional, returns specific upstream state)
- * @param {string} [upstreamId] - Upstream identifier (optional, returns specific upstream state)
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map|object|undefined} Weight state map, or specific upstream state if routeKey/upstreamId provided
- */
-export function getDynamicWeightState(routeKey, upstreamId, state = null) {
-  const sm = state ?? stateManager;
-  if (routeKey !== undefined && upstreamId !== undefined) {
-    return sm.getDynamicWeightStateFor(routeKey, upstreamId);
-  }
-  if (routeKey?.getDynamicWeightState) {
-    return routeKey.getDynamicWeightState();
-  }
-  return sm.getDynamicWeightState();
-}
-
-/**
- * Get recovery timers (wrapper with optional state param)
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, NodeJS.Timeout>}
- */
-export function getRecoveryTimers(state = null) {
-  const sm = state ?? stateManager;
-  return sm.getRecoveryTimers();
-}
-
-/**
  * Select upstream using sticky session strategy with consistent hashing.
  * If session already has a mapped upstream, reuse it. Otherwise, hash to pick one.
  * Falls back to next available upstream if the mapped one is unavailable.
@@ -525,7 +314,7 @@ export function selectUpstreamSticky(
           sm,
           routeKey,
           upstream: mapped,
-          staticWeight: mapped.weight ?? 100,
+          staticWeight: weightManager.getConfiguredWeight(mapped),
           dynamicWeightConfig,
           timeSlotWeightConfig,
           upstreams,
@@ -544,7 +333,7 @@ export function selectUpstreamSticky(
             sm,
             routeKey,
             upstream,
-            staticWeight: upstream.weight ?? 100,
+            staticWeight: weightManager.getConfiguredWeight(upstream),
             dynamicWeightConfig,
             timeSlotWeightConfig,
             upstreams,
@@ -655,23 +444,12 @@ export function routeRequest(model, config, request, body = null, state = null) 
         sm
       );
       break;
-    case 'round-robin':
-      selectedUpstream = selectUpstreamRoundRobin(upstreams, model, sm);
-      break;
-    case 'random':
-      selectedUpstream = selectUpstreamRandom(upstreams, sm);
-      break;
-    case 'weighted':
-      selectedUpstream = selectUpstreamWeighted(
-        upstreams,
-        sm,
-        model,
-        dynamicWeight,
-        timeSlotWeight
-      );
-      break;
     default:
-      selectedUpstream = selectUpstreamRoundRobin(upstreams, model, sm);
+      throw new RouterError(
+        `Unknown strategy '${strategy}'. Use 'sticky' strategy.`,
+        'UNKNOWN_STRATEGY',
+        { requestedStrategy: strategy, supportedStrategies: ['sticky'] }
+      );
   }
 
   const result = {
@@ -684,15 +462,13 @@ export function routeRequest(model, config, request, body = null, state = null) 
     result.sessionId = sessionId;
   }
 
-  // Only increment for non-sticky strategies (sticky already increments in selectUpstreamSticky)
-  if (strategy !== 'sticky') {
-    _incrementUpstreamRequestCount(sm, model, selectedUpstream.id);
-  }
+  // Sticky strategy already increments in selectUpstreamSticky
 
   return result;
 }
 
 export { calculateEffectiveWeight } from './weight-calculator.js';
+export { weightManager };
 
 /**
  * Get list of available virtual model names from config
@@ -735,12 +511,7 @@ export function resetAllState(state = null) {
   sm.getRoundRobinCounters().clear();
   sm.getSessionUpstreamMap().clear();
   sm.getUpstreamSessionCounts().clear();
-  sm.getDynamicWeightState().clear();
   _resetStats(sm);
-  for (const timer of sm.getRecoveryTimers().values()) {
-    clearInterval(timer);
-  }
-  sm.getRecoveryTimers().clear();
   _stopSessionCleanup(sm);
 }
 

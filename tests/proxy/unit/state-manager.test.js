@@ -332,54 +332,6 @@ describe('StateManager - state isolation between instances', () => {
   });
 });
 
-describe('StateManager - recovery timer cleanup', () => {
-  let manager;
-
-  beforeEach(() => {
-    manager = createStateManager();
-  });
-
-  afterEach(() => {
-    manager.reset();
-  });
-
-  test('reset clears and stops all recovery timers', () => {
-    const timers = manager.getRecoveryTimers();
-    const timer1 = setTimeout(() => {}, 10000);
-    const timer2 = setTimeout(() => {}, 10000);
-
-    timers.set('route-1', timer1);
-    timers.set('route-2', timer2);
-
-    assert.equal(timers.size, 2);
-
-    manager.reset();
-
-    assert.equal(timers.size, 0);
-  });
-
-  test('addRecoveryTimer stores timer for a route', () => {
-    const timer = setTimeout(() => {}, 10000);
-    manager.addRecoveryTimer('route-1', timer);
-
-    const timers = manager.getRecoveryTimers();
-    assert.equal(timers.size, 1);
-    assert.strictEqual(timers.get('route-1'), timer);
-
-    clearTimeout(timer);
-  });
-
-  test('removeRecoveryTimer removes and clears timer for a route', () => {
-    const timer = setTimeout(() => {}, 10000);
-    manager.addRecoveryTimer('route-1', timer);
-
-    manager.removeRecoveryTimer('route-1');
-
-    const timers = manager.getRecoveryTimers();
-    assert.equal(timers.size, 0);
-  });
-});
-
 describe('StateManager - cleanupInterval management', () => {
   let manager;
 

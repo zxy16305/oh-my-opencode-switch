@@ -3,35 +3,55 @@
  * @module proxy/weight-calculator
  */
 
-import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { getTimeSlotType } from '../utils/time-slot-detector.js';
-import { getDynamicWeight as _getDynamicWeight } from './weight-manager.js';
-import {
-  getErrorRate as _getErrorRate,
-  getLatencyAvg as _getLatencyAvg,
-} from './stats-collector.js';
+
+let _weightManager = null;
+
+/**
+ * @param {import('./weight/WeightManager.js').WeightManager} wm
+ */
+export function setWeightManager(wm) {
+  _weightManager = wm;
+}
+
+/**
+ * Get configured weight for an upstream, considering time slot weights
+ *
+ * Returns the weight value that should be used for the current time slot,
+ * following the priority: timeSlotWeights[slotType] > upstream.weight > 100
+ *
+ * @param {Object} upstream - Upstream configuration
+ * @param {Object} [upstream.timeSlotWeights] - Time slot weight overrides
+ * @param {number} [upstream.weight] - Default weight
+ * @returns {number} Configured weight for current time slot
+ */
+export function getConfiguredWeight(upstream) {
+  if (!upstream) {
+    return 100;
+  }
+  const currentHour = new Date().getHours();
+  const slotType = getTimeSlotType(currentHour);
+  return upstream.timeSlotWeights?.[slotType] ?? upstream.weight ?? 100;
+}
 
 /**
  * Calculate effective weight for an upstream with all adjustments applied
  *
  * Applies in order:
- * 1. Time slot weight multiplier (if enabled)
- * 2. Dynamic weight (if enabled)
- * 3. Error-based weight penalty (if enabled)
+ * 1. Dynamic weight (if enabled via WeightManager)
  *
- * Note: Latency-based weight penalty has been removed. Latency adjustments
- * should only happen via adjustWeightForLatency() (periodic), not in this
- * function which is called on every request.
+ * Note: Time slot weight is now handled by WeightManager.getConfiguredWeight()
+ * and should be applied before calling this function (via staticWeight parameter).
+ * Error-based and latency-based weight penalties are now handled by WeightManager.
  *
  * @param {Object} params - Calculation parameters
  * @param {StateManager} params.sm - State manager instance
  * @param {string} params.routeKey - Route identifier
  * @param {Object} params.upstream - Upstream configuration
- * @param {number} params.staticWeight - Base static weight
+ * @param {number} params.staticWeight - Base static weight (already includes time slot weight)
  * @param {Object} [params.dynamicWeightConfig] - Dynamic weight configuration
- * @param {Object} [params.timeSlotWeightConfig] - Time slot weight configuration
- * @param {Object[]} [params.upstreams] - All upstreams (for latency comparison)
- * @param {number} [params.latencyWindowMs=60000] - Latency window in milliseconds
+ * @param {Object[]} [params.upstreams] - All upstreams (for latency comparison, deprecated)
+ * @param {number} [params.latencyWindowMs=60000] - Latency window (deprecated)
  * @returns {number} Effective weight after all adjustments
  */
 export function calculateEffectiveWeight(params) {
@@ -41,65 +61,26 @@ export function calculateEffectiveWeight(params) {
     upstream,
     staticWeight,
     dynamicWeightConfig = null,
-    timeSlotWeightConfig = null,
     upstreams: _upstreams = [],
     latencyWindowMs: _latencyWindowMs = 60000,
   } = params;
 
   let effectiveWeight = staticWeight;
 
-  // NEW: Time-slot static weight configuration (cost control)
-  // This is DIFFERENT from the existing timeSlotWeightConfig (error-rate dynamic)
-  // upstream.timeSlotWeights is at upstream level, timeSlotWeightConfig is at route level
-  const timeSlotWeights = upstream?.timeSlotWeights;
-  if (timeSlotWeights) {
-    const currentHour = new Date().getHours();
-    const slotType = getTimeSlotType(currentHour); // 'high', 'medium', 'low'
-    const slotWeight = timeSlotWeights[slotType];
-    if (slotWeight !== undefined) {
-      // Slot-specific weight REPLACES upstream.weight (not multiplier)
-      effectiveWeight = slotWeight;
-    }
-    // If slotType not in config (partial config), keep effectiveWeight as-is (upstream.weight)
-  }
-
-  // Apply time slot weight if enabled (before dynamic weight)
-  if (timeSlotWeightConfig && timeSlotWeightConfig.enabled) {
-    let timeSlotCalculator = sm.getTimeSlotCalculator();
-    if (!timeSlotCalculator) {
-      timeSlotCalculator = createTimeSlotWeightCalculator();
-      sm.setTimeSlotCalculator(timeSlotCalculator);
-    }
-    const timeSlotWeightMultiplier = timeSlotCalculator.getTimeSlotWeight(upstream.provider, null, {
-      totalErrorThreshold: timeSlotWeightConfig.totalErrorThreshold,
-      dangerSlotThreshold: timeSlotWeightConfig.dangerSlotThreshold,
-      dangerMultiplier: timeSlotWeightConfig.dangerMultiplier,
-      normalMultiplier: timeSlotWeightConfig.normalMultiplier,
-      lookbackDays: timeSlotWeightConfig.lookbackDays,
-    });
-    effectiveWeight = effectiveWeight * timeSlotWeightMultiplier;
-  }
-
   // Apply dynamic weight if enabled
   if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
-    // Use configured weight (staticWeight) as initial value for dynamic weight
-    // This ensures custom weights (e.g., 200) are respected while allowing dynamic adjustments
-    const dynWeight = _getDynamicWeight(
-      sm,
-      routeKey,
-      upstream.id,
-      staticWeight // Use configured weight as initial value
-    );
-    effectiveWeight = Math.min(effectiveWeight, dynWeight);
+    const configuredWeight = getConfiguredWeight(upstream);
 
-    // Error-based weight penalty (Mechanism 1) has been removed.
-    // Error-based weight adjustments are now handled exclusively in weight-manager.js
-    // via percentage thresholds (Mechanism 2).
-
-    // Latency-based weight penalty has been removed from this function.
-    // Latency adjustments should only happen via adjustWeightForLatency() (periodic),
-    // not in calculateEffectiveWeight() which is called on every request.
-    // Previously, this caused cumulative weight decrease leading to weight=1.
+    if (_weightManager) {
+      const wmWeight = _weightManager.getWeight(routeKey, upstream.id);
+      // If WeightManager has no state for this upstream (returns default 100),
+      // fall back to configuredWeight which includes time slot adjustments
+      if (wmWeight === 100 && !_weightManager.getState(routeKey, upstream.id)) {
+        effectiveWeight = configuredWeight;
+      } else {
+        effectiveWeight = wmWeight;
+      }
+    }
   }
 
   // Ensure effective weight is at least 1

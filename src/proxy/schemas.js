@@ -30,7 +30,10 @@ export const upstreamSchema = z.object({
  * Route configuration schema
  */
 export const routeSchema = z.object({
-  strategy: z.enum(['round-robin', 'random', 'weighted', 'sticky']).default('round-robin'),
+  strategy: z
+    .enum(['round-robin', 'random', 'weighted', 'sticky'])
+    .default('sticky')
+    .transform(() => 'sticky'), // 静默转为 sticky，向后兼容
   upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
   metadata: z.record(z.unknown()).optional(),
   stickyReassignThreshold: z.number().int().positive().optional().default(10),

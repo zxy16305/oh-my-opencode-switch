@@ -14,14 +14,12 @@
   },
   "routes": {
     "lb-qwen-plus": {
-      "strategy": "sticky",
       "upstreams": [
         { "provider": "ali", "model": "qwen-plus" },
         { "provider": "ali", "model": "qwen-plus" }
       ]
     },
     "lb-mixed": {
-      "strategy": "round-robin",
       "upstreams": [
         {
           "provider": "ali",

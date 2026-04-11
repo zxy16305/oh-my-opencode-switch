@@ -24,6 +24,7 @@ import {
   createTimeSlotWeightCalculator,
 } from '../../src/utils/time-slot-stats.js';
 
+import { getTimeSlotType } from '../../src/utils/time-slot-detector.js';
 import { makeUpstream, makeMockRequest } from '../helpers/proxy-fixtures.js';
 import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 
@@ -832,45 +833,52 @@ describe('Integration – Time Slot Weight Feature', () => {
       );
     });
 
-    test('all time slots: high slot weight determines traffic distribution', () => {
-      // Test that at HIGH slot, upstream with higher high weight gets more traffic
+    test('all time slots: different slot weights produce different distributions', () => {
+      // Test that timeSlotWeights determine traffic distribution based on current hour
+      // Uses different weights for ALL slots to ensure test passes regardless of current time
+      const currentHour = new Date().getHours();
+      const currentSlot = getTimeSlotType(currentHour);
+
       const upstreams = [
         makeUpstream({
-          id: 'high-heavy',
+          id: 'slot-heavy',
           weight: 100,
-          timeSlotWeights: { high: 300, medium: 100, low: 100 },
+          timeSlotWeights: { high: 300, medium: 250, low: 400 },
         }),
         makeUpstream({
-          id: 'high-light',
+          id: 'slot-light',
           weight: 100,
-          timeSlotWeights: { high: 100, medium: 100, low: 100 },
+          timeSlotWeights: { high: 100, medium: 50, low: 100 },
         }),
       ];
 
       const route = makeRoute(upstreams, 'weighted');
-      const config = { 'ts-high': route };
+      const config = { 'ts-slot': route };
 
       const totalRequests = 5000;
       for (let i = 0; i < totalRequests; i++) {
-        routeRequest('ts-high', config, makeMockRequest(`high-session-${i}`), null);
+        routeRequest('ts-slot', config, makeMockRequest(`slot-session-${i}`), null);
       }
 
-      const counts = getUpstreamRequestCounts().get('ts-high');
+      const counts = getUpstreamRequestCounts().get('ts-slot');
       const distribution = {};
       for (const [id, c] of counts) distribution[id] = (c / totalRequests) * 100;
 
-      // high-heavy should get ~75% (300/400)
-      const expectedHeavy = (300 / 400) * 100;
+      // Calculate expected based on current slot
+      const slotWeightHeavy = upstreams[0].timeSlotWeights[currentSlot];
+      const slotWeightLight = upstreams[1].timeSlotWeights[currentSlot];
+      const totalWeight = slotWeightHeavy + slotWeightLight;
+      const expectedHeavy = (slotWeightHeavy / totalWeight) * 100;
       const tolerance = expectedHeavy * 0.1;
 
       assert.ok(
-        distribution['high-heavy'] >= expectedHeavy - tolerance &&
-          distribution['high-heavy'] <= expectedHeavy + tolerance,
-        `high-heavy should get ~${expectedHeavy.toFixed(1)}%, got ${distribution['high-heavy']?.toFixed(2)}%`
+        distribution['slot-heavy'] >= expectedHeavy - tolerance &&
+          distribution['slot-heavy'] <= expectedHeavy + tolerance,
+        `At ${currentSlot} slot, slot-heavy should get ~${expectedHeavy.toFixed(1)}%, got ${distribution['slot-heavy']?.toFixed(2)}%`
       );
 
       console.log(
-        `HIGH slot: heavy=${distribution['high-heavy']?.toFixed(2)}%, light=${distribution['high-light']?.toFixed(2)}%`
+        `[${currentSlot}] Slot weight test: heavy=${distribution['slot-heavy']?.toFixed(2)}%, light=${distribution['slot-light']?.toFixed(2)}%`
       );
     });
 

@@ -5,8 +5,7 @@
 
 import { stateManager } from './state-manager.js';
 import { RouterError } from './errors.js';
-import { getOrCreateCountMap as _getOrCreateCountMap } from './session-manager.js';
-import { calculateEffectiveWeight } from './weight-calculator.js';
+import { calculateEffectiveWeight, getConfiguredWeight } from './weight-calculator.js';
 import { getUpstreamRequestCountInWindow as _getUpstreamRequestCountInWindow } from './stats-collector.js';
 
 /**
@@ -42,12 +41,13 @@ function selectLeastLoadedUpstream(
   // Filter out upstreams with effective weight <= 0
   const validUpstreams = [];
   for (const upstream of upstreams) {
-    const staticWeight = upstream.weight ?? 100;
+    // Use configured weight: time slot weight takes priority, fallback to upstream.weight
+    const configuredWeight = getConfiguredWeight(upstream);
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
-      staticWeight,
+      staticWeight: configuredWeight,
       dynamicWeightConfig,
       timeSlotWeightConfig,
       upstreams,
@@ -96,115 +96,5 @@ function selectLeastLoadedUpstream(
 
   return candidates[candidates.length - 1];
 }
-
-/**
- * Select upstream using round-robin strategy
- * @param {StateManager} [state] - State manager instance
- * @param {Upstream[]} upstreams - Array of available upstreams
- * @param {string} routeKey - Route key for counter tracking
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamRoundRobin(state, upstreams, routeKey) {
-  if (!upstreams || upstreams.length === 0) {
-    throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
-  }
-
-  if (upstreams.length === 1) {
-    return upstreams[0];
-  }
-
-  const sm = getState(state);
-  const roundRobinCounters = sm.getRoundRobinCounters();
-  let counter = roundRobinCounters.get(routeKey) ?? 0;
-  const selectedIndex = counter % upstreams.length;
-  counter = (counter + 1) % Number.MAX_SAFE_INTEGER;
-  roundRobinCounters.set(routeKey, counter);
-
-  return upstreams[selectedIndex];
-}
-
-/**
- * Select upstream using random strategy
- * @param {Upstream[]} upstreams - Array of available upstreams
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamRandom(upstreams) {
-  if (!upstreams || upstreams.length === 0) {
-    throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
-  }
-
-  if (upstreams.length === 1) {
-    return upstreams[0];
-  }
-
-  const randomIndex = Math.floor(Math.random() * upstreams.length);
-  return upstreams[randomIndex];
-}
-
-/**
- * Select upstream using weighted strategy
- * @param {Upstream[]} upstreams - Array of available upstreams with optional weights
- * @param {StateManager} [state] - Optional state manager instance
- * @param {string} [routeKey] - Route key for weight calculations
- * @param {object} [dynamicWeightConfig] - Optional dynamic weight config
- * @param {object} [timeSlotWeightConfig] - Optional time slot weight config
- * @returns {Upstream} Selected upstream
- */
-export function selectUpstreamWeighted(
-  upstreams,
-  state = null,
-  routeKey = null,
-  dynamicWeightConfig = null,
-  timeSlotWeightConfig = null
-) {
-  if (!upstreams || upstreams.length === 0) {
-    throw new RouterError('No upstreams available', 'NO_UPSTREAMS');
-  }
-
-  if (upstreams.length === 1) {
-    return upstreams[0];
-  }
-
-  const sm = getState(state);
-
-  const upstreamsWithWeights = upstreams.map((upstream) => {
-    const staticWeight = upstream.weight ?? 100;
-    const effectiveWeight = calculateEffectiveWeight({
-      sm,
-      routeKey,
-      upstream,
-      staticWeight,
-      dynamicWeightConfig,
-      timeSlotWeightConfig,
-      upstreams,
-    });
-    return { upstream, effectiveWeight };
-  });
-
-  const validUpstreams = upstreamsWithWeights.filter((u) => u.effectiveWeight > 0);
-
-  if (validUpstreams.length === 0) {
-    throw new RouterError('No valid upstreams available', 'NO_VALID_UPSTREAMS');
-  }
-
-  const totalWeight = validUpstreams.reduce((sum, u) => sum + u.effectiveWeight, 0);
-  let random = Math.random() * totalWeight;
-
-  for (const { upstream, effectiveWeight } of validUpstreams) {
-    random -= effectiveWeight;
-    if (random <= 0) {
-      return upstream;
-    }
-  }
-
-  return validUpstreams[validUpstreams.length - 1].upstream;
-}
-
-/**
- * Backwards compatibility for older code that expects module-level exports
- * @deprecated Use StateManager instance instead
- */
-export const roundRobinCounters = stateManager.getRoundRobinCounters();
-export const timeSlotCalculator = stateManager.getTimeSlotCalculator();
 
 export { selectLeastLoadedUpstream };

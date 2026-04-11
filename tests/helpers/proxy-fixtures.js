@@ -71,7 +71,7 @@ export function makeRoute(upstreams, overridesOrStrategy = {}) {
     typeof overridesOrStrategy === 'string'
       ? { strategy: overridesOrStrategy }
       : overridesOrStrategy;
-  const strategy = overrides.strategy || 'round-robin';
+  const strategy = overrides.strategy || 'sticky';
 
   const stickyDefaults =
     strategy === 'sticky'

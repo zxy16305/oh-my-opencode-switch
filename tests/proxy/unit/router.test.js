@@ -10,9 +10,6 @@ import {
   routeRequest,
   getRouteForModel,
   getAvailableModels,
-  selectUpstreamRoundRobin,
-  selectUpstreamRandom,
-  selectUpstreamWeighted,
   selectUpstreamSticky,
   getSessionId,
   validateRoutesConfig,
@@ -40,7 +37,7 @@ describe('Router – getRouteForModel()', () => {
     const config = makeConfig('gpt-4', [makeUpstream({ id: 'u1' })]);
     const route = getRouteForModel('gpt-4', config);
     assert.ok(route);
-    assert.equal(route.strategy, 'round-robin');
+    assert.equal(route.strategy, 'sticky');
     assert.equal(route.upstreams.length, 1);
   });
 
@@ -83,170 +80,6 @@ describe('Router – getRouteForModel()', () => {
   test('returns null when model does not exist in config', () => {
     const config = makeConfig('gpt-4');
     assert.equal(getRouteForModel('claude-3', config), null);
-  });
-});
-
-describe('Router – selectUpstreamRoundRobin()', () => {
-  beforeEach(() => resetAllState());
-  afterEach(() => resetAllState());
-
-  test('cycles through upstreams in order', () => {
-    const upstreams = [
-      makeUpstream({ id: 'a' }),
-      makeUpstream({ id: 'b' }),
-      makeUpstream({ id: 'c' }),
-    ];
-
-    const ids = [];
-    for (let i = 0; i < 6; i++) {
-      ids.push(selectUpstreamRoundRobin(upstreams, 'route-1').id);
-    }
-    assert.deepEqual(ids, ['a', 'b', 'c', 'a', 'b', 'c']);
-  });
-
-  test('different route keys have independent counters', () => {
-    const upstreams = [makeUpstream({ id: 'x' }), makeUpstream({ id: 'y' })];
-
-    assert.equal(selectUpstreamRoundRobin(upstreams, 'route-A').id, 'x');
-    assert.equal(selectUpstreamRoundRobin(upstreams, 'route-A').id, 'y');
-    // route-B starts fresh
-    assert.equal(selectUpstreamRoundRobin(upstreams, 'route-B').id, 'x');
-  });
-
-  test('returns single upstream when only one available', () => {
-    const upstreams = [makeUpstream({ id: 'solo' })];
-    const result = selectUpstreamRoundRobin(upstreams, 'route-1');
-    assert.equal(result.id, 'solo');
-  });
-
-  test('throws RouterError for empty array', () => {
-    assert.throws(
-      () => selectUpstreamRoundRobin([], 'route-1'),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-
-  test('throws RouterError for null upstreams', () => {
-    assert.throws(
-      () => selectUpstreamRoundRobin(null, 'route-1'),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-
-  test('throws RouterError for undefined upstreams', () => {
-    assert.throws(
-      () => selectUpstreamRoundRobin(undefined, 'route-1'),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-});
-
-describe('Router – selectUpstreamRandom()', () => {
-  test('returns one of the upstreams', () => {
-    const upstreams = [
-      makeUpstream({ id: 'r1' }),
-      makeUpstream({ id: 'r2' }),
-      makeUpstream({ id: 'r3' }),
-    ];
-
-    for (let i = 0; i < 50; i++) {
-      const selected = selectUpstreamRandom(upstreams);
-      assert.ok(['r1', 'r2', 'r3'].includes(selected.id));
-    }
-  });
-
-  test('returns single upstream when only one available', () => {
-    const upstreams = [makeUpstream({ id: 'only' })];
-    assert.equal(selectUpstreamRandom(upstreams).id, 'only');
-  });
-
-  test('throws RouterError for empty array', () => {
-    assert.throws(
-      () => selectUpstreamRandom([]),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-
-  test('throws RouterError for null', () => {
-    assert.throws(
-      () => selectUpstreamRandom(null),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-
-  test('distributes across upstreams (statistical)', () => {
-    const upstreams = [makeUpstream({ id: 'a' }), makeUpstream({ id: 'b' })];
-    const counts = { a: 0, b: 0 };
-
-    for (let i = 0; i < 1000; i++) {
-      counts[selectUpstreamRandom(upstreams).id]++;
-    }
-
-    // Both should get at least 30% with 1000 samples
-    assert.ok(counts.a > 300, `Expected a > 300, got ${counts.a}`);
-    assert.ok(counts.b > 300, `Expected b > 300, got ${counts.b}`);
-  });
-});
-
-describe('Router – selectUpstreamWeighted()', () => {
-  test('returns one of the upstreams', () => {
-    const upstreams = [
-      makeUpstream({ id: 'w1', weight: 1 }),
-      makeUpstream({ id: 'w2', weight: 2 }),
-    ];
-
-    for (let i = 0; i < 50; i++) {
-      const selected = selectUpstreamWeighted(upstreams);
-      assert.ok(['w1', 'w2'].includes(selected.id));
-    }
-  });
-
-  test('returns single upstream when only one available', () => {
-    const upstreams = [makeUpstream({ id: 'solo', weight: 5 })];
-    assert.equal(selectUpstreamWeighted(upstreams).id, 'solo');
-  });
-
-  test('uses default weight of 100 when weight not specified', () => {
-    const upstreams = [makeUpstream({ id: 'no-weight-1' }), makeUpstream({ id: 'no-weight-2' })];
-
-    const counts = { 'no-weight-1': 0, 'no-weight-2': 0 };
-    for (let i = 0; i < 1000; i++) {
-      counts[selectUpstreamWeighted(upstreams).id]++;
-    }
-
-    // With equal default weights, both should get > 300
-    assert.ok(counts['no-weight-1'] > 300);
-    assert.ok(counts['no-weight-2'] > 300);
-  });
-
-  test('respects weights (statistical)', () => {
-    const upstreams = [
-      makeUpstream({ id: 'heavy', weight: 9 }),
-      makeUpstream({ id: 'light', weight: 1 }),
-    ];
-
-    const counts = { heavy: 0, light: 0 };
-    for (let i = 0; i < 1000; i++) {
-      counts[selectUpstreamWeighted(upstreams).id]++;
-    }
-
-    // heavy should get ~900, light ~100 — allow generous margin
-    assert.ok(counts.heavy > 700, `Expected heavy > 700, got ${counts.heavy}`);
-    assert.ok(counts.light < 400, `Expected light < 400, got ${counts.light}`);
-  });
-
-  test('throws RouterError for empty array', () => {
-    assert.throws(
-      () => selectUpstreamWeighted([]),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
-  });
-
-  test('throws RouterError for null', () => {
-    assert.throws(
-      () => selectUpstreamWeighted(null),
-      (err) => err instanceof RouterError && err.code === 'NO_UPSTREAMS'
-    );
   });
 });
 
@@ -720,20 +553,33 @@ describe('Router – routeRequest()', () => {
   beforeEach(() => resetAllState());
   afterEach(() => resetAllState());
 
-  test('routes to valid model with round-robin', () => {
+  test('routes to valid model with sticky strategy', () => {
     const config = makeConfig(
       'gpt-4',
       [makeUpstream({ id: 'u1' }), makeUpstream({ id: 'u2' })],
+      'sticky'
+    );
+
+    const req = { headers: { 'x-opencode-session': 'test-sess' }, method: 'POST', url: '/' };
+    const result = routeRequest('gpt-4', config, req);
+    assert.ok(['u1', 'u2'].includes(result.upstream.id));
+    assert.equal(result.routeKey, 'gpt-4');
+    assert.equal(result.route.strategy, 'sticky');
+  });
+
+  test('round-robin config silently uses sticky strategy', () => {
+    const config = makeConfig(
+      'model-rr',
+      [makeUpstream({ id: 'r1' }), makeUpstream({ id: 'r2' })],
       'round-robin'
     );
 
-    const result = routeRequest('gpt-4', config);
-    assert.equal(result.upstream.id, 'u1');
-    assert.equal(result.routeKey, 'gpt-4');
+    const result = routeRequest('model-rr', config);
+    assert.ok(['r1', 'r2'].includes(result.upstream.id));
     assert.equal(result.route.strategy, 'round-robin');
   });
 
-  test('routes with random strategy', () => {
+  test('random config silently uses sticky strategy', () => {
     const config = makeConfig(
       'model-r',
       [makeUpstream({ id: 'r1' }), makeUpstream({ id: 'r2' })],
@@ -744,7 +590,7 @@ describe('Router – routeRequest()', () => {
     assert.ok(['r1', 'r2'].includes(result.upstream.id));
   });
 
-  test('routes with weighted strategy', () => {
+  test('weighted config silently uses sticky strategy', () => {
     const config = makeConfig(
       'model-w',
       [makeUpstream({ id: 'w1', weight: 1 }), makeUpstream({ id: 'w2', weight: 2 })],
@@ -812,7 +658,7 @@ describe('Router – routeRequest()', () => {
   test('throws RouterError for invalid route config (bad upstream)', () => {
     const config = {
       'bad-model': {
-        strategy: 'round-robin',
+        strategy: 'sticky',
         upstreams: [{ id: '', provider: '', model: '', baseURL: 'not-a-url' }],
       },
     };
@@ -827,27 +673,13 @@ describe('Router – routeRequest()', () => {
       }
     );
   });
-
-  test('round-robin cycles correctly through routeRequest', () => {
-    const config = makeConfig(
-      'cycle',
-      [makeUpstream({ id: 'c1' }), makeUpstream({ id: 'c2' }), makeUpstream({ id: 'c3' })],
-      'round-robin'
-    );
-
-    const ids = [];
-    for (let i = 0; i < 6; i++) {
-      ids.push(routeRequest('cycle', config).upstream.id);
-    }
-    assert.deepEqual(ids, ['c1', 'c2', 'c3', 'c1', 'c2', 'c3']);
-  });
 });
 
 describe('Router – validateRoutesConfig()', () => {
   test('valid config passes validation', () => {
     const config = {
       'gpt-4': {
-        strategy: 'round-robin',
+        strategy: 'sticky',
         upstreams: [
           { id: 'u1', provider: 'openai', model: 'gpt-4', baseURL: 'https://api.openai.com' },
         ],
@@ -880,7 +712,7 @@ describe('Router – validateRoutesConfig()', () => {
 
   test('returns error for missing upstreams', () => {
     const config = {
-      'gpt-4': { strategy: 'round-robin', upstreams: [] },
+      'gpt-4': { strategy: 'sticky', upstreams: [] },
     };
 
     const result = validateRoutesConfig(config);
@@ -904,7 +736,7 @@ describe('Router – validateRoutesConfig()', () => {
   test('returns error for upstream missing required fields', () => {
     const config = {
       'gpt-4': {
-        strategy: 'round-robin',
+        strategy: 'sticky',
         upstreams: [{ id: '' }],
       },
     };
@@ -917,7 +749,7 @@ describe('Router – validateRoutesConfig()', () => {
   test('returns error for invalid baseURL', () => {
     const config = {
       'gpt-4': {
-        strategy: 'round-robin',
+        strategy: 'sticky',
         upstreams: [{ id: 'u1', provider: 'p', model: 'm', baseURL: 'not-a-url' }],
       },
     };
@@ -927,7 +759,7 @@ describe('Router – validateRoutesConfig()', () => {
     assert.ok(result.error.includes('baseURL'));
   });
 
-  test('defaults strategy to round-robin when omitted', () => {
+  test('defaults strategy to sticky when omitted', () => {
     const config = {
       'gpt-4': {
         upstreams: [{ id: 'u1', provider: 'p', model: 'm', baseURL: 'http://x' }],
@@ -936,7 +768,7 @@ describe('Router – validateRoutesConfig()', () => {
 
     const result = validateRoutesConfig(config);
     assert.equal(result.success, true);
-    assert.equal(result.data['gpt-4'].strategy, 'round-robin');
+    assert.equal(result.data['gpt-4'].strategy, 'sticky');
   });
 });
 
@@ -1049,13 +881,13 @@ describe('Router – Zod schemas', () => {
       upstreams: [{ id: 'u1', provider: 'p', model: 'm', baseURL: 'http://x' }],
     });
     assert.equal(result.success, true);
-    assert.equal(result.data.strategy, 'round-robin');
+    assert.equal(result.data.strategy, 'sticky');
   });
 
   test('routesConfigSchema validates full config', () => {
     const result = routesConfigSchema.safeParse({
       'gpt-4': {
-        strategy: 'weighted',
+        strategy: 'sticky',
         upstreams: [{ id: 'u1', provider: 'p', model: 'm', baseURL: 'http://x', weight: 5 }],
       },
     });

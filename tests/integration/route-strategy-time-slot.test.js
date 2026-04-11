@@ -17,8 +17,6 @@ import assert from 'node:assert/strict';
 
 import { resetAllState, routeRequest, getUpstreamRequestCounts } from '../../src/proxy/router.js';
 
-import { selectUpstreamWeighted } from '../../src/proxy/route-strategy.js';
-
 import {
   makeUpstream,
   makeRoute,
@@ -157,7 +155,7 @@ describe('Integration – Route Strategy with Time-Slot Weights', () => {
       );
     });
 
-    test('selectUpstreamWeighted directly uses effective weight', () => {
+    test('weighted strategy config silently uses sticky routing', () => {
       const slot = getCurrentSlotType();
       const upstreams = [
         makeUpstream({
@@ -172,35 +170,30 @@ describe('Integration – Route Strategy with Time-Slot Weights', () => {
         }),
       ];
 
-      // Run many selections directly
-      const counts = { 'u-heavy': 0, 'u-light': 0 };
-      const iterations = 5000;
-      for (let i = 0; i < iterations; i++) {
-        const selected = selectUpstreamWeighted(
-          upstreams,
-          null, // state
-          'ts-direct', // routeKey
-          null, // dynamicWeightConfig
-          null // timeSlotWeightConfig (route-level, not upstream-level)
-        );
-        counts[selected.id]++;
-      }
+      // 'weighted' strategy is silently converted to 'sticky'
+      const route = makeRoute(upstreams, 'weighted');
+      const config = makeConfig({ 'ts-direct': route });
+
+      const totalRequests = 5000;
+      const counts = runRequests('ts-direct', config, totalRequests);
+      const distribution = calculateDistribution(counts, totalRequests);
 
       const heavySlotWeight = upstreams[0].timeSlotWeights[slot];
       const lightSlotWeight = upstreams[1].timeSlotWeights[slot];
       const totalWeight = heavySlotWeight + lightSlotWeight;
       const expectedHeavyPct = (heavySlotWeight / totalWeight) * 100;
-      const actualHeavyPct = (counts['u-heavy'] / iterations) * 100;
+      const actualHeavyPct = distribution['u-heavy'];
 
-      const tolerance = expectedHeavyPct * 0.1;
+      // Wider tolerance for sticky distribution
+      const tolerance = expectedHeavyPct * 0.25;
       assert.ok(
         actualHeavyPct >= expectedHeavyPct - tolerance &&
           actualHeavyPct <= expectedHeavyPct + tolerance,
-        `Direct weighted: u-heavy should get ~${expectedHeavyPct.toFixed(1)}% at ${slot}, got ${actualHeavyPct.toFixed(2)}%`
+        `Weighted→sticky: u-heavy should get ~${expectedHeavyPct.toFixed(1)}% at ${slot}, got ${actualHeavyPct.toFixed(2)}%`
       );
 
       console.log(
-        `[${slot}] Direct weighted: heavy=${actualHeavyPct.toFixed(2)}%, light=${((counts['u-light'] / iterations) * 100).toFixed(2)}%`
+        `[${slot}] Weighted→sticky: heavy=${actualHeavyPct.toFixed(2)}%, light=${distribution['u-light']?.toFixed(2)}%`
       );
     });
   });

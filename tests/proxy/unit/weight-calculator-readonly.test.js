@@ -99,7 +99,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
     );
   });
 
-  test('error weight penalty still applies (read-only calculation)', () => {
+  test('error weight penalty no longer applied by calculateEffectiveWeight', () => {
     const routeKey = 'test-route';
     const upstream = makeUpstream({ id: 'upstream-error', weight: 100 });
     const staticWeight = 100;
@@ -119,7 +119,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
     recordUpstreamError(sm, routeKey, upstream.id, 502);
     recordUpstreamError(sm, routeKey, upstream.id, 503);
 
-    // Calculate effective weight - should be reduced due to errors
+    // Error penalties removed from calculateEffectiveWeight (now in adjustWeightForError)
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
@@ -128,20 +128,20 @@ describe('Weight Calculator – Read-Only Verification', () => {
       dynamicWeightConfig,
     });
 
-    // Expected: 100 - (3 * 10) = 70
-    assert.strictEqual(effectiveWeight, 70, 'Error penalty should reduce weight to 70');
+    // Error penalty no longer applied here — weight stays at 100
+    assert.strictEqual(effectiveWeight, 100, 'Error penalty removed from calculateEffectiveWeight');
 
-    // Verify dynamic weight state is still 100 (only read, not written)
+    // Verify dynamic weight state is still 100
     const dynamicWeightState = sm.getDynamicWeightState();
     const key = `${routeKey}:${upstream.id}`;
     const state = dynamicWeightState.get(key);
     assert.strictEqual(
       state.currentWeight,
       100,
-      'Dynamic weight should remain 100 (error penalty is read-only)'
+      'Dynamic weight should remain 100 (errors handled by weight-manager, not calculator)'
     );
 
-    // Second call should still return 70 (error penalty still applies)
+    // Second call also returns 100
     const effectiveWeight2 = calculateEffectiveWeight({
       sm,
       routeKey,
@@ -149,7 +149,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
       staticWeight,
       dynamicWeightConfig,
     });
-    assert.strictEqual(effectiveWeight2, 70, 'Second call should also return 70');
+    assert.strictEqual(effectiveWeight2, 100, 'Second call should also return 100');
   });
 
   test('mixed weights stay stable across multiple calls', () => {

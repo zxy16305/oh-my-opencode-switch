@@ -185,6 +185,38 @@ When `oos profile switch NAME` is called:
 
 First created profile becomes `isDefault: true` and auto-activates if no active profile exists.
 
+## Weight System
+
+The weight system controls request distribution across upstreams with a four-stage calculation flow.
+
+### Weight Calculation Flow
+
+```
+Final Weight = Base Weight × Time Slot Weight × Route Weight × Dynamic Weight
+```
+
+| Stage               | Source                     | Operation      | Description                               |
+| ------------------- | -------------------------- | -------------- | ----------------------------------------- |
+| 1. Base Weight      | `upstream.weight`          | Initial value  | Default: 100 if not specified             |
+| 2. Time Slot Weight | `upstream.timeSlotWeights` | REPLACEMENT    | Override based on current time slot       |
+| 3. Route Weight     | `route.timeSlotWeight`     | MULTIPLICATION | Historical error-rate adjustment          |
+| 4. Dynamic Weight   | `route.dynamicWeight`      | MULTIPLICATION | Real-time adjustment based on performance |
+
+### Key Files
+
+| File                  | Location          | Role                          |
+| --------------------- | ----------------- | ----------------------------- |
+| weight-calculator.js  | `src/core/proxy/` | Core weight calculation logic |
+| weight-manager.js     | `src/core/proxy/` | Weight state management       |
+| time-slot-detector.js | `src/core/proxy/` | Detect current time slot      |
+
+### Weight Application Order
+
+1. **Base Weight**: Read from `upstream.weight`, defaults to 100
+2. **Time Slot Replacement**: Check `upstream.timeSlotWeights[currentSlot]`, replace base if defined
+3. **Route Multiplication**: Apply `route.timeSlotWeight` (historical error-rate factor)
+4. **Dynamic Multiplication**: Apply `route.dynamicWeight` (real-time adjustment)
+
 ## 测试与临时脚本访问规则
 
 ### 核心原则

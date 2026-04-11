@@ -5,7 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 import {
   recordUpstreamError,
-  getErrorRate,
+  getErrorCountInWindow,
   recordUpstreamLatency,
   getLatencyAvg,
   getUpstreamRequestCountInWindow,
@@ -27,10 +27,10 @@ describe('stats-collector performance tests', () => {
     await cleanupTestHome(testHome);
   });
 
-  describe('getErrorRate', () => {
+  describe('getErrorCountInWindow', () => {
     it('should return 0 for empty state', () => {
       const sm = createStateManager();
-      const rate = getErrorRate(sm, 'route-1', 'upstream-1', 3600000);
+      const rate = getErrorCountInWindow(sm, 'route-1', 'upstream-1', 3600000);
       assert.strictEqual(rate, 0);
     });
 
@@ -41,7 +41,7 @@ describe('stats-collector performance tests', () => {
 
       // Insert 1000 errors outside the window
       for (let i = 0; i < 1000; i++) {
-        const entry = sm.getErrorState();
+        const entry = sm.errorState;
         const key = 'route-1:upstream-1';
         if (!entry.has(key)) {
           entry.set(key, { errors: [] });
@@ -57,7 +57,7 @@ describe('stats-collector performance tests', () => {
         recordUpstreamError(sm, 'route-1', 'upstream-1', 500);
       }
 
-      const rate = getErrorRate(sm, 'route-1', 'upstream-1', windowMs);
+      const rate = getErrorCountInWindow(sm, 'route-1', 'upstream-1', windowMs);
       assert.strictEqual(rate, 500);
     });
 
@@ -66,14 +66,14 @@ describe('stats-collector performance tests', () => {
       for (let i = 0; i < 100; i++) {
         recordUpstreamError(sm, 'route-1', 'upstream-1', 500);
       }
-      const rate = getErrorRate(sm, 'route-1', 'upstream-1', 3600000);
+      const rate = getErrorCountInWindow(sm, 'route-1', 'upstream-1', 3600000);
       assert.strictEqual(rate, 100);
     });
 
     it('should return 0 when all errors are outside window', () => {
       const sm = createStateManager();
       const now = Date.now();
-      const entry = sm.getErrorState();
+      const entry = sm.errorState;
       const key = 'route-1:upstream-1';
       entry.set(key, { errors: [] });
       for (let i = 0; i < 50; i++) {
@@ -82,7 +82,7 @@ describe('stats-collector performance tests', () => {
           statusCode: 500,
         });
       }
-      const rate = getErrorRate(sm, 'route-1', 'upstream-1', 3600000);
+      const rate = getErrorCountInWindow(sm, 'route-1', 'upstream-1', 3600000);
       assert.strictEqual(rate, 0);
     });
 
@@ -92,8 +92,8 @@ describe('stats-collector performance tests', () => {
         recordUpstreamError(sm, 'route-1', 'upstream-1', 500);
       }
 
-      const first = getErrorRate(sm, 'route-1', 'upstream-1', 3600000);
-      const second = getErrorRate(sm, 'route-1', 'upstream-1', 3600000);
+      const first = getErrorCountInWindow(sm, 'route-1', 'upstream-1', 3600000);
+      const second = getErrorCountInWindow(sm, 'route-1', 'upstream-1', 3600000);
       // Second call should return same count since all are still in window
       assert.strictEqual(first, second);
     });
@@ -112,7 +112,7 @@ describe('stats-collector performance tests', () => {
       const windowMs = 3600000; // 1 hour
 
       // Insert 1000 latencies outside the window
-      const latencyState = sm.getLatencyState();
+      const latencyState = sm.latencyState;
       const key = 'route-1:upstream-1';
       latencyState.set(key, { latencies: [] });
       for (let i = 0; i < 1000; i++) {
@@ -166,7 +166,7 @@ describe('stats-collector performance tests', () => {
       const key = 'route-1:upstream-1';
 
       // Insert 1000 timestamps outside the window
-      const slidingWindow = sm.getUpstreamSlidingWindowCounts();
+      const slidingWindow = sm.upstreamSlidingWindowCounts;
       slidingWindow.set(key, []);
       for (let i = 0; i < 1000; i++) {
         slidingWindow.get(key).push({ timestamp: now - windowMs - 1000 - i });

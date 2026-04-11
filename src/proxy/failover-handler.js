@@ -18,6 +18,7 @@ import { selectLeastLoadedUpstream } from './route-strategy.js';
  * @param {string} [model] - Model name for session key (optional, for consistency with selectUpstreamSticky)
  * @param {Function} [isAvailable] - Optional callback to check if an upstream is available (returns boolean)
  * @param {import('./state-manager.js').StateManager} [state] - Optional state manager instance
+ * @param {import('./weight/WeightManager.js').WeightManager} weightManager - WeightManager instance
  * @returns {Upstream | null} Next available upstream, or null if none
  */
 export function failoverStickySession(
@@ -27,7 +28,8 @@ export function failoverStickySession(
   routeKey,
   model,
   isAvailable,
-  state = null
+  state = null,
+  weightManager
 ) {
   const sm = state ?? stateManager;
 
@@ -52,7 +54,7 @@ export function failoverStickySession(
   if (available.length === 0) {
     logger.warn(`All upstreams filtered out, falling back to failed provider: ${failedUpstreamId}`);
     const sessionKey = model ? `${sessionId}:${model}` : sessionId;
-    sm.getSessionUpstreamMap().set(sessionKey, {
+    sm.sessionMap.set(sessionKey, {
       upstreamId: failedProvider.id,
       routeKey,
       timestamp: Date.now(),
@@ -63,11 +65,11 @@ export function failoverStickySession(
 
   decrementSessionCount(sm, routeKey, failedUpstreamId);
 
-  const next = selectLeastLoadedUpstream(sm, available, routeKey, null);
+  const next = selectLeastLoadedUpstream(sm, available, routeKey, null, weightManager);
   incrementSessionCount(sm, routeKey, next.id);
 
   const sessionKey = model ? `${sessionId}:${model}` : sessionId;
-  sm.getSessionUpstreamMap().set(sessionKey, {
+  sm.sessionMap.set(sessionKey, {
     upstreamId: next.id,
     routeKey,
     timestamp: Date.now(),

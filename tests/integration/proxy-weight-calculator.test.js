@@ -7,7 +7,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { StateManager } from '../../src/proxy/state-manager.js';
-import { calculateEffectiveWeight, resetAllState } from '../../src/proxy/router.js';
+import { calculateEffectiveWeight, resetAllState, weightManager } from '../../src/proxy/router.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -48,6 +48,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       routeKey: 'route1',
       upstream,
       staticWeight,
+      weightManager,
     });
 
     assert.strictEqual(effectiveWeight, 100);
@@ -67,6 +68,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     assert.strictEqual(effectiveWeight, 200);
@@ -96,6 +98,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // Mechanism 1 (per-error reduction) removed - weight unchanged
@@ -128,6 +131,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // Mechanism 1 (per-error reduction) removed - weight unchanged
@@ -149,6 +153,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     assert.strictEqual(effectiveWeight, 100);
@@ -168,6 +173,7 @@ describe('Weight Calculator – calculateEffectiveWeight', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // Should return custom weight 250, not default 100

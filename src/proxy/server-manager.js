@@ -264,7 +264,9 @@ export class ProxyServerManager {
                 route.upstreams,
                 routeKey,
                 model,
-                (id) => circuitBreaker.isAvailable(id)
+                (id) => circuitBreaker.isAvailable(id),
+                null,
+                weightManager
               );
               if (nextUpstream && circuitBreaker.isAvailable(nextUpstream.id)) {
                 upstream = nextUpstream;

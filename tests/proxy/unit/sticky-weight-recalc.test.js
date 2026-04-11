@@ -236,7 +236,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     ];
 
     // Set session map: simulate an existing session on upstream-a
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('rebalance-session', sessionMap);
 
     // Inject sliding window entries for upstream-a (heavy load)
@@ -327,7 +327,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     ];
 
     // Set session on high-weight upstream with requestCount = 9
-    const sessionMapData = sm2.getSessionUpstreamMap();
+    const sessionMapData = sm2.sessionMap;
     sessionMapData.set('weighted-rebalance-session', {
       upstreamId: 'high-weight',
       routeKey: 'weighted-route',
@@ -372,7 +372,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
       makeUpstream({ id: 'upstream-b', weight: 100 }),
     ];
 
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('early-session', {
       upstreamId: 'upstream-a',
       routeKey,
@@ -403,7 +403,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     );
 
     // Verify no switch happened despite upstream-b being heavily loaded
-    const sessionEntry = sm.getSessionUpstreamMap().get('early-session');
+    const sessionEntry = sm.sessionMap.get('early-session');
     assert.equal(sessionEntry.requestCount, 6, 'requestCount should increment normally');
     assert.equal(
       sessionEntry.upstreamId,
@@ -419,7 +419,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     ];
 
     // Start with requestCount = 19 → next will be 20 → should check
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('multi-ten-session', {
       upstreamId: 'upstream-a',
       routeKey,
@@ -460,7 +460,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
       makeUpstream({ id: 'upstream-b', weight: 100 }),
     ];
 
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('reset-check-session', {
       upstreamId: 'upstream-a',
       routeKey,
@@ -474,7 +474,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
 
     selectUpstreamSticky(upstreams, routeKey, 'reset-check-session', null, 10, 2, null, null, sm);
 
-    const sessionEntry = sm.getSessionUpstreamMap().get('reset-check-session');
+    const sessionEntry = sm.sessionMap.get('reset-check-session');
     assert.equal(
       sessionEntry.requestCount,
       1,
@@ -499,7 +499,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     const model1 = 'gpt-4';
     const sessionKey = `${sessionId}:${model1}`;
 
-    const sessionMapData = sm2.getSessionUpstreamMap();
+    const sessionMapData = sm2.sessionMap;
     sessionMapData.set(sessionKey, {
       upstreamId: 'upstream-a',
       routeKey: 'model-route',
@@ -573,7 +573,7 @@ describe('Sticky weight recalculation – Single upstream edge case', () => {
   test('single upstream with high requestCount still returns it', () => {
     const upstreams = [makeUpstream({ id: 'solo' })];
 
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('heavy-solo', {
       upstreamId: 'solo',
       routeKey,
@@ -619,7 +619,7 @@ describe('Sticky weight recalculation – Score calculation accuracy', () => {
     ];
 
     // Scores that are very close
-    const sessionMapData = sm.getSessionUpstreamMap();
+    const sessionMapData = sm.sessionMap;
     sessionMapData.set('nearly-equal', {
       upstreamId: 'upstream-a',
       routeKey,

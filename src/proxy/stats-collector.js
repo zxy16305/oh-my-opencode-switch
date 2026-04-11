@@ -3,23 +3,9 @@
  * @module proxy/stats-collector
  */
 
-/**
- * Maximum number of samples to keep per upstream (sliding window)
- */
 const MAX_SAMPLES = 1000;
-
-/**
- * Threshold for lazy trimming sliding windows (2x MAX_SAMPLES)
- * Only compact arrays when they exceed this size
- */
 const TRIM_THRESHOLD = 2000;
 
-/**
- * Calculate percentile value from an array of numbers
- * @param {Array<number>} arr - Array of numeric values
- * @param {number} p - Percentile to calculate (0-100)
- * @returns {number} Calculated percentile value
- */
 function calculatePercentile(arr, p) {
   if (!arr || arr.length === 0) return 0;
   const sorted = arr.toSorted ? arr.toSorted((a, b) => a - b) : [...arr].sort((a, b) => a - b);
@@ -27,29 +13,14 @@ function calculatePercentile(arr, p) {
   return sorted[Math.max(0, index)];
 }
 
-/**
- * Record upstream performance statistics (TTFB, duration, errors)
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - Virtual model/route key
- * @param {string} upstreamId - Upstream identifier
- * @param {number} [ttfb] - Time to first byte in milliseconds
- * @param {number} [duration] - Total request duration in milliseconds
- * @param {boolean} [isError=false] - Whether this request resulted in an error
- */
 function recordUpstreamStats(state, routeKey, upstreamId, ttfb, duration, isError = false) {
   const key = `${routeKey}:${upstreamId}`;
-  const statsState = state.getStatsState();
+  const statsState = state.statsState;
   if (!statsState.has(key)) {
-    statsState.set(key, {
-      ttfbSamples: [],
-      durationSamples: [],
-      errorCount: 0,
-    });
+    statsState.set(key, { ttfbSamples: [], durationSamples: [], errorCount: 0 });
   }
 
   const stats = statsState.get(key);
-
-  // Ensure structure compatibility (merge may have created entries with different field names)
   if (!stats.ttfbSamples) stats.ttfbSamples = [];
   if (!stats.durationSamples) stats.durationSamples = [];
   if (stats.errorCount == null) stats.errorCount = 0;
@@ -57,11 +28,10 @@ function recordUpstreamStats(state, routeKey, upstreamId, ttfb, duration, isErro
   if (isError) {
     stats.errorCount++;
   } else {
-    // Only record timing metrics for successful requests
     if (ttfb != null) {
       stats.ttfbSamples.push(ttfb);
       if (stats.ttfbSamples.length > 1000) {
-        stats.ttfbSamples.shift(); // Maintain sliding window of 1000 samples
+        stats.ttfbSamples.shift();
       }
     }
     if (duration != null) {
@@ -73,16 +43,9 @@ function recordUpstreamStats(state, routeKey, upstreamId, ttfb, duration, isErro
   }
 }
 
-/**
- * Get upstream performance statistics including TTFB and Duration percentiles
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - Virtual model/route key
- * @param {string} upstreamId - Upstream identifier
- * @returns {{ errorCount: number, avgTtfb: number, ttfbP95: number, ttfbP99: number, avgDuration: number, durationP95: number, durationP99: number, sampleCount: number }}
- */
 function getUpstreamStats(state, routeKey, upstreamId) {
   const key = `${routeKey}:${upstreamId}`;
-  const statsState = state.getStatsState();
+  const statsState = state.statsState;
   const stats = statsState.get(key);
 
   if (!stats) {
@@ -119,47 +82,29 @@ function getUpstreamStats(state, routeKey, upstreamId) {
   };
 }
 
-/**
- * Record an error for an upstream
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - The route key (virtual model name)
- * @param {string} upstreamId - The upstream identifier
- * @param {number} statusCode - HTTP status code of the error
- */
 export function recordUpstreamError(state, routeKey, upstreamId, statusCode) {
   const key = `${routeKey}:${upstreamId}`;
-  const statsState = state.getStatsState();
+  const statsState = state.statsState;
   const entry = statsState.get(key) || { ttfbSamples: [], durationSamples: [], errorCount: 0 };
   entry.errorCount++;
   statsState.set(key, entry);
 
-  const errorState = state.getErrorState();
+  const errorState = state.errorState;
   if (!errorState.has(key)) {
     errorState.set(key, { errors: [] });
   }
   const errorEntry = errorState.get(key);
-  errorEntry.errors.push({
-    timestamp: Date.now(),
-    statusCode,
-  });
+  errorEntry.errors.push({ timestamp: Date.now(), statusCode });
 }
 
-/**
- * Get error rate for an upstream within a sliding time window
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - The route key (virtual model name)
- * @param {string} upstreamId - The upstream identifier
- * @param {number|object} windowMsOrConfig - Time window in ms, or config with errorWeightReduction.errorWindowMs
- * @returns {number} Error rate as a number (count of errors in window)
- */
-export function getErrorRate(state, routeKey, upstreamId, windowMsOrConfig) {
+export function getErrorCountInWindow(state, routeKey, upstreamId, windowMsOrConfig) {
   const windowMs =
     typeof windowMsOrConfig === 'object'
       ? (windowMsOrConfig?.errorWeightReduction?.errorWindowMs ?? 3600000)
       : windowMsOrConfig;
 
   const key = `${routeKey}:${upstreamId}`;
-  const errorState = state.getErrorState();
+  const errorState = state.errorState;
   const errorEntry = errorState.get(key);
   if (!errorEntry || errorEntry.errors.length === 0) {
     return 0;
@@ -167,11 +112,8 @@ export function getErrorRate(state, routeKey, upstreamId, windowMsOrConfig) {
 
   const now = Date.now();
   const windowStart = now - windowMs;
-
-  // Count in-window errors without mutating source
   const inWindow = errorEntry.errors.filter((error) => error.timestamp >= windowStart);
 
-  // Lazy trim: only compact when array exceeds threshold
   if (errorEntry.errors.length > TRIM_THRESHOLD) {
     errorEntry.errors = inWindow;
   }
@@ -179,32 +121,18 @@ export function getErrorRate(state, routeKey, upstreamId, windowMsOrConfig) {
   return inWindow.length;
 }
 
-/**
- * Get current error state (useful for testing/monitoring)
- * @param {StateManager} state - StateManager instance
- * @returns {Map<string, { errors: Array<{ timestamp: number, statusCode: number }> }>}
- */
 export function getErrorState(state) {
-  return state.getErrorState();
+  return state.errorState;
 }
 
-/**
- * Record a latency measurement for an upstream
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - The route key (virtual model name)
- * @param {string} upstreamId - The upstream identifier
- * @param {number} ttfb - Time to first byte in milliseconds
- * @param {number} duration - Request duration in milliseconds
- */
 export function recordUpstreamLatency(state, routeKey, upstreamId, ttfb, duration) {
   const key = `${routeKey}:${upstreamId}`;
-  const statsState = state.getStatsState();
+  const statsState = state.statsState;
   const entry = statsState.get(key) || { ttfbSamples: [], durationSamples: [], errorCount: 0 };
 
   if (ttfb != null && duration != null) {
     entry.ttfbSamples.push(ttfb);
     entry.durationSamples.push(duration);
-
     if (entry.ttfbSamples.length > MAX_SAMPLES) {
       entry.ttfbSamples.shift();
       entry.durationSamples.shift();
@@ -213,28 +141,17 @@ export function recordUpstreamLatency(state, routeKey, upstreamId, ttfb, duratio
 
   statsState.set(key, entry);
 
-  const latencyState = state.getLatencyState();
+  const latencyState = state.latencyState;
   if (!latencyState.has(key)) {
     latencyState.set(key, { latencies: [] });
   }
   const latencyEntry = latencyState.get(key);
-  latencyEntry.latencies.push({
-    timestamp: Date.now(),
-    duration,
-  });
+  latencyEntry.latencies.push({ timestamp: Date.now(), duration });
 }
 
-/**
- * Get average latency for an upstream within a sliding time window
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - The route key (virtual model name)
- * @param {string} upstreamId - The upstream identifier
- * @param {number} windowMs - Time window in milliseconds
- * @returns {number} Average latency in milliseconds, or 0 if no latencies in window
- */
 export function getLatencyAvg(state, routeKey, upstreamId, windowMs = 3600000) {
   const key = `${routeKey}:${upstreamId}`;
-  const latencyState = state.getLatencyState();
+  const latencyState = state.latencyState;
   const latencyEntry = latencyState.get(key);
   if (!latencyEntry || latencyEntry.latencies.length === 0) {
     return 0;
@@ -242,15 +159,12 @@ export function getLatencyAvg(state, routeKey, upstreamId, windowMs = 3600000) {
 
   const now = Date.now();
   const windowStart = now - windowMs;
-
-  // Filter in-window latencies without mutating source
   const inWindow = latencyEntry.latencies.filter((latency) => latency.timestamp >= windowStart);
 
   if (inWindow.length === 0) {
     return 0;
   }
 
-  // Lazy trim: only compact when array exceeds threshold
   if (latencyEntry.latencies.length > TRIM_THRESHOLD) {
     latencyEntry.latencies = inWindow;
   }
@@ -259,17 +173,9 @@ export function getLatencyAvg(state, routeKey, upstreamId, windowMs = 3600000) {
   return sum / inWindow.length;
 }
 
-/**
- * Get request count for an upstream within a sliding time window
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey - The route key (virtual model name)
- * @param {string} upstreamId - The upstream ID
- * @param {number} windowMs - Sliding window size in milliseconds (default: 10 minutes)
- * @returns {number} Number of requests within the window
- */
 export function getUpstreamRequestCountInWindow(state, routeKey, upstreamId, windowMs = 3600000) {
   const key = `${routeKey}:${upstreamId}`;
-  const upstreamSlidingWindowCounts = state.getUpstreamSlidingWindowCounts();
+  const upstreamSlidingWindowCounts = state.upstreamSlidingWindowCounts;
   const timestamps = upstreamSlidingWindowCounts.get(key);
   if (!timestamps || timestamps.length === 0) {
     return 0;
@@ -277,11 +183,8 @@ export function getUpstreamRequestCountInWindow(state, routeKey, upstreamId, win
 
   const now = Date.now();
   const windowStart = now - windowMs;
-
-  // Count in-window entries without mutating source
   const inWindow = timestamps.filter((entry) => entry.timestamp >= windowStart);
 
-  // Lazy trim: only compact when array exceeds threshold
   if (timestamps.length > TRIM_THRESHOLD) {
     upstreamSlidingWindowCounts.set(key, inWindow);
   }
@@ -289,79 +192,45 @@ export function getUpstreamRequestCountInWindow(state, routeKey, upstreamId, win
   return inWindow.length;
 }
 
-/**
- * Get current latency state (useful for testing/monitoring)
- * @param {StateManager} state - StateManager instance
- * @returns {Map<string, { latencies: Array<{ timestamp: number, duration: number }> }>}
- */
 export function getLatencyState(state) {
-  return state.getLatencyState();
+  return state.latencyState;
 }
 
-/**
- * 获取或创建 routeKey 的上游请求计数映射
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey
- * @returns {Map<string, number>}
- */
 function getOrCreateRequestCountMap(state, routeKey) {
-  const upstreamRequestCounts = state.getUpstreamRequestCounts();
+  const upstreamRequestCounts = state.upstreamRequestCounts;
   if (!upstreamRequestCounts.has(routeKey)) {
     upstreamRequestCounts.set(routeKey, new Map());
   }
   return upstreamRequestCounts.get(routeKey);
 }
 
-/**
- * 增加上游请求计数
- * @param {StateManager} state - StateManager instance
- * @param {string} routeKey
- * @param {string} upstreamId
- */
 export function incrementUpstreamRequestCount(state, routeKey, upstreamId) {
   const countMap = getOrCreateRequestCountMap(state, routeKey);
   countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
 
   const key = `${routeKey}:${upstreamId}`;
-  const upstreamSlidingWindowCounts = state.getUpstreamSlidingWindowCounts();
+  const upstreamSlidingWindowCounts = state.upstreamSlidingWindowCounts;
   if (!upstreamSlidingWindowCounts.has(key)) {
     upstreamSlidingWindowCounts.set(key, []);
   }
   upstreamSlidingWindowCounts.get(key).push({ timestamp: Date.now() });
 }
 
-/**
- * Get current upstream request counts (useful for testing/monitoring)
- * @param {StateManager} state - StateManager instance
- * @returns {Map<string, Map<string, number>>}
- */
 export function getUpstreamRequestCounts(state) {
-  return state.getUpstreamRequestCounts();
+  return state.upstreamRequestCounts;
 }
 
-/**
- * Get current upstream sliding window request counts (useful for testing/monitoring)
- * @param {StateManager} state - StateManager instance
- * @returns {Map<string, Array<{timestamp: number}>>}
- */
 export function getUpstreamSlidingWindowCounts(state) {
-  return state.getUpstreamSlidingWindowCounts();
+  return state.upstreamSlidingWindowCounts;
 }
 
-/**
- * Reset all statistics state (useful for testing)
- * @param {StateManager} state - StateManager instance
- */
 export function resetStats(state) {
-  state.getStatsState().clear();
-  state.getErrorState().clear();
-  state.getLatencyState().clear();
-  state.getUpstreamRequestCounts().clear();
-  state.getUpstreamSlidingWindowCounts().clear();
+  state.statsState.clear();
+  state.errorState.clear();
+  state.latencyState.clear();
+  state.upstreamRequestCounts.clear();
+  state.upstreamSlidingWindowCounts.clear();
 }
 
-// Export constants and functions
 export { MAX_SAMPLES };
-
-// Export internal functions for router.js
 export { recordUpstreamStats, getUpstreamStats, calculatePercentile };

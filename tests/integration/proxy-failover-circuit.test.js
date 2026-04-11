@@ -16,6 +16,7 @@ import {
   resetAllState,
   failoverStickySession,
   getSessionUpstreamMap,
+  weightManager,
 } from '../../src/proxy/router.js';
 import { CircuitBreaker, CircuitState } from '../../src/proxy/circuitbreaker.js';
 
@@ -124,7 +125,9 @@ describe('Failover with Circuit Breaker', () => {
       upstreams,
       ROUTE_KEY,
       ROUTE_KEY,
-      isAvailable
+      isAvailable,
+      null,
+      weightManager
     );
 
     // ------------------------------------------------------------------
@@ -201,7 +204,9 @@ describe('Failover with Circuit Breaker', () => {
       upstreams,
       ROUTE_KEY,
       ROUTE_KEY,
-      isAvailable
+      isAvailable,
+      null,
+      weightManager
     );
 
     assert.ok(nextUpstream, 'Should return an upstream');

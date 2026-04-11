@@ -25,7 +25,7 @@ function getState(state) {
  */
 export function getOrCreateCountMap(state, routeKey) {
   const sm = getState(state);
-  const upstreamSessionCounts = sm.getUpstreamSessionCounts();
+  const upstreamSessionCounts = sm.upstreamSessionCounts;
   if (!upstreamSessionCounts.has(routeKey)) {
     upstreamSessionCounts.set(routeKey, new Map());
   }
@@ -137,11 +137,11 @@ export function hashSessionToBackend(sessionId, backendCount) {
  */
 export function startSessionCleanup(state, intervalMs = 60_000) {
   const sm = getState(state);
-  if (sm.getCleanupInterval()) return;
+  if (sm.cleanupInterval) return;
 
   const interval = setInterval(() => {
     const now = Date.now();
-    const sessionUpstreamMap = sm.getSessionUpstreamMap();
+    const sessionUpstreamMap = sm.sessionMap;
     for (const [sessionId, entry] of sessionUpstreamMap) {
       if (now - entry.timestamp > SESSION_MAP_TTL_MS) {
         decrementSessionCount(sm, entry.routeKey, entry.upstreamId);
@@ -154,7 +154,7 @@ export function startSessionCleanup(state, intervalMs = 60_000) {
     interval.unref();
   }
 
-  sm.setCleanupInterval(interval);
+  sm.cleanupInterval = interval;
 }
 
 /**
@@ -163,14 +163,9 @@ export function startSessionCleanup(state, intervalMs = 60_000) {
  */
 export function stopSessionCleanup(state) {
   const sm = getState(state);
-  const interval = sm.getCleanupInterval();
+  const interval = sm.cleanupInterval;
   if (interval) {
     clearInterval(interval);
-    sm.setCleanupInterval(null);
+    sm.cleanupInterval = null;
   }
 }
-
-// Backward compatibility: export singleton's maps directly
-// These reference the singleton instance's maps for legacy code
-export const sessionUpstreamMap = stateManager.getSessionUpstreamMap();
-export const upstreamSessionCounts = stateManager.getUpstreamSessionCounts();

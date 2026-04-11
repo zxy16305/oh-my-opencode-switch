@@ -4,49 +4,35 @@
  */
 
 import { z } from 'zod';
+import logger from '../utils/logger.js';
 import { RouterError } from './errors.js';
 import { stateManager } from './state-manager.js';
 import { routeSchema, routesConfigSchema } from './schemas.js';
 
-// Import internal versions of session-manager functions (with _ prefix)
+// Session-manager: state-taking functions used internally, pure functions re-exported
 import {
-  getSessionId as _getSessionId,
-  startSessionCleanup as _startSessionCleanup,
-  stopSessionCleanup as _stopSessionCleanup,
-  incrementSessionCount as _incrementSessionCount,
-  decrementSessionCount as _decrementSessionCount,
-  hashSessionToBackend as _hashSessionToBackend,
+  getSessionId,
+  startSessionCleanup,
+  stopSessionCleanup,
+  incrementSessionCount,
+  decrementSessionCount,
 } from './session-manager.js';
 
-// Import internal versions of route-strategy functions (with _ prefix)
-import { selectLeastLoadedUpstream as _selectLeastLoadedUpstream } from './route-strategy.js';
-import { calculateEffectiveWeight, setWeightManager } from './weight-calculator.js';
+// Route-strategy: used internally only (no wrapper needed)
+import { selectLeastLoadedUpstream } from './route-strategy.js';
+import { calculateEffectiveWeight, calculateLeastLoadedScore } from './weight-calculator.js';
 import { WeightManager } from './weight/index.js';
 
-// Import internal versions of stats-collector functions (with _ prefix)
-import {
-  recordUpstreamStats as _recordUpstreamStats,
-  getUpstreamStats as _getUpstreamStats,
-  getErrorRate as _getErrorRate,
-  getLatencyAvg as _getLatencyAvg,
-  getUpstreamRequestCountInWindow as _getUpstreamRequestCountInWindow,
-  incrementUpstreamRequestCount as _incrementUpstreamRequestCount,
-  resetStats as _resetStats,
-  recordUpstreamError as _recordUpstreamError,
-  getErrorState as _getErrorState,
-  recordUpstreamLatency as _recordUpstreamLatency,
-  getLatencyState as _getLatencyState,
-  getUpstreamRequestCounts as _getUpstreamRequestCounts,
-  getUpstreamSlidingWindowCounts as _getUpstreamSlidingWindowCounts,
-} from './stats-collector.js';
+// Stats-collector: namespace import to avoid name collision with exported wrappers
+import * as stats from './stats-collector.js';
 
-// Import failover handler
-import { failoverStickySession as _failoverStickySession } from './failover-handler.js';
+// Failover-handler: namespace import to avoid name collision with exported wrapper
+import * as failover from './failover-handler.js';
 
 const weightManager = new WeightManager();
-setWeightManager(weightManager);
 
 export { RouterError } from './errors.js';
+export { getSessionId, hashSessionToBackend } from './session-manager.js';
 
 /**
  * Get route configuration for a given model name
@@ -71,107 +57,18 @@ export function getRouteForModel(model, config) {
   return null;
 }
 
-/**
- * Get session ID from request (wrapper with optional state param)
- * @param {import('node:http').IncomingMessage} request - HTTP request
- * @param {object} [body] - Parsed request body
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {string} Session ID
- */
-export function getSessionId(request, body = null, _state = null) {
-  return _getSessionId(request, body);
-}
+// --- Stats wrappers (state moved from first to last param for external consumers) ---
 
-/**
- * Hash session to backend (wrapper with optional state param)
- * @param {string} sessionId - Session ID
- * @param {number} backendCount - Number of backends
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {number} Backend index
- */
-export function hashSessionToBackend(sessionId, backendCount, _state = null) {
-  return _hashSessionToBackend(sessionId, backendCount);
-}
-
-/**
- * Wrapper for recordUpstreamError with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} statusCode - HTTP status code
- * @param {StateManager} [state] - Optional state manager instance
- */
 export function recordUpstreamError(routeKey, upstreamId, statusCode, state = null) {
   const sm = state ?? stateManager;
-  _recordUpstreamError(sm, routeKey, upstreamId, statusCode);
+  stats.recordUpstreamError(sm, routeKey, upstreamId, statusCode);
 }
 
-/**
- * Wrapper for getErrorRate with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number|object} windowMsOrConfig - Time window or config
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {number} Error rate
- */
-export function getErrorRate(routeKey, upstreamId, windowMsOrConfig, state = null) {
-  const sm = state ?? stateManager;
-  return _getErrorRate(sm, routeKey, upstreamId, windowMsOrConfig);
-}
-
-/**
- * Wrapper for getErrorState with optional state parameter at end
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, { errors: Array<{ timestamp: number, statusCode: number }> }>}
- */
-export function getErrorState(state = null) {
-  const sm = state ?? stateManager;
-  return _getErrorState(sm);
-}
-
-/**
- * Wrapper for recordUpstreamLatency with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} ttfb - Time to first byte
- * @param {number} duration - Request duration
- * @param {StateManager} [state] - Optional state manager instance
- */
 export function recordUpstreamLatency(routeKey, upstreamId, ttfb, duration, state = null) {
   const sm = state ?? stateManager;
-  _recordUpstreamLatency(sm, routeKey, upstreamId, ttfb, duration);
+  stats.recordUpstreamLatency(sm, routeKey, upstreamId, ttfb, duration);
 }
 
-/**
- * Wrapper for getLatencyAvg with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} windowMs - Time window in ms
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {number} Average latency
- */
-export function getLatencyAvg(routeKey, upstreamId, windowMs = 3600000, state = null) {
-  const sm = state ?? stateManager;
-  return _getLatencyAvg(sm, routeKey, upstreamId, windowMs);
-}
-
-/**
- * Wrapper for getLatencyState with optional state parameter at end
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, { latencies: Array<{ timestamp: number, duration: number }> }>}
- */
-export function getLatencyState(state = null) {
-  const sm = state ?? stateManager;
-  return _getLatencyState(sm);
-}
-
-/**
- * Wrapper for getUpstreamRequestCountInWindow with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} windowMs - Time window in ms
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {number} Request count
- */
 export function getUpstreamRequestCountInWindow(
   routeKey,
   upstreamId,
@@ -179,49 +76,24 @@ export function getUpstreamRequestCountInWindow(
   state = null
 ) {
   const sm = state ?? stateManager;
-  return _getUpstreamRequestCountInWindow(sm, routeKey, upstreamId, windowMs);
+  return stats.getUpstreamRequestCountInWindow(sm, routeKey, upstreamId, windowMs);
 }
 
-/**
- * Wrapper for incrementUpstreamRequestCount with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {StateManager} [state] - Optional state manager instance
- */
 export function incrementUpstreamRequestCount(routeKey, upstreamId, state = null) {
   const sm = state ?? stateManager;
-  _incrementUpstreamRequestCount(sm, routeKey, upstreamId);
+  stats.incrementUpstreamRequestCount(sm, routeKey, upstreamId);
 }
 
-/**
- * Wrapper for getUpstreamRequestCounts with optional state parameter at end
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, Map<string, number>>}
- */
 export function getUpstreamRequestCounts(state = null) {
   const sm = state ?? stateManager;
-  return _getUpstreamRequestCounts(sm);
+  return stats.getUpstreamRequestCounts(sm);
 }
 
-/**
- * Wrapper for getUpstreamSlidingWindowCounts with optional state parameter at end
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {Map<string, Array<{timestamp: number}>}
- */
 export function getUpstreamSlidingWindowCounts(state = null) {
   const sm = state ?? stateManager;
-  return _getUpstreamSlidingWindowCounts(sm);
+  return stats.getUpstreamSlidingWindowCounts(sm);
 }
 
-/**
- * Wrapper for recordUpstreamStats with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {number} [ttfb] - Time to first byte
- * @param {number} [duration] - Request duration
- * @param {boolean} [isError=false] - Whether this was an error
- * @param {StateManager} [state] - Optional state manager instance
- */
 export function recordUpstreamStats(
   routeKey,
   upstreamId,
@@ -231,20 +103,15 @@ export function recordUpstreamStats(
   state = null
 ) {
   const sm = state ?? stateManager;
-  _recordUpstreamStats(sm, routeKey, upstreamId, ttfb, duration, isError);
+  stats.recordUpstreamStats(sm, routeKey, upstreamId, ttfb, duration, isError);
 }
 
-/**
- * Wrapper for getUpstreamStats with optional state parameter at end
- * @param {string} routeKey - Route identifier
- * @param {string} upstreamId - Upstream identifier
- * @param {StateManager} [state] - Optional state manager instance
- * @returns {{ errorCount: number, avgTtfb: number, ttfbP95: number, ttfbP99: number, avgDuration: number, durationP95: number, durationP99: number, sampleCount: number }}
- */
 export function getUpstreamStats(routeKey, upstreamId, state = null) {
   const sm = state ?? stateManager;
-  return _getUpstreamStats(sm, routeKey, upstreamId);
+  return stats.getUpstreamStats(sm, routeKey, upstreamId);
 }
+
+// --- Core routing logic ---
 
 /**
  * Select upstream using sticky session strategy with consistent hashing.
@@ -269,7 +136,7 @@ export function selectUpstreamSticky(
   _threshold = 10,
   _minGap = 2,
   dynamicWeightConfig = null,
-  timeSlotWeightConfig = null,
+  _timeSlotWeightConfig = null,
   state = null
 ) {
   const sm = state ?? stateManager;
@@ -280,12 +147,12 @@ export function selectUpstreamSticky(
 
   if (upstreams.length === 1) {
     const selected = upstreams[0];
-    _startSessionCleanup(sm);
-    _incrementSessionCount(sm, routeKey, selected.id);
-    _incrementUpstreamRequestCount(sm, routeKey, selected.id);
+    startSessionCleanup(sm);
+    incrementSessionCount(sm, routeKey, selected.id);
+    stats.incrementUpstreamRequestCount(sm, routeKey, selected.id);
 
     const sessionKey = model ? `${sessionId}:${model}` : sessionId;
-    const sessionUpstreamMap = sm.getSessionUpstreamMap();
+    const sessionUpstreamMap = sm.sessionMap;
     sessionUpstreamMap.set(sessionKey, {
       upstreamId: selected.id,
       routeKey,
@@ -296,11 +163,11 @@ export function selectUpstreamSticky(
     return selected;
   }
 
-  _startSessionCleanup(sm);
+  startSessionCleanup(sm);
 
   const sessionKey = model ? `${sessionId}:${model}` : sessionId;
   const upstreamIdMap = new Map(upstreams.map((u) => [u.id, u]));
-  const sessionUpstreamMap = sm.getSessionUpstreamMap();
+  const sessionUpstreamMap = sm.sessionMap;
   const existing = sessionUpstreamMap.get(sessionKey);
 
   if (existing && existing.routeKey === routeKey) {
@@ -309,21 +176,18 @@ export function selectUpstreamSticky(
       existing.timestamp = Date.now();
       existing.requestCount = (existing.requestCount ?? 0) + 1;
 
-      // Increment global request count FIRST (before checking)
-      _incrementUpstreamRequestCount(sm, routeKey, existing.upstreamId);
+      stats.incrementUpstreamRequestCount(sm, routeKey, existing.upstreamId);
 
       // Every 10 requests, check sliding window request counts for soft rotation
       if (existing.requestCount % 10 === 0) {
-        // Batch-read all sliding window counts ONCE to avoid repeated state map lookups
         const requestCounts = new Map();
         for (const upstream of upstreams) {
           requestCounts.set(
             upstream.id,
-            _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id)
+            stats.getUpstreamRequestCountInWindow(sm, routeKey, upstream.id)
           );
         }
 
-        // Cache effectiveWeight calculations — compute once per upstream per recalculation cycle
         const effectiveWeights = new Map();
         for (const upstream of upstreams) {
           const ew = calculateEffectiveWeight({
@@ -332,18 +196,15 @@ export function selectUpstreamSticky(
             upstream,
             staticWeight: weightManager.getConfiguredWeight(upstream),
             dynamicWeightConfig,
-            timeSlotWeightConfig,
-            upstreams,
+            weightManager,
           });
           effectiveWeights.set(upstream.id, ew);
         }
 
-        // Calculate current upstream's score using cached values
         const currentRequestCount = requestCounts.get(existing.upstreamId);
         const currentEffectiveWeight = effectiveWeights.get(existing.upstreamId);
-        const currentScore = (currentRequestCount + 1) / currentEffectiveWeight;
+        const currentScore = calculateLeastLoadedScore(currentRequestCount, currentEffectiveWeight);
 
-        // Find candidate with lowest score (excluding current upstream)
         let minScore = Infinity;
         let minScoreUpstream = null;
 
@@ -352,7 +213,7 @@ export function selectUpstreamSticky(
 
           const requestCount = requestCounts.get(upstream.id);
           const effectiveWeight = effectiveWeights.get(upstream.id);
-          const score = (requestCount + 1) / effectiveWeight;
+          const score = calculateLeastLoadedScore(requestCount, effectiveWeight);
 
           if (score < minScore) {
             minScore = score;
@@ -360,29 +221,27 @@ export function selectUpstreamSticky(
           }
         }
 
-        // Switch if candidate has lower score than current
         if (minScoreUpstream && minScore < currentScore) {
-          _decrementSessionCount(sm, routeKey, existing.upstreamId);
-          _incrementSessionCount(sm, routeKey, minScoreUpstream.id);
+          decrementSessionCount(sm, routeKey, existing.upstreamId);
+          incrementSessionCount(sm, routeKey, minScoreUpstream.id);
           existing.upstreamId = minScoreUpstream.id;
-          existing.requestCount = 1; // Reset count after switch
+          existing.requestCount = 1;
         }
-        // Otherwise keep accumulating requestCount
       }
 
       return upstreamIdMap.get(existing.upstreamId) ?? mapped;
     }
   }
 
-  const selected = _selectLeastLoadedUpstream(
+  const selected = selectLeastLoadedUpstream(
     sm,
     upstreams,
     routeKey,
     dynamicWeightConfig,
-    timeSlotWeightConfig
+    weightManager
   );
-  _incrementSessionCount(sm, routeKey, selected.id);
-  _incrementUpstreamRequestCount(sm, routeKey, selected.id);
+  incrementSessionCount(sm, routeKey, selected.id);
+  stats.incrementUpstreamRequestCount(sm, routeKey, selected.id);
 
   sessionUpstreamMap.set(sessionKey, {
     upstreamId: selected.id,
@@ -424,32 +283,25 @@ export function routeRequest(model, config, request, body = null, state = null) 
     dynamicWeight,
     timeSlotWeight,
   } = route;
-  const strategy = 'sticky';
-  let selectedUpstream;
-  let sessionId;
 
-  switch (strategy) {
-    case 'sticky':
-      sessionId = request ? getSessionId(request, body, sm) : `auto_${Date.now()}`;
-      selectedUpstream = selectUpstreamSticky(
-        upstreams,
-        model,
-        sessionId,
-        model,
-        stickyReassignThreshold,
-        stickyReassignMinGap,
-        dynamicWeight,
-        timeSlotWeight,
-        sm
-      );
-      break;
-    default:
-      throw new RouterError(
-        `Unknown strategy '${strategy}'. Use 'sticky' strategy.`,
-        'UNKNOWN_STRATEGY',
-        { requestedStrategy: strategy, supportedStrategies: ['sticky'] }
-      );
+  if (route.strategy && route.strategy !== 'sticky') {
+    logger.warn(
+      `Route '${model}' has strategy='${route.strategy}' but only 'sticky' is supported. Ignoring.`
+    );
   }
+
+  const sessionId = request ? getSessionId(request, body) : `auto_${Date.now()}`;
+  const selectedUpstream = selectUpstreamSticky(
+    upstreams,
+    model,
+    sessionId,
+    model,
+    stickyReassignThreshold,
+    stickyReassignMinGap,
+    dynamicWeight,
+    timeSlotWeight,
+    sm
+  );
 
   const result = {
     upstream: selectedUpstream,
@@ -460,8 +312,6 @@ export function routeRequest(model, config, request, body = null, state = null) 
   if (sessionId) {
     result.sessionId = sessionId;
   }
-
-  // Sticky strategy already increments in selectUpstreamSticky
 
   return result;
 }
@@ -527,31 +377,31 @@ export function validateRoutesConfig(config) {
  */
 export function resetAllState(state = null) {
   const sm = state ?? stateManager;
-  sm.getRoundRobinCounters().clear();
-  sm.getSessionUpstreamMap().clear();
-  sm.getUpstreamSessionCounts().clear();
-  _resetStats(sm);
-  _stopSessionCleanup(sm);
+  sm.roundRobinCounters.clear();
+  sm.sessionMap.clear();
+  sm.upstreamSessionCounts.clear();
+  stats.resetStats(sm);
+  stopSessionCleanup(sm);
 }
 
 /**
- * Get current session �?upstream mapping size (useful for testing/monitoring)
+ * Get current session ↦ upstream mapping size (useful for testing/monitoring)
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {number}
  */
 export function getSessionMapSize(state = null) {
   const sm = state ?? stateManager;
-  return sm.getSessionUpstreamMap().size;
+  return sm.sessionMap.size;
 }
 
 /**
- * Get current session �?upstream mapping (useful for testing/monitoring)
+ * Get current session ↦ upstream mapping (useful for testing/monitoring)
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {Map<string, { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }>}
  */
 export function getSessionUpstreamMap(state = null) {
   const sm = state ?? stateManager;
-  return sm.getSessionUpstreamMap();
+  return sm.sessionMap;
 }
 
 /**
@@ -561,20 +411,9 @@ export function getSessionUpstreamMap(state = null) {
  */
 export function getUpstreamSessionCounts(state = null) {
   const sm = state ?? stateManager;
-  return sm.getUpstreamSessionCounts();
+  return sm.upstreamSessionCounts;
 }
 
-/**
- * Failover sticky session wrapper (pass through to failover-handler with state)
- * @param {string} sessionId
- * @param {string} failedUpstreamId
- * @param {Upstream[]} upstreams
- * @param {string} routeKey
- * @param {string} [model]
- * @param {Function} [isAvailable]
- * @param {StateManager} [state]
- * @returns {Upstream | null}
- */
 export function failoverStickySession(
   sessionId,
   failedUpstreamId,
@@ -582,16 +421,19 @@ export function failoverStickySession(
   routeKey,
   model,
   isAvailable,
-  state = null
+  state = null,
+  _weightManager = null
 ) {
   const sm = state ?? stateManager;
-  return _failoverStickySession(
+  const wm = _weightManager ?? weightManager;
+  return failover.failoverStickySession(
     sessionId,
     failedUpstreamId,
     upstreams,
     routeKey,
     model,
     isAvailable,
-    sm
+    sm,
+    wm
   );
 }

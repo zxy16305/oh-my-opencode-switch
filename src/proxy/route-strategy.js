@@ -5,8 +5,8 @@
 
 import { stateManager } from './state-manager.js';
 import { RouterError } from './errors.js';
-import { calculateEffectiveWeight, getConfiguredWeight } from './weight-calculator.js';
-import { getUpstreamRequestCountInWindow as _getUpstreamRequestCountInWindow } from './stats-collector.js';
+import { calculateEffectiveWeight, calculateLeastLoadedScore } from './weight-calculator.js';
+import { getUpstreamRequestCountInWindow } from './stats-collector.js';
 
 /**
  * Get the StateManager instance to use (provided or singleton)
@@ -26,7 +26,7 @@ function getState(state) {
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
  * @param {object} [dynamicWeightConfig] - Optional dynamic weight config
- * @param {object} [timeSlotWeightConfig] - Optional time slot weight config
+ * @param {import('./weight/WeightManager.js').WeightManager} weightManager - WeightManager instance
  * @returns {Upstream}
  */
 function selectLeastLoadedUpstream(
@@ -34,24 +34,21 @@ function selectLeastLoadedUpstream(
   upstreams,
   routeKey,
   dynamicWeightConfig = null,
-  timeSlotWeightConfig = null
+  weightManager
 ) {
   const sm = getState(state);
 
   // Filter out upstreams with effective weight <= 0
   const validUpstreams = [];
   for (const upstream of upstreams) {
-    // Use configured weight: time slot weight takes priority, fallback to upstream.weight
-    const configuredWeight = getConfiguredWeight(upstream);
+    const configuredWeight = weightManager.getConfiguredWeight(upstream);
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
       staticWeight: configuredWeight,
       dynamicWeightConfig,
-      timeSlotWeightConfig,
-      upstreams,
-      latencyWindowMs: 3600000,
+      weightManager,
     });
     if (effectiveWeight > 0) {
       validUpstreams.push({ upstream, effectiveWeight });
@@ -66,9 +63,9 @@ function selectLeastLoadedUpstream(
   const candidates = [];
 
   for (const { upstream, effectiveWeight } of validUpstreams) {
-    const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
+    const requestCount = getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
 
-    const score = (requestCount + 1) / effectiveWeight;
+    const score = calculateLeastLoadedScore(requestCount, effectiveWeight);
 
     if (score < bestScore) {
       bestScore = score;

@@ -6,7 +6,6 @@ import {
   getUpstreamStats,
   weightManager,
 } from './router.js';
-import { getConfiguredWeight } from './weight-calculator.js';
 import { logger } from '../utils/logger.js';
 import { logBuffer } from '../utils/log-buffer.js';
 import { onLogAdded } from '../utils/access-log.js';
@@ -180,8 +179,11 @@ export function handleStats(req, res, routes, _circuitBreaker) {
           durationP99: stats.durationP99,
           sampleCount: stats.sampleCount,
           currentWeight:
-            wmState?.currentWeight ?? weightEntry?.currentWeight ?? getConfiguredWeight(upstream),
-          configuredWeight: wmState?.configuredWeight ?? getConfiguredWeight(upstream),
+            wmState?.currentWeight ??
+            weightEntry?.currentWeight ??
+            weightManager.getConfiguredWeight(upstream),
+          configuredWeight:
+            wmState?.configuredWeight ?? weightManager.getConfiguredWeight(upstream),
         };
       }),
     };

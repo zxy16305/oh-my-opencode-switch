@@ -318,21 +318,33 @@ export function selectUpstreamSticky(
 
       // Every 10 requests, check sliding window request counts for soft rotation
       if (existing.requestCount % 10 === 0) {
-        // Calculate current upstream's score using sliding window count and effectiveWeight
-        const currentRequestCount = _getUpstreamRequestCountInWindow(
-          sm,
-          routeKey,
-          existing.upstreamId
-        );
-        const currentEffectiveWeight = calculateEffectiveWeight({
-          sm,
-          routeKey,
-          upstream: mapped,
-          staticWeight: weightManager.getConfiguredWeight(mapped),
-          dynamicWeightConfig,
-          timeSlotWeightConfig,
-          upstreams,
-        });
+        // Batch-read all sliding window counts ONCE to avoid repeated state map lookups
+        const requestCounts = new Map();
+        for (const upstream of upstreams) {
+          requestCounts.set(
+            upstream.id,
+            _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id)
+          );
+        }
+
+        // Cache effectiveWeight calculations — compute once per upstream per recalculation cycle
+        const effectiveWeights = new Map();
+        for (const upstream of upstreams) {
+          const ew = calculateEffectiveWeight({
+            sm,
+            routeKey,
+            upstream,
+            staticWeight: weightManager.getConfiguredWeight(upstream),
+            dynamicWeightConfig,
+            timeSlotWeightConfig,
+            upstreams,
+          });
+          effectiveWeights.set(upstream.id, ew);
+        }
+
+        // Calculate current upstream's score using cached values
+        const currentRequestCount = requestCounts.get(existing.upstreamId);
+        const currentEffectiveWeight = effectiveWeights.get(existing.upstreamId);
         const currentScore = (currentRequestCount + 1) / currentEffectiveWeight;
 
         // Find candidate with lowest score (excluding current upstream)
@@ -342,16 +354,8 @@ export function selectUpstreamSticky(
         for (const upstream of upstreams) {
           if (upstream.id === existing.upstreamId) continue;
 
-          const requestCount = _getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
-          const effectiveWeight = calculateEffectiveWeight({
-            sm,
-            routeKey,
-            upstream,
-            staticWeight: weightManager.getConfiguredWeight(upstream),
-            dynamicWeightConfig,
-            timeSlotWeightConfig,
-            upstreams,
-          });
+          const requestCount = requestCounts.get(upstream.id);
+          const effectiveWeight = effectiveWeights.get(upstream.id);
           const score = (requestCount + 1) / effectiveWeight;
 
           if (score < minScore) {

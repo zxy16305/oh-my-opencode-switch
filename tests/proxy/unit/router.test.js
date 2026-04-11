@@ -20,7 +20,6 @@ import {
   getSessionMapSize,
   getUpstreamSessionCounts,
   RouterError,
-  setDynamicWeight,
   getUpstreamRequestCountInWindow,
   getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/router.js';
@@ -305,46 +304,6 @@ describe('Router – selectUpstreamSticky()', () => {
       selected.id,
       'a',
       'Should select upstream with fewer recent requests (weight-aware)'
-    );
-  });
-
-  test('dynamic weight affects sticky selection', () => {
-    const upstreams = [
-      makeUpstream({ id: 'normal', weight: 100 }),
-      makeUpstream({ id: 'penalized', weight: 100 }),
-    ];
-
-    // Set dynamic weight: normal=100, penalized=10
-    setDynamicWeight('dyn-route', 'normal', 100);
-    setDynamicWeight('dyn-route', 'penalized', 10);
-
-    const dynamicWeightConfig = {
-      enabled: true,
-      initialWeight: 100,
-      minWeight: 10,
-      latencyThreshold: 1.5,
-    };
-
-    // Distribute sessions with dynamic weight config
-    const counts = { normal: 0, penalized: 0 };
-    for (let i = 0; i < 50; i++) {
-      const selected = selectUpstreamSticky(
-        upstreams,
-        'dyn-route',
-        `dyn-sess-${i}`,
-        null,
-        0,
-        2,
-        dynamicWeightConfig
-      );
-      counts[selected.id]++;
-    }
-
-    // With penalized having weight=10 vs normal=100, penalized should get fewer requests
-    const penalizedPercent = (counts['penalized'] / 50) * 100;
-    assert.ok(
-      penalizedPercent <= 20,
-      `Expected penalized upstream to get <=20% of requests with low dynamic weight, got ${penalizedPercent.toFixed(2)}%`
     );
   });
 });

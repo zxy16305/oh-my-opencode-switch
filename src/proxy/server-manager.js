@@ -662,6 +662,7 @@ function serializeRoutes(routes) {
         provider: u.provider,
         model: u.model,
         weight: u.weight,
+        timeSlotWeights: u.timeSlotWeights,
       })),
     };
   }

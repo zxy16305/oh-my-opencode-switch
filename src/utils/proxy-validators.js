@@ -7,6 +7,14 @@ export const upstreamSchema = z.object({
   baseURL: z.string().url('Base URL must be a valid URL').optional(),
   apiKey: z.string().optional().nullable(),
   weight: z.number().positive().optional(),
+  timeSlotWeights: z
+    .object({
+      high: z.number().min(0).optional(),
+      medium: z.number().min(0).optional(),
+      low: z.number().min(0).optional(),
+    })
+    .strict()
+    .optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 

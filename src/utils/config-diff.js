@@ -61,7 +61,12 @@ function isRouteModified(oldRoute, newRoute) {
   for (let i = 0; i < oldUpstreams.length; i++) {
     const o = oldUpstreams[i];
     const n = newUpstreams[i];
-    if (o.provider !== n.provider || o.model !== n.model || o.weight !== n.weight) {
+    if (
+      o.provider !== n.provider ||
+      o.model !== n.model ||
+      o.weight !== n.weight ||
+      JSON.stringify(o.timeSlotWeights) !== JSON.stringify(n.timeSlotWeights)
+    ) {
       return true;
     }
   }

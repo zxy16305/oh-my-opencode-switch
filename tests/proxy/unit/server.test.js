@@ -284,6 +284,62 @@ describe('Server – forwardRequest()', () => {
   });
 });
 
+describe('Server – keep-alive agent()', () => {
+  test('forwardRequest attaches an agent to upstream requests', async () => {
+    const upstreamPort = allocPort();
+    let capturedAgent = null;
+
+    await startUpstream(upstreamPort, (_req, res) => {
+      res.writeHead(200);
+      res.end('ok');
+    });
+
+    const proxyPort = allocPort();
+    await createProxyServer(proxyPort, () => `http://127.0.0.1:${upstreamPort}/`, {
+      onProxyReq: (proxyReq) => {
+        capturedAgent = proxyReq.agent;
+      },
+    });
+
+    const res = await httpGet(proxyPort, '/');
+    assert.equal(res.status, 200);
+    assert.ok(capturedAgent !== null && capturedAgent !== undefined, 'agent should be set');
+    assert.equal(capturedAgent.keepAlive, true, 'agent should have keepAlive enabled');
+  });
+
+  test('sequential requests to same upstream reuse connection via agent', async () => {
+    const upstreamPort = allocPort();
+    const socketPorts = new Set();
+
+    await startUpstream(upstreamPort, (req, res) => {
+      socketPorts.add(req.socket.remotePort);
+      res.writeHead(200);
+      res.end('ok');
+    });
+
+    const proxyPort = allocPort();
+    await createProxyServer(proxyPort, () => `http://127.0.0.1:${upstreamPort}/`);
+
+    const res1 = await httpGet(proxyPort, '/');
+    assert.equal(res1.status, 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const res2 = await httpGet(proxyPort, '/');
+    assert.equal(res2.status, 200);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const res3 = await httpGet(proxyPort, '/');
+    assert.equal(res3.status, 200);
+
+    assert.ok(
+      socketPorts.size <= 2,
+      `Expected <= 2 distinct connections for 3 sequential requests, got ${socketPorts.size}`
+    );
+  });
+});
+
 describe('Server – createServer()', () => {
   test('creates server on specified port', async () => {
     const port = allocPort();

@@ -5,6 +5,23 @@ import { URL } from 'node:url';
 import { OosError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 100,
+  maxFreeSockets: 20,
+  timeout: 60000,
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 100,
+  maxFreeSockets: 20,
+  timeout: 60000,
+  rejectUnauthorized: true,
+});
+
 const DEFAULT_PORT = 3000;
 export const SSE_HEADERS = {
   'Cache-Control': 'no-cache',
@@ -77,6 +94,7 @@ function buildProxyOptions(clientReq, targetUrl, extraHeaders = {}) {
     path: targetUrl.pathname + targetUrl.search,
     method: clientReq.method,
     headers,
+    agent: targetUrl.protocol === 'https:' ? httpsAgent : httpAgent,
     rejectUnauthorized: true,
   };
 }

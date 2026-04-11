@@ -417,29 +417,14 @@ export function routeRequest(model, config, request, body = null, state = null) 
     });
   }
 
-  const validationResult = routeSchema.safeParse(route);
-  if (!validationResult.success) {
-    throw new RouterError(
-      `Invalid route configuration for model: ${model}`,
-      'INVALID_ROUTE_CONFIG',
-      {
-        errors: validationResult.error.errors.map((e) => ({
-          path: e.path.join('.'),
-          message: e.message,
-        })),
-      }
-    );
-  }
-
-  const validatedRoute = validationResult.data;
   const {
     upstreams,
-    strategy,
     stickyReassignThreshold,
     stickyReassignMinGap,
     dynamicWeight,
     timeSlotWeight,
-  } = validatedRoute;
+  } = route;
+  const strategy = 'sticky';
   let selectedUpstream;
   let sessionId;
 
@@ -494,6 +479,26 @@ export function getAvailableModels(config) {
     return [];
   }
   return Object.keys(config);
+}
+
+/**
+ * Validate a single route configuration
+ * @param {unknown} route - Route configuration to validate
+ * @returns {{ valid: boolean, data?: Route, error?: string }}
+ */
+export function validateRoute(route) {
+  try {
+    const data = routeSchema.parse(route);
+    return { valid: true, data };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return {
+        valid: false,
+        error: error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', '),
+      };
+    }
+    return { valid: false, error: error.message };
+  }
 }
 
 /**

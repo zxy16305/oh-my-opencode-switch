@@ -2,6 +2,7 @@ import { createServer, shutdownServer, isPortAvailable, forwardRequest } from '.
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
+  validateRoute,
   failoverStickySession,
   recordUpstreamError,
   recordUpstreamLatency,
@@ -96,6 +97,14 @@ export class ProxyServerManager {
     }
 
     const routes = await configManager.resolveRoutes(config.routes || {});
+
+    for (const [routeName, route] of Object.entries(routes)) {
+      const validation = validateRoute(route);
+      if (!validation.valid) {
+        logger.error(`Invalid route "${routeName}": ${validation.error}`);
+        process.exit(1);
+      }
+    }
 
     for (const [routeName, route] of Object.entries(routes)) {
       const validUpstreams = [];
@@ -590,6 +599,13 @@ export class ProxyServerManager {
       }
 
       const newRoutes = await configManager.resolveRoutes(config.routes || {});
+
+      for (const [routeName, route] of Object.entries(newRoutes)) {
+        const validation = validateRoute(route);
+        if (!validation.valid) {
+          return { success: false, error: `Invalid route "${routeName}": ${validation.error}` };
+        }
+      }
 
       for (const [routeName, route] of Object.entries(newRoutes)) {
         const validUpstreams = [];

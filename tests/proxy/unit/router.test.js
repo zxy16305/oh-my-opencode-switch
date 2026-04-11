@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import {
   routeRequest,
+  validateRoute,
   getRouteForModel,
   getAvailableModels,
   selectUpstreamSticky,
@@ -655,23 +656,15 @@ describe('Router – routeRequest()', () => {
     );
   });
 
-  test('throws RouterError for invalid route config (bad upstream)', () => {
-    const config = {
-      'bad-model': {
-        strategy: 'sticky',
-        upstreams: [{ id: '', provider: '', model: '', baseURL: 'not-a-url' }],
-      },
+  test('validateRoute catches invalid route config (bad upstream)', () => {
+    const route = {
+      strategy: 'sticky',
+      upstreams: [{ id: '', provider: '', model: '', baseURL: 'not-a-url' }],
     };
 
-    assert.throws(
-      () => routeRequest('bad-model', config),
-      (err) => {
-        assert.ok(err instanceof RouterError);
-        assert.equal(err.code, 'INVALID_ROUTE_CONFIG');
-        assert.ok(err.details.errors.length > 0);
-        return true;
-      }
-    );
+    const result = validateRoute(route);
+    assert.equal(result.valid, false);
+    assert.ok(result.error.length > 0);
   });
 });
 

@@ -144,12 +144,14 @@ export class ProxyServerManager {
         return;
       }
 
-      let body = '';
+      const chunks = [];
       req.on('data', (chunk) => {
-        body += chunk.toString();
+        chunks.push(chunk);
       });
 
       req.on('end', async () => {
+        const body = Buffer.concat(chunks).toString();
+
         try {
           if (req.url === '/_internal/reload' && req.method === 'POST') {
             const clientIp = req.socket.remoteAddress || '';

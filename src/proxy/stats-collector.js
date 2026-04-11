@@ -9,6 +9,12 @@
 const MAX_SAMPLES = 1000;
 
 /**
+ * Threshold for lazy trimming sliding windows (2x MAX_SAMPLES)
+ * Only compact arrays when they exceed this size
+ */
+const TRIM_THRESHOLD = 2000;
+
+/**
  * Calculate percentile value from an array of numbers
  * @param {Array<number>} arr - Array of numeric values
  * @param {number} p - Percentile to calculate (0-100)
@@ -16,7 +22,7 @@ const MAX_SAMPLES = 1000;
  */
 function calculatePercentile(arr, p) {
   if (!arr || arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
+  const sorted = arr.toSorted ? arr.toSorted((a, b) => a - b) : [...arr].sort((a, b) => a - b);
   const index = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, index)];
 }
@@ -162,9 +168,15 @@ export function getErrorRate(state, routeKey, upstreamId, windowMsOrConfig) {
   const now = Date.now();
   const windowStart = now - windowMs;
 
-  errorEntry.errors = errorEntry.errors.filter((error) => error.timestamp >= windowStart);
+  // Count in-window errors without mutating source
+  const inWindow = errorEntry.errors.filter((error) => error.timestamp >= windowStart);
 
-  return errorEntry.errors.length;
+  // Lazy trim: only compact when array exceeds threshold
+  if (errorEntry.errors.length > TRIM_THRESHOLD) {
+    errorEntry.errors = inWindow;
+  }
+
+  return inWindow.length;
 }
 
 /**
@@ -231,16 +243,20 @@ export function getLatencyAvg(state, routeKey, upstreamId, windowMs = 3600000) {
   const now = Date.now();
   const windowStart = now - windowMs;
 
-  latencyEntry.latencies = latencyEntry.latencies.filter(
-    (latency) => latency.timestamp >= windowStart
-  );
+  // Filter in-window latencies without mutating source
+  const inWindow = latencyEntry.latencies.filter((latency) => latency.timestamp >= windowStart);
 
-  if (latencyEntry.latencies.length === 0) {
+  if (inWindow.length === 0) {
     return 0;
   }
 
-  const sum = latencyEntry.latencies.reduce((acc, latency) => acc + latency.duration, 0);
-  return sum / latencyEntry.latencies.length;
+  // Lazy trim: only compact when array exceeds threshold
+  if (latencyEntry.latencies.length > TRIM_THRESHOLD) {
+    latencyEntry.latencies = inWindow;
+  }
+
+  const sum = inWindow.reduce((acc, latency) => acc + latency.duration, 0);
+  return sum / inWindow.length;
 }
 
 /**
@@ -262,10 +278,15 @@ export function getUpstreamRequestCountInWindow(state, routeKey, upstreamId, win
   const now = Date.now();
   const windowStart = now - windowMs;
 
-  const filtered = timestamps.filter((entry) => entry.timestamp >= windowStart);
-  upstreamSlidingWindowCounts.set(key, filtered);
+  // Count in-window entries without mutating source
+  const inWindow = timestamps.filter((entry) => entry.timestamp >= windowStart);
 
-  return filtered.length;
+  // Lazy trim: only compact when array exceeds threshold
+  if (timestamps.length > TRIM_THRESHOLD) {
+    upstreamSlidingWindowCounts.set(key, inWindow);
+  }
+
+  return inWindow.length;
 }
 
 /**

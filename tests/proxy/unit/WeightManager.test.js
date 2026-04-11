@@ -80,6 +80,7 @@ describe('WeightManager', () => {
       assert.strictEqual(state.errors.length, 0);
       assert.strictEqual(state.totalRequests, 0);
       assert.strictEqual(state.consecutiveSuccess, 0);
+      assert.deepStrictEqual(state.recentRequestTimestamps, []);
     });
 
     it('should return undefined for non-existent upstream', () => {
@@ -99,6 +100,7 @@ describe('WeightManager', () => {
       const state = manager.getState('test-route', 'upstream-a');
       assert.strictEqual(state.totalRequests, 1);
       assert.strictEqual(state.consecutiveSuccess, 1);
+      assert.strictEqual(state.recentRequestTimestamps.length, 1);
     });
 
     it('should track latency', () => {
@@ -139,6 +141,7 @@ describe('WeightManager', () => {
       assert.strictEqual(state.errors.length, 1);
       assert.strictEqual(state.consecutiveSuccess, 0);
       assert.strictEqual(state.totalRequests, 3);
+      assert.strictEqual(state.recentRequestTimestamps.length, 3);
     });
 
     it('should trigger weight reduction at high error rate', () => {
@@ -243,6 +246,77 @@ describe('WeightManager', () => {
       manager.reloadConfig(newRoutes);
       assert.ok(!manager.state.has('test-route:upstream-b'));
       assert.strictEqual(manager.state.size, 1);
+    });
+  });
+
+  describe('getEffectiveWeight (Bug #4 regression)', () => {
+    beforeEach(() => {
+      manager = new WeightManager();
+    });
+
+    it('should return configured weight (not 100) for upstream with weight: 50 when no state', () => {
+      const upstream = { id: 'u1', weight: 50 };
+      const result = manager.getEffectiveWeight('route1', upstream, { enabled: true });
+      assert.strictEqual(result, 50);
+    });
+
+    it('should return timeSlotWeight when no state exists', () => {
+      manager.lastTimeSlot = 'high';
+      const upstream = { id: 'u1', weight: 100, timeSlotWeights: { high: 150 } };
+      const result = manager.getEffectiveWeight('route1', upstream, { enabled: true });
+      assert.strictEqual(result, 150);
+    });
+
+    it('should return state.currentWeight when state exists', () => {
+      manager.initRoutes({
+        'test-route': {
+          upstreams: [{ id: 'u1', weight: 100 }],
+        },
+      });
+      const state = manager.getState('test-route', 'u1');
+      state.currentWeight = 30;
+
+      const result = manager.getEffectiveWeight(
+        'test-route',
+        { id: 'u1', weight: 100 },
+        {
+          enabled: true,
+        }
+      );
+      assert.strictEqual(result, 30);
+    });
+  });
+
+  describe('error rate window (Bug #2+#3 regression)', () => {
+    beforeEach(() => {
+      manager = new WeightManager();
+      manager.initRoutes(mockRoutes);
+    });
+
+    it('should track recentRequestTimestamps on recordSuccess', () => {
+      const ts = Date.now();
+      manager.recordSuccess('test-route', 'upstream-a', 100);
+      const state = manager.getState('test-route', 'upstream-a');
+      assert.ok(state.recentRequestTimestamps.some((t) => t >= ts));
+    });
+
+    it('should track recentRequestTimestamps on recordError', () => {
+      const ts = Date.now();
+      manager.recordError('test-route', 'upstream-a', 500);
+      const state = manager.getState('test-route', 'upstream-a');
+      assert.ok(state.recentRequestTimestamps.some((t) => t >= ts));
+    });
+
+    it('should prune expired recentRequestTimestamps', () => {
+      const state = manager.getState('test-route', 'upstream-a');
+      const expired = Date.now() - 7200000; // 2 hours ago (window is 1 hour)
+      state.recentRequestTimestamps.push(expired, expired, Date.now());
+      manager.pruneOldErrors(state);
+      assert.strictEqual(
+        state.recentRequestTimestamps.filter((t) => t < Date.now() - 3600000).length,
+        0
+      );
+      assert.ok(state.recentRequestTimestamps.length >= 1);
     });
   });
 });

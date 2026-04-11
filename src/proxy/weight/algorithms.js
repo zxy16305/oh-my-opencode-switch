@@ -9,18 +9,23 @@ import { ERROR_THRESHOLDS, RECOVERY_STEPS } from './constants.js';
  * @returns {number} Error rate (0-1)
  */
 export function calculateErrorRate(state, windowMs) {
-  const { errors, totalRequests } = state;
+  const recentRequests = state.recentRequestTimestamps ?? [];
 
-  if (totalRequests === 0) {
+  if (recentRequests.length === 0) {
     return 0;
   }
 
   const now = Date.now();
   const windowStart = now - windowMs;
 
-  const recentErrors = errors.filter((e) => e.timestamp >= windowStart);
+  const recentErrors = state.errors.filter((e) => e.timestamp >= windowStart);
+  const requestsInWindow = recentRequests.filter((ts) => ts >= windowStart);
 
-  return recentErrors.length / totalRequests;
+  if (requestsInWindow.length === 0) {
+    return 0;
+  }
+
+  return recentErrors.length / requestsInWindow.length;
 }
 
 /**

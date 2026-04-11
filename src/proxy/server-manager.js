@@ -632,6 +632,8 @@ export class ProxyServerManager {
         }
       }
 
+      weightManager.reloadConfig(newRoutes);
+
       logger.info(`[${name}] Configuration reloaded successfully`);
 
       return {

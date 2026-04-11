@@ -16,6 +16,7 @@ describe('calculateErrorRate', () => {
     const state = {
       errors: [],
       totalRequests: 100,
+      recentRequestTimestamps: [],
     };
     const windowMs = 3600000;
     const result = calculateErrorRate(state, windowMs);
@@ -33,6 +34,7 @@ describe('calculateErrorRate', () => {
         { timestamp: now - 5000 },
       ],
       totalRequests: 10,
+      recentRequestTimestamps: Array.from({ length: 10 }, (_, i) => now - (i + 1) * 1000),
     };
     const windowMs = 3600000;
     const result = calculateErrorRate(state, windowMs);
@@ -47,6 +49,7 @@ describe('calculateErrorRate', () => {
         { timestamp: now - 1000 }, // recent
       ],
       totalRequests: 10,
+      recentRequestTimestamps: Array.from({ length: 10 }, (_, i) => now - (i + 1) * 1000),
     };
     const windowMs = 3600000;
     const result = calculateErrorRate(state, windowMs);
@@ -57,6 +60,7 @@ describe('calculateErrorRate', () => {
     const state = {
       errors: [],
       totalRequests: 0,
+      recentRequestTimestamps: [],
     };
     const windowMs = 3600000;
     const result = calculateErrorRate(state, windowMs);
@@ -70,6 +74,7 @@ describe('calculateErrorAdjustment', () => {
       errors: Array(30).fill({ timestamp: Date.now() }),
       totalRequests: 100,
       configuredWeight: 100,
+      recentRequestTimestamps: Array(100).fill(Date.now()),
     };
     const config = {
       errorWindowMs: 3600000,
@@ -86,6 +91,7 @@ describe('calculateErrorAdjustment', () => {
       errors: Array(20).fill({ timestamp: Date.now() }),
       totalRequests: 100,
       configuredWeight: 100,
+      recentRequestTimestamps: Array(100).fill(Date.now()),
     };
     const config = {
       errorWindowMs: 3600000,
@@ -102,6 +108,7 @@ describe('calculateErrorAdjustment', () => {
       errors: Array(10).fill({ timestamp: Date.now() }),
       totalRequests: 100,
       configuredWeight: 100,
+      recentRequestTimestamps: Array(100).fill(Date.now()),
     };
     const config = {
       errorWindowMs: 3600000,
@@ -118,6 +125,7 @@ describe('calculateErrorAdjustment', () => {
       errors: Array(3).fill({ timestamp: Date.now() }),
       totalRequests: 100,
       configuredWeight: 100,
+      recentRequestTimestamps: Array(100).fill(Date.now()),
     };
     const config = {
       errorWindowMs: 3600000,
@@ -132,6 +140,7 @@ describe('calculateErrorAdjustment', () => {
       errors: Array(30).fill({ timestamp: Date.now() }),
       totalRequests: 100,
       configuredWeight: 100, // 100 * 0.05 = 5, but minWeight is 10
+      recentRequestTimestamps: Array(100).fill(Date.now()),
     };
     const config = {
       errorWindowMs: 3600000,

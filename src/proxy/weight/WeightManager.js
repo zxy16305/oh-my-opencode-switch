@@ -1,12 +1,7 @@
 // src/proxy/weight/WeightManager.js
 
 import { getTimeSlotType } from '../../utils/time-slot-detector.js';
-import {
-  calculateErrorRate,
-  calculateErrorAdjustment,
-  calculateRecovery,
-  updateTimeSlotWeight,
-} from './algorithms.js';
+import { calculateErrorAdjustment, calculateRecovery, updateTimeSlotWeight } from './algorithms.js';
 import { DEFAULT_CONFIG } from './constants.js';
 
 export class WeightManager {
@@ -43,6 +38,7 @@ export class WeightManager {
       errors: [],
       totalRequests: 0,
       latencies: [],
+      recentRequestTimestamps: [],
       avgLatency: 0,
       consecutiveSuccess: 0,
       lastAdjustment: Date.now(),
@@ -50,7 +46,8 @@ export class WeightManager {
   }
 
   getConfiguredWeight(upstream) {
-    return upstream.timeSlotWeights?.[this.lastTimeSlot] ?? upstream.weight ?? 100;
+    const slot = this.lastTimeSlot ?? getTimeSlotType(new Date().getHours());
+    return upstream.timeSlotWeights?.[slot] ?? upstream.weight ?? 100;
   }
 
   // === 热加载 ===
@@ -113,6 +110,7 @@ export class WeightManager {
     if (!state) return;
 
     state.totalRequests++;
+    state.recentRequestTimestamps.push(Date.now());
     state.consecutiveSuccess++;
     this.addLatency(state, latency);
     this.pruneOldErrors(state);
@@ -131,6 +129,7 @@ export class WeightManager {
     if (!state) return;
 
     state.totalRequests++;
+    state.recentRequestTimestamps.push(Date.now());
     state.consecutiveSuccess = 0;
     state.errors.push({ timestamp: Date.now(), code: errorCode });
     if (latency > 0) this.addLatency(state, latency);
@@ -156,6 +155,21 @@ export class WeightManager {
     return this.state.get(this.makeKey(routeKey, upstreamId));
   }
 
+  // === Effective Weight ===
+  getEffectiveWeight(routeKey, upstream, dynamicWeightConfig = null) {
+    if (!dynamicWeightConfig?.enabled) {
+      return Math.max(1, this.getConfiguredWeight(upstream));
+    }
+
+    const state = this.getState(routeKey, upstream.id);
+    if (!state) {
+      // No dynamic state yet — use configured weight (preserves timeSlotWeights)
+      return Math.max(1, this.getConfiguredWeight(upstream));
+    }
+
+    return Math.max(1, state.currentWeight);
+  }
+
   getAllStates() {
     return this.state;
   }
@@ -172,5 +186,6 @@ export class WeightManager {
   pruneOldErrors(state) {
     const cutoff = Date.now() - this.config.errorWindowMs;
     state.errors = state.errors.filter((e) => e.timestamp >= cutoff);
+    state.recentRequestTimestamps = state.recentRequestTimestamps.filter((ts) => ts >= cutoff);
   }
 }

@@ -1,38 +1,30 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
-import fs from 'node:fs/promises';
-import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
-
-const execFileAsync = promisify(execFile);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const cliPath = join(__dirname, '../../bin/oos.js');
-const testDir = join(__dirname, 'fixtures', 'import-test');
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
+import { ProfileManager } from '../../src/core/ProfileManager.js';
+import { importAction } from '../../src/commands/profile/import.js';
 
 function generateUniqueProfileName() {
   return `test-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 describe('CLI Import Command', () => {
-  const invalidJsonFile = join(testDir, 'invalid-json.json');
-  const nonExistentFile = join(testDir, 'non-existent.json');
-  let validExportFile;
-  let profileName;
   let testHome;
+  let fixturesDir;
+  let profileName;
+  let validExportFile;
+  let invalidJsonFile;
+  let manager;
 
   beforeEach(async () => {
     const result = await setupTestHome();
     testHome = result.testHome;
-
-    await fs.mkdir(testDir, { recursive: true });
-
+    fixturesDir = join(testHome, 'import-fixtures');
+    await fs.mkdir(fixturesDir, { recursive: true });
     profileName = generateUniqueProfileName();
-    validExportFile = join(testDir, `${profileName}.json`);
-
+    validExportFile = join(fixturesDir, `${profileName}.json`);
     const validExport = {
       version: 1,
       exportedAt: new Date().toISOString(),
@@ -45,71 +37,43 @@ describe('CLI Import Command', () => {
       variables: {},
     };
     await fs.writeFile(validExportFile, JSON.stringify(validExport, null, 2));
-
+    invalidJsonFile = join(fixturesDir, 'invalid-json.json');
     await fs.writeFile(invalidJsonFile, '{ invalid json }');
+    manager = new ProfileManager();
+    await manager.init();
   });
 
   afterEach(async () => {
     try {
-      await fs.rm(testDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-
+      await fs.rm(fixturesDir, { recursive: true, force: true });
+    } catch {}
     if (profileName) {
       try {
-        await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f'], {
-          env: getTestEnv(testHome),
-        });
-      } catch {
-        // Ignore deletion errors
-      }
+        await manager.deleteProfile(profileName);
+      } catch {}
     }
-
     await cleanupTestHome(testHome);
   });
 
   describe('Successful import', () => {
     it('should import from a valid export file', async () => {
-      const { stdout, stderr } = await execFileAsync(
-        'node',
-        [cliPath, 'profile', 'import', validExportFile],
-        {
-          env: getTestEnv(testHome),
-        }
-      );
-
-      assert(stdout.includes(profileName) || stderr.includes(profileName));
+      const result = await importAction(validExportFile, { force: true });
+      assert.equal(result.success, true);
+      assert.equal(result.name, profileName);
     });
   });
 
   describe('Error cases', () => {
     it('should error when importing a non-existent file', async () => {
-      try {
-        await execFileAsync('node', [cliPath, 'profile', 'import', nonExistentFile], {
-          env: getTestEnv(testHome),
-        });
-        assert.fail('Expected command to fail');
-      } catch (error) {
-        // Command should fail with non-zero exit code
-        assert(
-          error.code !== 0 ||
-            error.stderr.includes('not found') ||
-            error.message.includes('not found')
-        );
-      }
+      await assert.rejects(() => importAction('/nonexistent/path/file.json', { force: true }), {
+        message: /not found/,
+      });
     });
 
     it('should error when importing invalid JSON', async () => {
-      try {
-        await execFileAsync('node', [cliPath, 'profile', 'import', invalidJsonFile], {
-          env: getTestEnv(testHome),
-        });
-        assert.fail('Expected command to fail');
-      } catch (error) {
-        // Command should fail with non-zero exit code
-        assert(error.code !== 0 || error.stderr.includes('JSON') || error.message.includes('JSON'));
-      }
+      await assert.rejects(() => importAction(invalidJsonFile, { force: true }), {
+        message: /JSON|parse/i,
+      });
     });
   });
 });

@@ -5,7 +5,7 @@ import logger from '../../utils/logger.js';
 import ProfileManager from '../../core/ProfileManager.js';
 import { ProfileError } from '../../utils/errors.js';
 
-export async function importAction(file) {
+export async function importAction(file, options = {}) {
   const filePath = path.resolve(file);
   if (!fs.existsSync(filePath)) {
     logger.error(`Import file not found: ${filePath}`);
@@ -36,7 +36,7 @@ export async function importAction(file) {
     exists = false;
   }
 
-  if (exists) {
+  if (exists && !options.force) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const answer = await new Promise((resolve) =>
       rl.question(
@@ -71,6 +71,8 @@ export async function importAction(file) {
       logger.info('Import skipped by user.');
       return { success: false, name: finalName, skipped: true };
     }
+  } else if (exists && options.force) {
+    // force mode: overwrite without confirmation, keep finalName
   }
 
   // Perform the import
@@ -84,9 +86,10 @@ export function registerImportCommand(program) {
   program
     .command('import <file>')
     .description('Import a profile from a JSON file')
-    .action(async (file) => {
+    .option('-f, --force', 'Skip confirmation prompts')
+    .action(async (file, options) => {
       try {
-        await importAction(file);
+        await importAction(file, options);
       } catch (err) {
         logger.error(err?.message || err);
         program.error(err?.message || 'Import failed');

@@ -30,7 +30,7 @@ export async function exportAction(name, options) {
     exportPath = path.join(process.cwd(), `${name}.export.json`);
   }
 
-  if (await exists(exportPath)) {
+  if ((await exists(exportPath)) && !options?.force) {
     const canOverwrite = await confirmOverwrite(exportPath);
     if (!canOverwrite) {
       logger.info('Export cancelled');
@@ -46,6 +46,7 @@ export function registerExportCommand(program) {
   program
     .command('export <name>')
     .description('Export a profile to a JSON export file')
+    .option('-f, --force', 'Skip confirmation prompts')
     .option('-o, --output <path>', 'Output export file path')
     .action(exportAction);
 }

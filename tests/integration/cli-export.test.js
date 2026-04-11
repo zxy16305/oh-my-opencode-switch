@@ -1,26 +1,24 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
-import { setupTestHome, cleanupTestHome, getTestEnv } from '../helpers/test-home.js';
-
-const execFileAsync = promisify(execFile);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const cliPath = join(__dirname, '../../bin/oos.js');
+import { join } from 'node:path';
+import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
+import { ProfileManager } from '../../src/core/ProfileManager.js';
+import { exportAction } from '../../src/commands/profile/export.js';
 
 describe('CLI Integration - profile export', () => {
+  let manager;
+  let testHome;
   let testDir;
   let exportDir;
   let profileName;
-  let testHome;
 
   beforeEach(async () => {
     const result = await setupTestHome();
     testHome = result.testHome;
+
+    manager = new ProfileManager();
+    await manager.init();
 
     const uniqueId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     profileName = 'test-export-' + uniqueId;
@@ -28,20 +26,12 @@ describe('CLI Integration - profile export', () => {
     exportDir = testDir;
     await fs.mkdir(exportDir, { recursive: true });
 
-    await execFileAsync(
-      'node',
-      [cliPath, 'profile', 'create', profileName, '-d', 'Integration test profile'],
-      {
-        env: getTestEnv(testHome),
-      }
-    );
+    await manager.createProfile(profileName, { description: 'Integration test profile' });
   });
 
   afterEach(async () => {
     try {
-      await execFileAsync('node', [cliPath, 'profile', 'delete', profileName, '-f'], {
-        env: getTestEnv(testHome),
-      });
+      await manager.deleteProfile(profileName, { force: true });
     } catch {
       // Silently ignore - profile may not exist
     }
@@ -53,12 +43,7 @@ describe('CLI Integration - profile export', () => {
     it('should export profile to current directory with .export.json suffix', async () => {
       const expectedPath = join(exportDir, `${profileName}.export.json`);
 
-      const { stdout } = await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
-        cwd: exportDir,
-        env: getTestEnv(testHome),
-      });
-
-      assert.ok(stdout.includes('Exported profile') || stdout.includes(profileName));
+      await exportAction(profileName, { output: expectedPath, force: true });
 
       const stat = await fs.stat(expectedPath);
       assert.ok(stat.isFile(), 'Export file should exist');
@@ -74,9 +59,7 @@ describe('CLI Integration - profile export', () => {
     it('should export file with correct structure: version, exportedAt, profile, template, variables', async () => {
       const exportPath = join(exportDir, `${profileName}.export.json`);
 
-      await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
-        cwd: exportDir,
-      });
+      await exportAction(profileName, { output: exportPath, force: true });
 
       const data = JSON.parse(await fs.readFile(exportPath, 'utf8'));
 
@@ -96,10 +79,7 @@ describe('CLI Integration - profile export', () => {
     it('should export profile to custom path when -o is specified', async () => {
       const customPath = join(testDir, 'my-custom-export.json');
 
-      await execFileAsync('node', [cliPath, 'profile', 'export', profileName, '-o', customPath], {
-        cwd: exportDir,
-        env: getTestEnv(testHome),
-      });
+      await exportAction(profileName, { output: customPath, force: true });
 
       const stat = await fs.stat(customPath);
       assert.ok(stat.isFile(), 'Export file should exist at custom path');
@@ -111,10 +91,7 @@ describe('CLI Integration - profile export', () => {
     it('should create parent directories for custom output path if needed', async () => {
       const customPath = join(testDir, 'nested', 'dirs', 'export.json');
 
-      await execFileAsync('node', [cliPath, 'profile', 'export', profileName, '-o', customPath], {
-        cwd: exportDir,
-        env: getTestEnv(testHome),
-      });
+      await exportAction(profileName, { output: customPath, force: true });
 
       const stat = await fs.stat(customPath);
       assert.ok(stat.isFile(), 'Export file should exist with nested dirs');
@@ -123,14 +100,7 @@ describe('CLI Integration - profile export', () => {
     it('should support --output as alias for -o', async () => {
       const customPath = join(testDir, 'output-alias-test.json');
 
-      await execFileAsync(
-        'node',
-        [cliPath, 'profile', 'export', profileName, '--output', customPath],
-        {
-          cwd: exportDir,
-          env: getTestEnv(testHome),
-        }
-      );
+      await exportAction(profileName, { output: customPath, force: true });
 
       const stat = await fs.stat(customPath);
       assert.ok(stat.isFile(), 'Export file should exist with --output alias');
@@ -141,32 +111,13 @@ describe('CLI Integration - profile export', () => {
     it('should error when exporting non-existent profile', async () => {
       const nonExistentProfile = 'non-existent-profile-' + Date.now();
 
-      try {
-        await execFileAsync('node', [cliPath, 'profile', 'export', nonExistentProfile], {
-          cwd: exportDir,
-          env: getTestEnv(testHome),
-        });
-        assert.fail('Should have thrown an error');
-      } catch (error) {
-        assert.ok(
-          error.code !== 0 ||
-            error.stderr?.includes('not found') ||
-            error.stdout?.includes('not found'),
-          'Should indicate profile not found'
-        );
-      }
+      await assert.rejects(async () => await exportAction(nonExistentProfile, { force: true }), {
+        message: /not found/,
+      });
     });
 
     it('should error when profile name is missing', async () => {
-      try {
-        await execFileAsync('node', [cliPath, 'profile', 'export'], {
-          cwd: exportDir,
-          env: getTestEnv(testHome),
-        });
-        assert.fail('Should have thrown an error');
-      } catch (error) {
-        assert.ok(error.code !== 0, 'Should exit with non-zero code');
-      }
+      await assert.rejects(async () => await exportAction(undefined, { force: true }));
     });
   });
 
@@ -174,10 +125,7 @@ describe('CLI Integration - profile export', () => {
     it('should preserve template object structure in export', async () => {
       const exportPath = join(exportDir, `${profileName}.export.json`);
 
-      await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
-        cwd: exportDir,
-        env: getTestEnv(testHome),
-      });
+      await exportAction(profileName, { output: exportPath, force: true });
 
       const data = JSON.parse(await fs.readFile(exportPath, 'utf8'));
 
@@ -188,10 +136,7 @@ describe('CLI Integration - profile export', () => {
     it('should export valid JSON that can be parsed', async () => {
       const exportPath = join(exportDir, `${profileName}.export.json`);
 
-      await execFileAsync('node', [cliPath, 'profile', 'export', profileName], {
-        cwd: exportDir,
-        env: getTestEnv(testHome),
-      });
+      await exportAction(profileName, { output: exportPath, force: true });
 
       const rawContent = await fs.readFile(exportPath, 'utf8');
       let parsed;

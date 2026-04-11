@@ -283,7 +283,21 @@ export function selectUpstreamSticky(
   }
 
   if (upstreams.length === 1) {
-    return upstreams[0];
+    const selected = upstreams[0];
+    _startSessionCleanup(sm);
+    _incrementSessionCount(sm, routeKey, selected.id);
+    _incrementUpstreamRequestCount(sm, routeKey, selected.id);
+
+    const sessionKey = model ? `${sessionId}:${model}` : sessionId;
+    const sessionUpstreamMap = sm.getSessionUpstreamMap();
+    sessionUpstreamMap.set(sessionKey, {
+      upstreamId: selected.id,
+      routeKey,
+      timestamp: Date.now(),
+      requestCount: 1,
+    });
+
+    return selected;
   }
 
   _startSessionCleanup(sm);
@@ -516,7 +530,7 @@ export function resetAllState(state = null) {
 }
 
 /**
- * Get current session → upstream mapping size (useful for testing/monitoring)
+ * Get current session �?upstream mapping size (useful for testing/monitoring)
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {number}
  */
@@ -526,7 +540,7 @@ export function getSessionMapSize(state = null) {
 }
 
 /**
- * Get current session → upstream mapping (useful for testing/monitoring)
+ * Get current session �?upstream mapping (useful for testing/monitoring)
  * @param {StateManager} [state] - Optional state manager instance
  * @returns {Map<string, { upstreamId: string, routeKey: string, timestamp: number, requestCount: number }>}
  */

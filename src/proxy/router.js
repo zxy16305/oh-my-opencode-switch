@@ -20,11 +20,7 @@ import {
 
 // Import internal versions of route-strategy functions (with _ prefix)
 import { selectLeastLoadedUpstream as _selectLeastLoadedUpstream } from './route-strategy.js';
-import {
-  calculateEffectiveWeight,
-  getConfiguredWeight,
-  setWeightManager,
-} from './weight-calculator.js';
+import { calculateEffectiveWeight, setWeightManager } from './weight-calculator.js';
 import { WeightManager } from './weight/index.js';
 
 // Import internal versions of stats-collector functions (with _ prefix)

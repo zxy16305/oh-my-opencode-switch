@@ -56,7 +56,7 @@ export function getConfiguredWeight(upstream) {
  */
 export function calculateEffectiveWeight(params) {
   const {
-    sm,
+    sm: _sm,
     routeKey,
     upstream,
     staticWeight,

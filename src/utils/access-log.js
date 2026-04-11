@@ -6,9 +6,84 @@ import { getOosDir } from './paths.js';
 const getLogDir = () => path.join(getOosDir(), 'logs');
 const getLogFilePath = () => path.join(getLogDir(), 'proxy-access.log');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_QUEUE_SIZE = 100;
 
 let logInitialized = false;
 const logCallbacks = [];
+
+/**
+ * Bounded write queue: max MAX_QUEUE_SIZE pending entries, drop-oldest when full.
+ * Writes are sequential to prevent file interleaving and control I/O pressure.
+ */
+const writeQueue = (() => {
+  const entries = [];
+  let processing = false;
+  let drainTimer = null;
+
+  function enqueue(entry) {
+    if (entries.length >= MAX_QUEUE_SIZE) {
+      entries.shift();
+    }
+    entries.push(entry);
+    if (drainTimer === null) {
+      drainTimer = setImmediate(processQueue);
+    }
+  }
+
+  async function processQueue() {
+    drainTimer = null;
+    if (processing) return;
+
+    processing = true;
+
+    while (entries.length > 0) {
+      const entry = entries.shift();
+      try {
+        const dir = path.dirname(entry.logPath);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.appendFile(entry.logPath, entry.logLine, 'utf8');
+      } catch {
+        // Silently ignore write errors (fire-and-forget semantics)
+      }
+    }
+
+    processing = false;
+  }
+
+  return {
+    enqueue,
+    get size() {
+      return entries.length;
+    },
+    get isProcessing() {
+      return processing;
+    },
+    reset() {
+      entries.length = 0;
+      processing = false;
+      if (drainTimer !== null) {
+        clearImmediate(drainTimer);
+        drainTimer = null;
+      }
+    },
+    flush() {
+      return new Promise((resolve) => {
+        if (entries.length === 0 && !processing) {
+          resolve();
+          return;
+        }
+        const check = () => {
+          if (entries.length === 0 && !processing) {
+            resolve();
+          } else {
+            setTimeout(check, 20);
+          }
+        };
+        check();
+      });
+    },
+  };
+})();
 
 async function ensureLogDir() {
   if (!logInitialized) {
@@ -24,7 +99,6 @@ function formatTimestamp() {
 }
 
 export function formatLogEntry(entry) {
-  // Sanitize agent for log parsing: replace spaces and parens with underscores
   const parts = [
     `[${entry.timestamp}]`,
     entry.sessionId ? `session=${entry.sessionId}` : 'session=-',
@@ -58,28 +132,46 @@ export function onLogAdded(callback) {
   logCallbacks.push(callback);
 }
 
-export async function logAccess(entry) {
-  await ensureLogDir();
-  await rotateLogIfNeeded();
+export function logAccess(entry) {
+  return ensureLogDir()
+    .then(() => {
+      rotateLogIfNeeded().catch(() => {});
+      const logPath = getLogFilePath();
+      const logEntry = {
+        timestamp: formatTimestamp(),
+        ...entry,
+      };
+      const logLine = formatLogEntry(logEntry);
 
-  const logEntry = {
-    timestamp: formatTimestamp(),
-    ...entry,
-  };
-  const logLine = formatLogEntry(logEntry);
+      logBuffer.add(logEntry);
 
-  await fs.appendFile(getLogFilePath(), logLine, 'utf8');
+      logCallbacks.forEach((callback) => {
+        try {
+          callback(logEntry);
+        } catch {
+          // ignore
+        }
+      });
 
-  // Add to in-memory buffer for SSE streaming
-  logBuffer.add(logEntry);
+      writeQueue.enqueue({ logPath, logLine });
+    })
+    .catch(() => {});
+}
 
-  logCallbacks.forEach((callback) => {
-    try {
-      callback(logEntry);
-    } catch {
-      // ignore
-    }
-  });
+export function getQueueSize() {
+  return writeQueue.size;
+}
+
+export function resetWriteQueue() {
+  writeQueue.reset();
+}
+
+export function resetLogState() {
+  logInitialized = false;
+}
+
+export async function flushLogs() {
+  return writeQueue.flush();
 }
 
 export function getLogPath() {

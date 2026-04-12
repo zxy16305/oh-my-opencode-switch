@@ -55,6 +55,7 @@ class ACPClient {
       this.process = spawn('opencode', ['acp'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: process.cwd(),
+        shell: true,
       });
 
       // Handle stderr
@@ -91,7 +92,7 @@ class ACPClient {
         id: initId,
         method: 'initialize',
         params: {
-          protocolVersion: '2024-11-05',
+          protocolVersion: 1,
           capabilities: {},
           clientInfo: {
             name: 'benchmark-script',
@@ -118,12 +119,54 @@ class ACPClient {
           clearTimeout(timeout);
           this.initialized = true;
           console.log(`[${this.label}] Initialized successfully`);
+
+          // Create a session after initialization
+          return this._createSession();
+        })
+        .then(() => {
           resolve();
         })
         .catch((err) => {
           clearTimeout(timeout);
           reject(err);
         });
+    });
+  }
+
+  /**
+   * Create a session for sending prompts
+   */
+  async _createSession() {
+    const sessionId = ++this.requestId;
+    const createSessionRequest = {
+      jsonrpc: '2.0',
+      id: sessionId,
+      method: 'session/new',
+      params: {
+        cwd: process.cwd(),
+        mcpServers: [],
+      },
+    };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Session create timeout'));
+      }, 15000);
+
+      this.pendingRequests.set(sessionId, {
+        resolve: (result) => {
+          clearTimeout(timeout);
+          this.sessionId = result?.id || result?.sessionId;
+          console.log(`[${this.label}] Session created: ${this.sessionId}`);
+          resolve();
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
+
+      this._send(createSessionRequest);
     });
   }
 
@@ -188,7 +231,13 @@ class ACPClient {
       id: requestId,
       method: 'session/prompt',
       params: {
-        prompt: text,
+        sessionId: this.sessionId,
+        prompt: [
+          {
+            type: 'text',
+            text: text,
+          },
+        ],
       },
     };
 
@@ -277,6 +326,7 @@ async function getCurrentProfile() {
   return new Promise((resolve, reject) => {
     const proc = spawn('oos', ['profile', 'list', '--json'], {
       cwd: process.cwd(),
+      shell: true,
     });
 
     let stdout = '';
@@ -321,6 +371,7 @@ async function switchProfile(profileName) {
 
     const proc = spawn('oos', ['profile', 'use', profileName], {
       cwd: process.cwd(),
+      shell: true,
     });
 
     let stderr = '';
@@ -560,7 +611,7 @@ async function main() {
   console.log('Checking prerequisites...');
   try {
     await new Promise((resolve, reject) => {
-      const proc = spawn('opencode', ['--version'], { cwd: process.cwd() });
+      const proc = spawn('opencode', ['--version'], { cwd: process.cwd(), shell: true });
       proc.on('error', reject);
       proc.on('close', (code) => {
         if (code === 0) resolve();
@@ -576,7 +627,7 @@ async function main() {
   // Check if oos is available
   try {
     await new Promise((resolve, reject) => {
-      const proc = spawn('oos', ['--version'], { cwd: process.cwd() });
+      const proc = spawn('oos', ['--version'], { cwd: process.cwd(), shell: true });
       proc.on('error', reject);
       proc.on('close', (code) => {
         if (code === 0) resolve();

@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
@@ -44,3 +43,24 @@ null
 # Test artifacts
 test-*.json
 test-*.js
+
+# Dashboard screenshots
+*.png
+
+# Test artifacts
+test-output.txt
+session_*.txt
+session_*.json
+user_messages.json
+temp_*.json
+test-export-*.export.json
+test-export-*
+*.export.json
+
+# IDE/Development artifacts
+.sisyphusnotepads/
+.playwright-mcp/
+.mcp-class-*
+
+# Benchmark scripts (personal use)
+scripts/

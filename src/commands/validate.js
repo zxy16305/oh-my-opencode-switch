@@ -1,3 +1,4 @@
+import { program } from 'commander';
 import { ConfigManager } from '../core/ConfigManager.js';
 import { logger } from '../utils/logger.js';
 import { getCachedSchema } from '../utils/schemaFetcher.js';
@@ -10,8 +11,7 @@ export async function validateAction(_options) {
   const { schema, error: schemaError } = await getCachedSchema();
 
   if (schemaError || !schema) {
-    logger.error(`Failed to fetch schema: ${schemaError}`);
-    process.exit(1);
+    program.error(`Failed to fetch OpenCode config schema: ${schemaError}`, { exitCode: 1 });
   }
 
   // Read config
@@ -21,8 +21,7 @@ export async function validateAction(_options) {
   try {
     config = await manager.readConfig();
   } catch (error) {
-    logger.error(`Failed to read config: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to read config: ${error.message}`, { exitCode: 1 });
   }
 
   // Validate against schema
@@ -32,7 +31,7 @@ export async function validateAction(_options) {
 
   if (valid) {
     logger.success('✓ Configuration is valid');
-    process.exit(0);
+    return;
   } else {
     logger.error('Validation failed:');
 
@@ -43,7 +42,10 @@ export async function validateAction(_options) {
       }
     }
 
-    process.exit(2);
+    program.error(
+      `Configuration validation failed: ${validate.errors.map((e) => e.message).join('; ')}`,
+      { exitCode: 2 }
+    );
   }
 }
 

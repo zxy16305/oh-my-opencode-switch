@@ -1,3 +1,4 @@
+import { program } from 'commander';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import { logger } from '../utils/logger.js';
 import { getProxyConfigPath } from '../utils/proxy-paths.js';
@@ -95,8 +96,7 @@ export async function statsAction(options = {}) {
   const { last, json } = options;
 
   if (!last) {
-    logger.error('--last option is required (e.g., 1h, 24h, 7d, 30d)');
-    process.exit(1);
+    program.error('--last option is required (e.g., 1h, 24h, 7d, 30d)', { exitCode: 1 });
   }
 
   try {
@@ -128,8 +128,7 @@ export async function statsAction(options = {}) {
       console.table(tableData);
     }
   } catch (error) {
-    logger.error(error.message);
-    process.exit(1);
+    program.error(`Failed to generate statistics: ${error.message}`, { exitCode: 1 });
   }
 }
 
@@ -187,8 +186,7 @@ export async function timeSlotsAction(options = {}) {
     logger.raw('Weight coefficients: 0.5 (danger), 1.0 (neutral), 2.0 (good)');
     logger.raw('Data based on last 7 days of statistics.\n');
   } catch (error) {
-    logger.error(`Failed to load time slot data: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to load time slot data: ${error.message}`, { exitCode: 1 });
   }
 }
 

@@ -1,3 +1,4 @@
+import { program } from 'commander';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -66,10 +67,8 @@ export async function reloadAction(options = {}) {
     displayDiff(diff);
     logger.success('Configuration reloaded successfully');
   } else {
-    logger.error(errorMessage);
+    program.error(errorMessage, { exitCode: exitCode });
   }
-
-  process.exit(exitCode);
 }
 
 /**

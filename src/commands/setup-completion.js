@@ -1,3 +1,4 @@
+import { program } from 'commander';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -168,9 +169,10 @@ export async function setupCompletionAction(shell) {
 
   const setup = setups[targetShell];
   if (!setup) {
-    logger.error(`Unsupported shell: ${targetShell}`);
-    logger.info('Supported shells: bash, zsh, fish, powershell');
-    process.exit(1);
+    program.error(
+      `Unsupported shell: ${targetShell}. Supported shells: bash, zsh, fish, powershell`,
+      { exitCode: 1 }
+    );
   }
 
   await setup();

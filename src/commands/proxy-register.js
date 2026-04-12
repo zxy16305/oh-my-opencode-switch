@@ -1,3 +1,4 @@
+import { program } from 'commander';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import { getOpencodeConfigPath } from '../utils/proxy-paths.js';
 import { readJson, writeJson, exists, copyFile } from '../utils/files.js';
@@ -20,9 +21,10 @@ export async function registerAction(options = {}) {
   // 1. Read proxy config to get routes and port
   const proxyConfig = await configManager.readConfig();
   if (!proxyConfig || !proxyConfig.routes || Object.keys(proxyConfig.routes).length === 0) {
-    logger.error('No routes found in proxy-config.json');
-    logger.info('Run "oos proxy init" to create a proxy configuration first.');
-    process.exit(1);
+    program.error(
+      'No routes found in proxy-config.json. Run "oos proxy init" to create a proxy configuration first.',
+      { exitCode: 1 }
+    );
   }
 
   // Port priority: CLI --port > config.port > DEFAULT_PROXY_PORT
@@ -31,17 +33,17 @@ export async function registerAction(options = {}) {
   // 2. Read opencode config
   const opencodePath = options.opencodePath || getOpencodeConfigPath();
   if (!(await exists(opencodePath))) {
-    logger.error('opencode.json not found');
-    logger.info('Make sure OpenCode is initialized and has a configuration file.');
-    process.exit(1);
+    program.error(
+      'opencode.json not found. Make sure OpenCode is initialized and has a configuration file.',
+      { exitCode: 1 }
+    );
   }
 
   let opencodeConfig;
   try {
     opencodeConfig = await readJson(opencodePath);
   } catch (error) {
-    logger.error(`Failed to read opencode.json: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to read opencode.json: ${error.message}`, { exitCode: 1 });
   }
 
   // 3. Backup original file
@@ -189,8 +191,9 @@ export async function registerAction(options = {}) {
   }
 
   if (registeredModels.length === 0) {
-    logger.error('No valid routes to register. Check your proxy-config.json and opencode.json.');
-    process.exit(1);
+    program.error('No valid routes to register. Check your proxy-config.json and opencode.json.', {
+      exitCode: 1,
+    });
   }
 
   // 5. Add proxy provider to opencode config
@@ -208,8 +211,7 @@ export async function registerAction(options = {}) {
       logger.warn(`Skipped ${skippedModels.length} model(s) due to missing config.`);
     }
   } catch (error) {
-    logger.error(`Failed to write opencode.json: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to write opencode.json: ${error.message}`, { exitCode: 1 });
   }
 }
 
@@ -222,8 +224,7 @@ export async function unregisterAction(options = {}) {
 
   // 1. Check opencode.json exists
   if (!(await exists(opencodePath))) {
-    logger.error('opencode.json not found');
-    process.exit(1);
+    program.error('opencode.json not found', { exitCode: 1 });
   }
 
   // 2. Read opencode config
@@ -231,8 +232,7 @@ export async function unregisterAction(options = {}) {
   try {
     opencodeConfig = await readJson(opencodePath);
   } catch (error) {
-    logger.error(`Failed to read opencode.json: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to read opencode.json: ${error.message}`, { exitCode: 1 });
   }
 
   // 3. Check if proxy provider exists
@@ -263,8 +263,7 @@ export async function unregisterAction(options = {}) {
     await writeJson(opencodePath, opencodeConfig);
     logger.success(`Proxy provider "${PROVIDER_ID}" removed from opencode.json`);
   } catch (error) {
-    logger.error(`Failed to write opencode.json: ${error.message}`);
-    process.exit(1);
+    program.error(`Failed to write opencode.json: ${error.message}`, { exitCode: 1 });
   }
 }
 

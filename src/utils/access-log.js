@@ -135,7 +135,9 @@ export function onLogAdded(callback) {
 export function logAccess(entry) {
   return ensureLogDir()
     .then(() => {
-      rotateLogIfNeeded().catch(() => {});
+      rotateLogIfNeeded().catch(() => {
+        /* intentionally silent: log rotation failure is non-critical */
+      });
       const logPath = getLogFilePath();
       const logEntry = {
         timestamp: formatTimestamp(),
@@ -155,7 +157,9 @@ export function logAccess(entry) {
 
       writeQueue.enqueue({ logPath, logLine });
     })
-    .catch(() => {});
+    .catch(() => {
+      /* intentionally silent: best-effort log write, failures don't affect proxy */
+    });
 }
 
 export function getQueueSize() {

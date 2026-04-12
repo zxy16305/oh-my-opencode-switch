@@ -347,7 +347,9 @@ export class ProxyServerManager {
                 ttfb,
                 duration,
                 body: requestBody,
-              }).catch(() => {});
+              }).catch(() => {
+                /* intentionally silent: best-effort access logging */
+              });
             },
             onError: (err) => {
               circuitBreaker.recordFailure(upstream.id);
@@ -367,7 +369,9 @@ export class ProxyServerManager {
                 status: 502,
                 error: err.message,
                 body: requestBody,
-              }).catch(() => {});
+              }).catch(() => {
+                /* intentionally silent: best-effort access logging on error path */
+              });
             },
           });
         } catch (error) {

@@ -188,4 +188,17 @@ export class WeightManager {
     state.errors = state.errors.filter((e) => e.timestamp >= cutoff);
     state.recentRequestTimestamps = state.recentRequestTimestamps.filter((ts) => ts >= cutoff);
   }
+
+  pruneAll() {
+    let prunedCount = 0;
+    for (const state of this.state.values()) {
+      const oldErrors = state.errors.length;
+      const oldTimestamps = state.recentRequestTimestamps.length;
+      this.pruneOldErrors(state);
+      if (state.errors.length < oldErrors || state.recentRequestTimestamps.length < oldTimestamps) {
+        prunedCount++;
+      }
+    }
+    return prunedCount;
+  }
 }

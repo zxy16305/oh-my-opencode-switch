@@ -319,4 +319,45 @@ describe('WeightManager', () => {
       assert.ok(state.recentRequestTimestamps.length >= 1);
     });
   });
+
+  describe('pruneAll', () => {
+    beforeEach(() => {
+      manager = new WeightManager();
+      manager.initRoutes(mockRoutes);
+    });
+
+    it('should return 0 when no entries have expired data', () => {
+      manager.recordSuccess('test-route', 'upstream-a', 100);
+      manager.recordSuccess('test-route', 'upstream-b', 200);
+      const result = manager.pruneAll();
+      assert.strictEqual(result, 0);
+    });
+
+    it('should prune expired data from all entries and return count', () => {
+      const stateA = manager.getState('test-route', 'upstream-a');
+      const stateB = manager.getState('test-route', 'upstream-b');
+      const expired = Date.now() - 7200000;
+      stateA.recentRequestTimestamps.push(expired);
+      stateB.errors.push({ timestamp: expired, code: 500 });
+      stateB.recentRequestTimestamps.push(expired);
+
+      const result = manager.pruneAll();
+      assert.strictEqual(result, 2);
+      assert.strictEqual(stateA.recentRequestTimestamps.length, 0);
+      assert.strictEqual(stateB.errors.length, 0);
+      assert.strictEqual(stateB.recentRequestTimestamps.length, 0);
+    });
+
+    it('should only count entries that actually had data removed', () => {
+      const stateA = manager.getState('test-route', 'upstream-a');
+      const expired = Date.now() - 7200000;
+
+      stateA.errors.push({ timestamp: expired, code: 502 });
+      manager.recordSuccess('test-route', 'upstream-b', 100);
+
+      const result = manager.pruneAll();
+      assert.strictEqual(result, 1);
+      assert.strictEqual(stateA.errors.length, 0);
+    });
+  });
 });

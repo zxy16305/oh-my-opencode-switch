@@ -23,15 +23,15 @@ import {
   shutdownServer,
   forwardRequest,
   isPortAvailable,
-} from '../../src/proxy/server.js';
+} from '../../../src/proxy/server.js';
 import {
   routeRequest,
   getAvailableModels,
   resetAllState,
   validateRoutesConfig,
   RouterError,
-} from '../../src/proxy/router.js';
-import { CircuitBreaker, CircuitState } from '../../src/proxy/circuitbreaker.js';
+} from '../../../src/proxy/router.js';
+import { CircuitBreaker, CircuitState } from '../../../src/proxy/circuitbreaker.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

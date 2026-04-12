@@ -32,7 +32,7 @@ import * as failover from './failover-handler.js';
 const weightManager = new WeightManager();
 
 export { RouterError } from './errors.js';
-export { getSessionId, hashSessionToBackend } from './session-manager.js';
+export { getSessionId, hashSessionToBackend, getSessionCountsByRoute } from './session-manager.js';
 
 /**
  * Get route configuration for a given model name

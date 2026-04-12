@@ -60,6 +60,23 @@ export function decrementSessionCount(state, routeKey, upstreamId) {
 }
 
 /**
+ * Count unique sessions by route and upstream, iterating sessionMap.
+ * Returns Map<routeKey, Map<upstreamId, count>> — same shape as upstreamSessionCounts.
+ * @param {StateManager} [state] - State manager instance
+ * @returns {Map<string, Map<string, number>>}
+ */
+export function getSessionCountsByRoute(state = null) {
+  const sm = getState(state);
+  const result = new Map();
+  for (const [, entry] of sm.sessionMap) {
+    if (!result.has(entry.routeKey)) result.set(entry.routeKey, new Map());
+    const routeMap = result.get(entry.routeKey);
+    routeMap.set(entry.upstreamId, (routeMap.get(entry.upstreamId) ?? 0) + 1);
+  }
+  return result;
+}
+
+/**
  * Extract session ID from request body and headers for sticky routing.
  * Priority: body.sessionId → body.conversationId → x-opencode-session → x-session-affinity → client IP hash
  * @param {import('node:http').IncomingMessage} request - HTTP request

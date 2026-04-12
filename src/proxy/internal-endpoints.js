@@ -1,5 +1,5 @@
 import {
-  getUpstreamSessionCounts,
+  getSessionCountsByRoute,
   getUpstreamRequestCounts,
   getUpstreamSlidingWindowCounts,
   getSessionUpstreamMap,
@@ -67,7 +67,7 @@ export function handleDebug(req, res, routes, circuitBreaker) {
   }
 
   const weightState = weightManager.getAllStates();
-  const sessionCounts = getUpstreamSessionCounts();
+  const sessionCounts = getSessionCountsByRoute();
   const circuitStates = circuitBreaker?.getStates?.() || new Map();
 
   const response = {
@@ -126,7 +126,7 @@ export function handleStats(req, res, routes, _circuitBreaker) {
 
   const requestCounts = getUpstreamRequestCounts();
   const slidingWindowCounts = getUpstreamSlidingWindowCounts();
-  const sessionCounts = getUpstreamSessionCounts();
+  const sessionCounts = getSessionCountsByRoute();
   const weightState = weightManager.getAllStates();
   const sessionMap = getSessionUpstreamMap();
 

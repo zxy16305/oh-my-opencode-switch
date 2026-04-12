@@ -28,14 +28,10 @@ describe('Provider Discovery', () => {
         useCache: false,
       });
 
-      console.log('Discovered baseURL:', baseURL);
-
       // Should either get a valid URL or null (if network fails)
       if (baseURL) {
         assert.ok(baseURL.startsWith('https://'));
         assert.ok(baseURL.includes('moonshot') || baseURL.includes('kimi'));
-      } else {
-        console.log('Discovery returned null (network may be unavailable)');
       }
     });
 
@@ -46,15 +42,11 @@ describe('Provider Discovery', () => {
         useCache: false,
       });
 
-      console.log('First result:', firstResult);
-
       // Second call should use cache
       const secondResult = await discoverProviderBaseURL('kimi-for-coding', {
         verbose: true,
         useCache: true,
       });
-
-      console.log('Second result:', secondResult);
 
       assert.strictEqual(firstResult, secondResult);
     });
@@ -79,11 +71,9 @@ describe('Provider Discovery', () => {
           discoverProviderBaseURL('kimi-for-coding', { verbose: true, useCache: false }),
           timeoutPromise,
         ]);
-        console.log('Result within timeout:', baseURL);
         assert.ok(baseURL === null || baseURL.startsWith('https://'));
       } catch (error) {
         if (error.message === 'Test timeout') {
-          console.log('Discovery took too long (>30s)');
         } else {
           throw error;
         }
@@ -95,13 +85,9 @@ describe('Provider Discovery', () => {
     it('should get model limits for openai gpt-4', async () => {
       const limit = await getModelLimit('openai', 'gpt-4');
 
-      console.log('GPT-4 limits:', limit);
-
       if (limit) {
         assert.ok(typeof limit.context === 'number' || limit.context === null);
         assert.ok(typeof limit.output === 'number' || limit.output === null);
-      } else {
-        console.log('getModelLimit returned null (network may be unavailable)');
       }
     });
 
@@ -128,13 +114,8 @@ describe('Provider Discovery', () => {
     });
 
     it('should use cached data', async () => {
-      // First call loads data
-      const firstResult = await getModelLimit('openai', 'gpt-4');
-      console.log('First call result:', firstResult);
-
       // Second call should use cache
       const secondResult = await getModelLimit('openai', 'gpt-4');
-      console.log('Second call result:', secondResult);
 
       // Results should be consistent
       if (firstResult && secondResult) {
@@ -183,10 +164,6 @@ describe('Provider Discovery', () => {
         // With auto-refresh: should have attempted fresh fetch
         // Without auto-refresh (current impl): just returns null without retry
         // This test FAILS until auto-refresh is implemented
-        console.log('Auto-refresh test result:', result);
-
-        // Expected behavior: auto-refresh triggered, but still null because
-        // no actual provider exists. The key is that fetch was attempted twice.
         // For now, this test documents expected behavior and will fail
         // until we can verify the retry count.
         assert.strictEqual(result, null);
@@ -236,8 +213,6 @@ describe('Provider Discovery', () => {
 
           // Expected: fetch called exactly 2 times (initial + 1 retry)
           // Current implementation: fetch called 1 time (no retry)
-          // This assertion will FAIL until auto-refresh is implemented
-          console.log('Fetch call count:', fetchCallCount);
           assert.strictEqual(fetchCallCount, 2, 'Should fetch exactly twice (initial + 1 retry)');
         } finally {
           // Restore original fetch

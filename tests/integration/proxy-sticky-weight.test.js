@@ -152,9 +152,7 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
         `Provider ${upstream.id} (weight=${upstream.weight}) should get ~${expectedPercentage.toFixed(1)}% ` +
           `± ${tolerance.toFixed(1)}%, got ${percentage.toFixed(2)}%`
       );
-    }
-
-    console.log('Traffic distribution:', distribution);
+    });
   });
 
   test('weight recovery: traffic redistributes when weight changes from 8 to 100', () => {
@@ -184,8 +182,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
       `Phase 1: Weight=8 provider should get 3-15% of traffic, got ${phase1LowWeightPercentage.toFixed(2)}%`
     );
 
-    console.log('Phase 1 distribution (weight=8):', phase1Distribution);
-
     // Phase 2: Update provider-b weight to 100 (simulate recovery)
     upstreams[1].weight = 100;
 
@@ -208,11 +204,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
     assert.ok(
       phase2RecoveredPercentage >= 35,
       `Phase 2: Recovered provider should get ≥35% of traffic, got ${phase2RecoveredPercentage.toFixed(2)}%`
-    );
-
-    console.log('Phase 2 distribution (weight=100):', phase2Distribution);
-    console.log(
-      `Traffic increase: ${phase1LowWeightPercentage.toFixed(2)}% → ${phase2RecoveredPercentage.toFixed(2)}%`
     );
   });
 
@@ -302,8 +293,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
       percentageA >= 20 && percentageA <= 45,
       `New sessions to weight=50 provider should be 20-45%, got ${percentageA.toFixed(2)}%`
     );
-
-    console.log(`New sessions: provider-a=${newSessionsToA}, provider-b=${newSessionsToB}`);
   });
 
   test('sliding window request counting filters old requests', async () => {
@@ -346,7 +335,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
 
     // Note: The sliding window filtering is tested in unit tests
     // This integration test just verifies the counting mechanism works
-    console.log('Request counts:', Object.fromEntries(finalCounts));
   });
 
   // ---------------------------------------------------------------------------
@@ -377,8 +365,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
     const counts = Object.fromEntries(requestCounts);
     const lowCount = counts['provider-low'] || 0;
     const highCount = counts['provider-high'] || 0;
-
-    console.log(`Short-term counts: provider-low=${lowCount}, provider-high=${highCount}`);
 
     // Expected ratio: 50 : 100 = 1 : 2
     const totalWeight = 50 + 100;
@@ -431,8 +417,6 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
     const counts = Object.fromEntries(requestCounts);
     const lowCount = counts['provider-low'] || 0;
     const highCount = counts['provider-high'] || 0;
-
-    console.log(`Long-term counts: provider-low=${lowCount}, provider-high=${highCount}`);
 
     // Expected ratio: 50 : 100 = 1 : 2
     const totalWeight = 50 + 100;

@@ -54,7 +54,12 @@ export function decrementSessionCount(state, routeKey, upstreamId) {
   const sm = getState(state);
   const countMap = getOrCreateCountMap(sm, routeKey);
   const current = countMap.get(upstreamId) ?? 0;
-  if (current > 0) {
+  if (current <= 1) {
+    countMap.delete(upstreamId);
+    if (countMap.size === 0) {
+      sm.upstreamSessionCounts.delete(routeKey);
+    }
+  } else {
     countMap.set(upstreamId, current - 1);
   }
 }

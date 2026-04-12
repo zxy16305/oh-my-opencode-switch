@@ -477,17 +477,28 @@ async function runTest(mode, profileName, evidenceDir) {
 
 function calculateStats(values) {
   if (values.length === 0) {
-    return { avg: 0, min: 0, max: 0, p95: 0 };
+    return { avg: 0, min: 0, max: 0, p95: 0, trimmedAvg: 0 };
   }
 
   const sorted = [...values].sort((a, b) => a - b);
   const sum = sorted.reduce((a, b) => a + b, 0);
+
+  // Trimmed average: remove highest and lowest values
+  let trimmedAvg = 0;
+  if (sorted.length > 2) {
+    const trimmed = sorted.slice(1, -1);
+    const trimmedSum = trimmed.reduce((a, b) => a + b, 0);
+    trimmedAvg = Math.round(trimmedSum / trimmed.length);
+  } else {
+    trimmedAvg = Math.round(sum / sorted.length);
+  }
 
   return {
     avg: Math.round(sum / sorted.length),
     min: sorted[0],
     max: sorted[sorted.length - 1],
     p95: sorted[Math.floor(sorted.length * 0.95)] || sorted[sorted.length - 1],
+    trimmedAvg,
   };
 }
 
@@ -518,19 +529,19 @@ function generateReport(lbResult, directResult, evidenceDir) {
   console.log('LB:');
   console.log(`  成功: ${lbResult.successCount}/${CONFIG.iterations}`);
   console.log(
-    `  Duration:  avg=${lbDurationStats.avg}ms | min=${lbDurationStats.min}ms | max=${lbDurationStats.max}ms | p95=${lbDurationStats.p95}ms`
+    `  Duration:  avg=${lbDurationStats.avg}ms | min=${lbDurationStats.min}ms | max=${lbDurationStats.max}ms | p95=${lbDurationStats.p95}ms | trimmed=${lbDurationStats.trimmedAvg}ms`
   );
   console.log(
-    `  TTFB:      avg=${lbTtfbStats.avg}ms | min=${lbTtfbStats.min}ms | max=${lbTtfbStats.max}ms | p95=${lbTtfbStats.p95}ms`
+    `  TTFB:      avg=${lbTtfbStats.avg}ms | min=${lbTtfbStats.min}ms | max=${lbTtfbStats.max}ms | p95=${lbTtfbStats.p95}ms | trimmed=${lbTtfbStats.trimmedAvg}ms`
   );
   console.log('');
   console.log('Direct:');
   console.log(`  成功: ${directResult.successCount}/${CONFIG.iterations}`);
   console.log(
-    `  Duration:  avg=${directDurationStats.avg}ms | min=${directDurationStats.min}ms | max=${directDurationStats.max}ms | p95=${directDurationStats.p95}ms`
+    `  Duration:  avg=${directDurationStats.avg}ms | min=${directDurationStats.min}ms | max=${directDurationStats.max}ms | p95=${directDurationStats.p95}ms | trimmed=${directDurationStats.trimmedAvg}ms`
   );
   console.log(
-    `  TTFB:      avg=${directTtfbStats.avg}ms | min=${directTtfbStats.min}ms | max=${directTtfbStats.max}ms | p95=${directTtfbStats.p95}ms`
+    `  TTFB:      avg=${directTtfbStats.avg}ms | min=${directTtfbStats.min}ms | max=${directTtfbStats.max}ms | p95=${directTtfbStats.p95}ms | trimmed=${directTtfbStats.trimmedAvg}ms`
   );
   console.log('');
   console.log('------------------------------------------------------------');
@@ -538,13 +549,26 @@ function generateReport(lbResult, directResult, evidenceDir) {
 
   const lbAvgDuration = lbDurationStats.avg;
   const directAvgDuration = directDurationStats.avg;
+  const lbTrimmedAvg = lbDurationStats.trimmedAvg;
+  const directTrimmedAvg = directDurationStats.trimmedAvg;
   const diff = lbAvgDuration - directAvgDuration;
   const percentDiff = directAvgDuration > 0 ? ((diff / directAvgDuration) * 100).toFixed(1) : 0;
+  const trimmedDiff = lbTrimmedAvg - directTrimmedAvg;
+  const trimmedPercentDiff =
+    directTrimmedAvg > 0 ? ((trimmedDiff / directTrimmedAvg) * 100).toFixed(1) : 0;
   const fasterOrSlower = diff < 0 ? '快' : '慢';
+  const trimmedFasterOrSlower = trimmedDiff < 0 ? '快' : '慢';
 
-  console.log(`  LB 平均耗时:     ${lbAvgDuration}ms`);
-  console.log(`  Direct 平均耗时: ${directAvgDuration}ms`);
-  console.log(`  差异:            LB ${fasterOrSlower} ${Math.abs(diff)}ms (${percentDiff}%)`);
+  console.log(`  全量平均:`);
+  console.log(`    LB 平均耗时:     ${lbAvgDuration}ms`);
+  console.log(`    Direct 平均耗时: ${directAvgDuration}ms`);
+  console.log(`    差异:            LB ${fasterOrSlower} ${Math.abs(diff)}ms (${percentDiff}%)`);
+  console.log(`  剔除首尾后平均:`);
+  console.log(`    LB 平均耗时:     ${lbTrimmedAvg}ms`);
+  console.log(`    Direct 平均耗时: ${directTrimmedAvg}ms`);
+  console.log(
+    `    差异:            LB ${trimmedFasterOrSlower} ${Math.abs(trimmedDiff)}ms (${trimmedPercentDiff}%)`
+  );
   console.log('============================================================');
 
   // Return report data for saving

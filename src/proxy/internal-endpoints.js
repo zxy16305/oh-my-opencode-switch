@@ -194,6 +194,65 @@ export function handleStats(req, res, routes, _circuitBreaker) {
 }
 
 /**
+ * Handle weight diagnostics endpoint - return detailed weight state for all routes/upstreams
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {object} routes - Resolved routes config
+ * @param {CircuitBreaker} _circuitBreaker - Circuit breaker instance (unused)
+ * @param {Set} _sseClients - SSE clients (unused)
+ */
+export function handleWeightDiagnostics(req, res, routes, _circuitBreaker, _sseClients) {
+  // Security: only allow localhost
+  const clientIp = req.socket.remoteAddress || '';
+  if (clientIp !== '127.0.0.1' && clientIp !== '::1' && clientIp !== '::ffff:127.0.0.1') {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: localhost only' }));
+    return;
+  }
+
+  const now = Date.now();
+  const windowMs = 60 * 60 * 1000; // 1 hour window
+
+  const response = {
+    timestamp: new Date().toISOString(),
+    routes: {},
+  };
+
+  for (const [routeName, route] of Object.entries(routes)) {
+    response.routes[routeName] = {
+      strategy: route.strategy,
+      upstreams: (route.upstreams || []).map((upstream) => {
+        const state = weightManager?.getState(routeName, upstream.id);
+        const adjustmentHistory = weightManager?.getAdjustmentHistory(routeName, upstream.id) || [];
+
+        const errorsInWindow = state?.errors
+          ? state.errors.filter((e) => now - e.timestamp <= windowMs).length
+          : 0;
+
+        return {
+          id: upstream.id,
+          provider: upstream.provider,
+          model: upstream.model,
+          currentWeight:
+            state?.currentWeight ?? weightManager?.getConfiguredWeight(upstream) ?? 100,
+          configuredWeight:
+            state?.configuredWeight ?? weightManager?.getConfiguredWeight(upstream) ?? 100,
+          level: state?.level ?? 'normal',
+          consecutiveSuccess: state?.consecutiveSuccess ?? 0,
+          totalRequests: state?.totalRequests ?? 0,
+          avgLatency: state?.avgLatency ?? 0,
+          errors: errorsInWindow,
+          adjustmentHistory,
+        };
+      }),
+    };
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(response, null, 2));
+}
+
+/**
  * Handle dashboard endpoint - return visualization HTML
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res

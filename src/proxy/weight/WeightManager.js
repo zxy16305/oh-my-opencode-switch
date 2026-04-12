@@ -42,6 +42,7 @@ export class WeightManager {
       avgLatency: 0,
       consecutiveSuccess: 0,
       lastAdjustment: Date.now(),
+      adjustmentHistory: [],
     };
   }
 
@@ -117,10 +118,25 @@ export class WeightManager {
 
     const recovery = calculateRecovery(state, this.config.recoveryThreshold);
     if (recovery) {
+      const oldWeight = state.currentWeight;
+      const fromLevel = state.level;
       state.currentWeight = recovery.newWeight;
       state.level = recovery.level;
       state.consecutiveSuccess = 0;
       state.lastAdjustment = Date.now();
+
+      state.adjustmentHistory.push({
+        type: 'recovery',
+        timestamp: Date.now(),
+        oldWeight,
+        newWeight: recovery.newWeight,
+        level: recovery.level,
+        fromLevel,
+        consecutiveSuccess: recovery.consecutiveSuccess,
+      });
+      if (state.adjustmentHistory.length > 20) {
+        state.adjustmentHistory.shift();
+      }
     }
   }
 
@@ -140,15 +156,34 @@ export class WeightManager {
       minWeight: this.config.minWeight,
     });
     if (adjustment) {
+      const oldWeight = state.currentWeight;
+      const fromLevel = state.level;
       state.currentWeight = adjustment.newWeight;
       state.level = adjustment.level;
       state.lastAdjustment = Date.now();
+
+      state.adjustmentHistory.push({
+        type: 'error',
+        timestamp: Date.now(),
+        oldWeight,
+        newWeight: adjustment.newWeight,
+        errorRate: adjustment.errorRate,
+        level: adjustment.level,
+        fromLevel,
+      });
+      if (state.adjustmentHistory.length > 20) {
+        state.adjustmentHistory.shift();
+      }
     }
   }
 
   // === 获取权重 ===
   getWeight(routeKey, upstreamId) {
     return this.getState(routeKey, upstreamId)?.currentWeight ?? 100;
+  }
+
+  getAdjustmentHistory(routeKey, upstreamId) {
+    return this.getState(routeKey, upstreamId)?.adjustmentHistory ?? [];
   }
 
   getState(routeKey, upstreamId) {

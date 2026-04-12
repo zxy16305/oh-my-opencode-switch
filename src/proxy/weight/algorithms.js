@@ -50,6 +50,8 @@ export function calculateErrorAdjustment(state, config) {
         newWeight,
         level: threshold.level,
         multiplier: threshold.multiplier,
+        oldWeight: configuredWeight,
+        errorRate,
       };
     }
   }
@@ -87,6 +89,8 @@ export function calculateRecovery(state, threshold = 5) {
   return {
     newWeight,
     level: step.nextLevel,
+    oldWeight: configuredWeight,
+    consecutiveSuccess,
   };
 }
 

@@ -24,6 +24,7 @@ import {
   handleDashboard,
   handleLogsStream,
   handleAnalytics,
+  handleWeightDiagnostics,
   setupSSELogCallback,
 } from './internal-endpoints.js';
 
@@ -218,6 +219,11 @@ export class ProxyServerManager {
 
           if (req.url === '/_internal/stats' && req.method === 'GET') {
             handleStats(req, res, routes, circuitBreaker);
+            return;
+          }
+
+          if (req.url === '/_internal/weight-diagnostics' && req.method === 'GET') {
+            handleWeightDiagnostics(req, res, routes, circuitBreaker);
             return;
           }
 

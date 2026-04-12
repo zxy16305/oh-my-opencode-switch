@@ -203,6 +203,62 @@
         text-align: center;
         padding: 10px;
       }
+      .weight-cell {
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .weight-cell:hover {
+        background: #e0e7ff !important;
+      }
+      .diagnostic-row {
+        background: #f8fafc;
+      }
+      .diagnostic-row td {
+        padding: 16px;
+        border-bottom: 2px solid #e2e8f0;
+      }
+      .level-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: white;
+      }
+      .level-normal {
+        background: #10b981;
+      }
+      .level-half {
+        background: #eab308;
+      }
+      .level-medium {
+        background: #f97316;
+      }
+      .level-min {
+        background: #ef4444;
+      }
+      .history-error {
+        color: #ef4444;
+      }
+      .history-recovery {
+        color: #10b981;
+      }
+      .history-timeline {
+        font-family: monospace;
+        font-size: 0.8rem;
+        line-height: 1.6;
+      }
+      .history-item {
+        padding: 2px 0;
+      }
+      .diagnostic-section {
+        margin-bottom: 12px;
+      }
+      .diagnostic-section h4 {
+        margin: 0 0 6px 0;
+        font-size: 0.85rem;
+        color: #64748b;
+      }
     </style>
   </head>
   <body>
@@ -305,6 +361,9 @@
     <script>
       const POLL_INTERVAL = 10000;
       let isFolded = true;
+      let diagnosticsData = {};
+      let expandedUpstreams = new Set();
+      let lastStatsData = null;
 
       function toggleFoldedColumns() {
         isFolded = !isFolded;
@@ -417,6 +476,7 @@
             // 合并列：Provider/Model, Weight
             const providerModel = `${u.provider || '-'}/${u.model || '-'}`;
             const weight = `${u.currentWeight}/${u.configuredWeight ?? u.currentWeight}`;
+            const upstreamId = `${u.provider || '-'}/${u.model || '-'}`;
 
             if (idx === 0) {
               tr.innerHTML = `
@@ -432,7 +492,7 @@
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
-                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${weight}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="weight-cell" onclick="toggleDiagnostic('${routeName}', '${upstreamId}')">${weight}</td>
                   `;
             } else {
               tr.innerHTML = `
@@ -447,12 +507,130 @@
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${sampleCount > 0 ? formatDuration(avgDuration) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
-                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}">${weight}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="weight-cell" onclick="toggleDiagnostic('${routeName}', '${upstreamId}')">${weight}</td>
                   `;
             }
 
             tbody.appendChild(tr);
+
+            // Add diagnostic row if expanded
+            const key = `${routeName}:${upstreamId}`;
+            if (expandedUpstreams.has(key)) {
+              const diagRow = document.createElement('tr');
+              diagRow.className = 'diagnostic-row';
+              const diagData = getDiagnosticData(routeName, upstreamId);
+              diagRow.innerHTML = renderDiagnosticRow(routeName, upstreamId, diagData);
+              tbody.appendChild(diagRow);
+            }
           });
+        }
+      }
+
+      function getDiagnosticData(routeName, upstreamId) {
+        const routes = diagnosticsData.routes || {};
+        const route = routes[routeName];
+        if (!route || !route.upstreams) return null;
+        return route.upstreams.find((u) => `${u.provider}/${u.model}` === upstreamId) || null;
+      }
+
+      function toggleDiagnostic(routeName, upstreamId) {
+        const key = `${routeName}:${upstreamId}`;
+        if (expandedUpstreams.has(key)) {
+          expandedUpstreams.delete(key);
+        } else {
+          expandedUpstreams.add(key);
+        }
+        // Re-render with current stats data
+        if (lastStatsData) {
+          const upstreams = aggregateUpstreams(lastStatsData);
+          renderTable(upstreams);
+        }
+      }
+
+      function renderDiagnosticRow(routeName, upstreamId, diagData) {
+        if (!diagData) {
+          return `<td colspan="13" style="text-align:center;color:#999;">暂无诊断数据</td>`;
+        }
+
+        const level = diagData.level || 'normal';
+        const levelClass = `level-${level}`;
+        const levelText =
+          {
+            normal: 'Normal',
+            half: 'Half',
+            medium: 'Medium',
+            min: 'Min',
+          }[level] || level;
+
+        const state = diagData.state || {};
+        const consecutiveSuccess = diagData.consecutiveSuccess ?? 0;
+        const totalRequests = diagData.totalRequests ?? 0;
+        const avgLatency = diagData.avgLatency ?? 0;
+        const errors = diagData.errors ?? 0;
+        const currentWeight = diagData.currentWeight ?? 100;
+        const configuredWeight = diagData.configuredWeight ?? 100;
+
+        const history = diagData.adjustmentHistory || [];
+        let historyHtml = '';
+        if (history.length === 0) {
+          historyHtml = '<div style="color:#999;">无调整记录</div>';
+        } else {
+          historyHtml =
+            '<div class="history-timeline">' +
+            history
+              .slice(-10)
+              .map((h) => {
+                const time = new Date(h.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+                const isError = h.type === 'error';
+                const cssClass = isError ? 'history-error' : 'history-recovery';
+                const fromTo = `${h.oldWeight} → ${h.newWeight}`;
+                const detail = isError
+                  ? `error, err=${(h.errorRate * 100).toFixed(1)}%, ${h.fromLevel}→${h.level}`
+                  : `recovery, consec=${h.consecutiveSuccess}, ${h.fromLevel}→${h.level}`;
+                return `<div class="history-item ${cssClass}">${time}: ${fromTo} (${detail})</div>`;
+              })
+              .join('') +
+            '</div>';
+        }
+
+        return `
+          <td colspan="13">
+            <div style="display:flex;gap:24px;">
+              <div class="diagnostic-section" style="flex:0 0 200px;">
+                <h4>当前等级</h4>
+                <span class="level-badge ${levelClass}">${levelText}</span>
+              </div>
+              <div class="diagnostic-section" style="flex:0 0 300px;">
+                <h4>状态信息</h4>
+                <div style="font-size:0.85rem;line-height:1.6;">
+                  <div>当前权重: ${currentWeight}/${configuredWeight}</div>
+                  <div>连续成功: ${consecutiveSuccess}</div>
+                  <div>总请求: ${totalRequests}</div>
+                  <div>窗口错误: ${errors}</div>
+                  <div>平均延迟: ${formatDuration(avgLatency)}</div>
+                </div>
+              </div>
+              <div class="diagnostic-section" style="flex:1;">
+                <h4>调整历史 (最近10条)</h4>
+                ${historyHtml}
+              </div>
+            </div>
+          </td>
+        `;
+      }
+
+      async function fetchDiagnostics() {
+        try {
+          const res = await fetch('/_internal/weight-diagnostics');
+          const data = await res.json();
+          diagnosticsData = data;
+          // If any upstreams are expanded, re-render
+          if (expandedUpstreams.size > 0 && lastStatsData) {
+            const upstreams = aggregateUpstreams(lastStatsData);
+            renderTable(upstreams);
+          }
+        } catch (err) {
+          console.error('Failed to fetch diagnostics:', err);
         }
       }
 
@@ -460,6 +638,7 @@
         try {
           const res = await fetch('/_internal/stats');
           const data = await res.json();
+          lastStatsData = data;
           const upstreams = aggregateUpstreams(data);
           renderTable(upstreams);
           document.getElementById('updated').textContent =
@@ -521,6 +700,10 @@
 
       fetchStats();
       setInterval(fetchStats, POLL_INTERVAL);
+
+      // Fetch diagnostics on load and periodically
+      fetchDiagnostics();
+      setInterval(fetchDiagnostics, POLL_INTERVAL);
 
       // Access Logs SSE
       const LOGS_MAX_ENTRIES = 50;

@@ -53,6 +53,7 @@ export function failoverStickySession(
 
   if (available.length === 0) {
     logger.warn(`All upstreams filtered out, falling back to failed provider: ${failedUpstreamId}`);
+    decrementSessionCount(sm, routeKey, failedUpstreamId);
     const sessionKey = model ? `${sessionId}:${model}` : sessionId;
     sm.sessionMap.set(sessionKey, {
       upstreamId: failedProvider.id,
@@ -60,6 +61,7 @@ export function failoverStickySession(
       timestamp: Date.now(),
       requestCount: 1,
     });
+    incrementSessionCount(sm, routeKey, failedProvider.id);
     return failedProvider;
   }
 

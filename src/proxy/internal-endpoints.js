@@ -293,13 +293,44 @@ export async function handleAnalytics(req, res) {
     const categoryFilter = url.searchParams.get('category') || null;
     const modelFilter = url.searchParams.get('model') || null;
 
-    const [accesslogEntries, sessions, messages] = await Promise.all([
-      readAccesslog({ startTime, endTime }),
-      getAllSessions({ startTime, endTime }),
-      getAllMessages({ startTime, endTime }),
-    ]);
+    let accesslogEntries;
+    let sessions;
+    let messages;
+    const errors = {};
 
-    let filteredEntries = accesslogEntries;
+    try {
+      accesslogEntries = await readAccesslog({ startTime, endTime });
+    } catch (e) {
+      errors.accesslog = e.message;
+    }
+
+    try {
+      sessions = await getAllSessions({ startTime, endTime });
+    } catch (e) {
+      errors.sessions = e.message;
+    }
+
+    try {
+      messages = await getAllMessages({ startTime, endTime });
+    } catch (e) {
+      errors.messages = e.message;
+    }
+
+    if (Object.keys(errors).length === 3) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: { message: 'All data sources failed', sources: errors },
+        })
+      );
+      return;
+    }
+
+    const effectiveAccesslog = accesslogEntries || [];
+    const effectiveSessions = sessions || [];
+    const effectiveMessages = messages || [];
+
+    let filteredEntries = effectiveAccesslog;
     if (categoryFilter) {
       filteredEntries = filteredEntries.filter((e) => e.category === categoryFilter);
     }
@@ -309,10 +340,10 @@ export async function handleAnalytics(req, res) {
       );
     }
 
-    const summary = aggregateSummary(filteredEntries, sessions, messages);
+    const summary = aggregateSummary(filteredEntries, effectiveSessions, effectiveMessages);
     const topModels = aggregateByModel(filteredEntries);
-    const topAgents = aggregateByAgent(messages);
-    const categoryStats = aggregateByCategory(filteredEntries, sessions);
+    const topAgents = aggregateByAgent(effectiveMessages);
+    const categoryStats = aggregateByCategory(filteredEntries, effectiveSessions);
 
     const response = {
       timestamp: new Date().toISOString(),
@@ -326,6 +357,10 @@ export async function handleAnalytics(req, res) {
       topAgents,
       categoryStats,
     };
+
+    if (Object.keys(errors).length > 0) {
+      response.errors = errors;
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(response, null, 2));

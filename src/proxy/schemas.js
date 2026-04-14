@@ -14,7 +14,7 @@ export const upstreamSchema = z.object({
   model: z.string().min(1, 'Model name is required'),
   baseURL: z.string().url('Base URL must be a valid URL'),
   apiKey: z.string().optional(),
-  weight: z.number().int().min(1).max(1000).optional().default(100),
+  weight: z.number().int().min(0).max(1000).optional().default(100),
   metadata: z.record(z.unknown()).optional(),
   timeSlotWeights: z
     .object({
@@ -42,7 +42,7 @@ export const routeSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       initialWeight: z.number().int().positive().default(100),
-      minWeight: z.number().int().positive().default(10),
+      minWeight: z.number().int().min(0).default(10),
       checkInterval: z.number().int().positive().default(10),
       latencyThreshold: z.number().positive().default(1.5),
       latencyWindowMs: z.number().int().positive().default(60000),

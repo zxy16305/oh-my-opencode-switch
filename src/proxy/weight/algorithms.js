@@ -108,6 +108,13 @@ export function updateTimeSlotWeight(state, newConfiguredWeight) {
     return null;
   }
 
+  // Guard: avoid division by zero when configuredWeight is 0
+  if (configuredWeight === 0) {
+    state.configuredWeight = newConfiguredWeight;
+    state.currentWeight = newConfiguredWeight;
+    return { currentWeight: newConfiguredWeight };
+  }
+
   // Calculate ratio and apply to new weight
   const ratio = currentWeight / configuredWeight;
   const newCurrentWeight = Math.round(newConfiguredWeight * ratio);

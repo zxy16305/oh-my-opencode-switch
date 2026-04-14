@@ -186,11 +186,11 @@ describe('Schema Validation – Zero Weight (TDD RED Phase)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Error message verification (TDD RED Phase)
+  // 5. Error message verification (GREEN Phase - zero values now allowed)
   // -------------------------------------------------------------------------
   describe('Error message verification', () => {
-    test('weight: 0 error message mentions min constraint', () => {
-      const upstream = makeUpstream({ weight: 0 });
+    test('weight: -1 error message mentions min constraint', () => {
+      const upstream = makeUpstream({ weight: -1 });
 
       const result = upstreamSchema.safeParse(upstream);
       assert.strictEqual(result.success, false);
@@ -203,12 +203,12 @@ describe('Schema Validation – Zero Weight (TDD RED Phase)', () => {
       );
     });
 
-    test('minWeight: 0 error message mentions positive constraint', () => {
+    test('minWeight: -1 error message mentions min constraint', () => {
       const route = makeRoute([makeUpstream()], {
         dynamicWeight: {
           enabled: true,
           initialWeight: 100,
-          minWeight: 0,
+          minWeight: -1,
           checkInterval: 10,
           latencyThreshold: 1.5,
           latencyWindowMs: 60000,
@@ -220,11 +220,11 @@ describe('Schema Validation – Zero Weight (TDD RED Phase)', () => {
       const result = routeSchema.safeParse(route);
       assert.strictEqual(result.success, false);
 
-      // Verify error mentions the positive constraint
+      // Verify error mentions the min constraint
       const errorMessages = result.error.errors.map((e) => e.message).join(', ');
       assert.ok(
-        errorMessages.includes('positive') || errorMessages.includes('greater'),
-        `Error should mention positive constraint: ${errorMessages}`
+        errorMessages.includes('min') || errorMessages.includes('greater'),
+        `Error should mention min constraint: ${errorMessages}`
       );
     });
   });

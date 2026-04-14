@@ -193,16 +193,16 @@ export class WeightManager {
   // === Effective Weight ===
   getEffectiveWeight(routeKey, upstream, dynamicWeightConfig = null) {
     if (!dynamicWeightConfig?.enabled) {
-      return Math.max(1, this.getConfiguredWeight(upstream));
+      return Math.max(0, this.getConfiguredWeight(upstream));
     }
 
     const state = this.getState(routeKey, upstream.id);
     if (!state) {
       // No dynamic state yet — use configured weight (preserves timeSlotWeights)
-      return Math.max(1, this.getConfiguredWeight(upstream));
+      return Math.max(0, this.getConfiguredWeight(upstream));
     }
 
-    return Math.max(1, state.currentWeight);
+    return Math.max(0, state.currentWeight);
   }
 
   getAllStates() {

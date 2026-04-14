@@ -48,8 +48,8 @@ export function calculateEffectiveWeight(params) {
     }
   }
 
-  // Ensure effective weight is at least 1
-  return Math.max(1, effectiveWeight);
+  // Ensure effective weight is at least 0
+  return Math.max(0, effectiveWeight);
 }
 
 /**

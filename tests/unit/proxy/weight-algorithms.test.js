@@ -243,3 +243,39 @@ describe('updateTimeSlotWeight', () => {
     assert.strictEqual(result.currentWeight, 150); // direct update
   });
 });
+
+describe('updateTimeSlotWeight - zero weight transitions', () => {
+  it('should handle transition from 0 to positive weight without NaN', () => {
+    const state = {
+      configuredWeight: 0,
+      currentWeight: 0,
+    };
+    const result = updateTimeSlotWeight(state, 100);
+    // Should NOT be NaN - currently produces NaN due to 0/0 division
+    assert.strictEqual(typeof state.currentWeight, 'number');
+    assert.ok(!isNaN(state.currentWeight), 'currentWeight should not be NaN');
+    assert.strictEqual(state.currentWeight, 100);
+    assert.strictEqual(state.configuredWeight, 100);
+  });
+
+  it('should handle transition from positive weight to 0', () => {
+    const state = {
+      configuredWeight: 100,
+      currentWeight: 50,
+    };
+    const result = updateTimeSlotWeight(state, 0);
+    // ratio = 50/100 = 0.5, newWeight = 0 * 0.5 = 0
+    assert.strictEqual(state.currentWeight, 0);
+    assert.strictEqual(state.configuredWeight, 0);
+    assert.strictEqual(result.currentWeight, 0);
+  });
+
+  it('should return null when transitioning from 0 to 0 (no change)', () => {
+    const state = {
+      configuredWeight: 0,
+      currentWeight: 0,
+    };
+    const result = updateTimeSlotWeight(state, 0);
+    assert.strictEqual(result, null);
+  });
+});

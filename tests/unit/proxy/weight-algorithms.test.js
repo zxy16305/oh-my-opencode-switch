@@ -250,7 +250,7 @@ describe('updateTimeSlotWeight - zero weight transitions', () => {
       configuredWeight: 0,
       currentWeight: 0,
     };
-    const result = updateTimeSlotWeight(state, 100);
+    const _result = updateTimeSlotWeight(state, 100);
     // Should NOT be NaN - currently produces NaN due to 0/0 division
     assert.strictEqual(typeof state.currentWeight, 'number');
     assert.ok(!isNaN(state.currentWeight), 'currentWeight should not be NaN');

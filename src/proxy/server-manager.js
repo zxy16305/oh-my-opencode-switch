@@ -34,6 +34,7 @@ const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
   allowedFails: 2,
   cooldownTimeMs: 60000,
 };
+const MAX_RETRIES = 1;
 
 function createInstanceState(config = {}) {
   return {
@@ -310,6 +311,7 @@ export class ProxyServerManager {
           const startTime = Date.now();
           let ttfb = null;
           let proxyResStatusCode = null;
+          let retryCount = 0;
 
           forwardRequest(req, res, targetUrl, {
             body: forwardBody,
@@ -318,6 +320,7 @@ export class ProxyServerManager {
               ttfb = Date.now() - startTime;
               proxyResStatusCode = proxyRes.statusCode;
               proxyRes.headers['x-used-provider'] = upstream.id;
+              proxyRes.headers['x-retry-count'] = retryCount > 0 ? String(retryCount) : '0';
               if (sessionId) {
                 proxyRes.headers['x-session-id'] = sessionId;
               }
@@ -362,6 +365,109 @@ export class ProxyServerManager {
               recordUpstreamError(model, upstream.id, 502);
               weightManager.recordError(model, upstream.id, 502);
               logger.error(`Upstream error for ${upstream.id}: ${err.message}`);
+
+              // Retry logic: check if retry is possible
+              if (
+                !res.headersSent &&
+                !res.socket?.destroyed &&
+                route.upstreams.length > 1 &&
+                retryCount < MAX_RETRIES
+              ) {
+                const nextUpstream = failoverStickySession(
+                  sessionId,
+                  upstream.id,
+                  route.upstreams,
+                  routeKey,
+                  model,
+                  (id) => circuitBreaker.isAvailable(id),
+                  null,
+                  weightManager
+                );
+
+                if (nextUpstream && nextUpstream.baseURL) {
+                  retryCount++;
+                  logger.warn(
+                    `Retrying request on ${nextUpstream.id} after ${upstream.id} error: ${err.message}`
+                  );
+
+                  const retryUrl = `${nextUpstream.baseURL}/chat/completions`;
+                  const retryHeaders = {};
+                  if (nextUpstream.apiKey) {
+                    retryHeaders['authorization'] = `Bearer ${nextUpstream.apiKey}`;
+                  }
+
+                  forwardRequest(req, res, retryUrl, {
+                    body: forwardBody,
+                    headers: retryHeaders,
+                    onProxyRes: (proxyRes) => {
+                      ttfb = Date.now() - startTime;
+                      proxyResStatusCode = proxyRes.statusCode;
+                      proxyRes.headers['x-used-provider'] = nextUpstream.id;
+                      proxyRes.headers['x-retry-count'] = String(retryCount);
+                      if (sessionId) {
+                        proxyRes.headers['x-session-id'] = sessionId;
+                      }
+                      if (proxyRes.statusCode >= 400) {
+                        circuitBreaker.recordFailure(nextUpstream.id);
+                        recordUpstreamError(model, nextUpstream.id, proxyRes.statusCode);
+                        weightManager.recordError(model, nextUpstream.id, proxyRes.statusCode);
+                        if (config.timeSlotWeight?.enabled) {
+                          timeSlotCalculator.recordFailure(nextUpstream.provider);
+                        }
+                      } else {
+                        circuitBreaker.recordSuccess(nextUpstream.id);
+                        recordUpstreamLatency(model, nextUpstream.id, Date.now() - startTime);
+                        weightManager.recordSuccess(model, nextUpstream.id, Date.now() - startTime);
+                        if (config.timeSlotWeight?.enabled) {
+                          timeSlotCalculator.recordSuccess(nextUpstream.provider);
+                        }
+                      }
+                    },
+                    onStreamEnd: () => {
+                      const duration = Date.now() - startTime;
+                      recordUpstreamStats(
+                        model,
+                        nextUpstream.id,
+                        ttfb,
+                        duration,
+                        proxyResStatusCode >= 400
+                      );
+                      logAccess({
+                        sessionId: sessionId || null,
+                        agent,
+                        category,
+                        provider: nextUpstream.provider,
+                        model: nextUpstream.model,
+                        virtualModel: model,
+                        status: proxyResStatusCode,
+                        ttfb,
+                        duration,
+                        body: requestBody,
+                      }).catch(() => {});
+                    },
+                    onError: (retryErr) => {
+                      circuitBreaker.recordFailure(nextUpstream.id);
+                      recordUpstreamError(model, nextUpstream.id, 502);
+                      weightManager.recordError(model, nextUpstream.id, 502);
+                      logger.error(`Retry failed for ${nextUpstream.id}: ${retryErr.message}`);
+                      if (config.timeSlotWeight?.enabled) {
+                        timeSlotCalculator.recordFailure(nextUpstream.provider);
+                      }
+                      if (!res.headersSent) {
+                        res.writeHead(502, { 'Content-Type': 'application/json' });
+                        res.end(
+                          JSON.stringify({
+                            error: { message: `Bad Gateway: ${retryErr.message}` },
+                          })
+                        );
+                      }
+                    },
+                  });
+                  return; // Don't send 502, retry will handle it
+                }
+              }
+
+              // No retry available, send 502
               if (config.timeSlotWeight?.enabled) {
                 timeSlotCalculator.recordFailure(upstream.provider);
               }

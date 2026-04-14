@@ -1053,7 +1053,7 @@ describe('Integration – Time Slot Weight Feature', () => {
       );
     });
 
-    test('edge case: zero slot weight gets minimum effective weight', () => {
+    test('edge case: zero slot weight results in 0% traffic (complete exclusion)', () => {
       const upstreams = [
         makeUpstream({
           id: 'zero-a',
@@ -1079,16 +1079,23 @@ describe('Integration – Time Slot Weight Feature', () => {
       const distribution = {};
       for (const [id, c] of counts) distribution[id] = (c / totalRequests) * 100;
 
-      // zero-a has effective weight 1 (min clamped), zero-b has 100
-      // Expected: zero-a gets ~1% (1/101)
-      const pctA = distribution['zero-a'];
+      // zero-a has effective weight 0 (zero-weight feature allows weight=0)
+      // zero-b has effective weight 100
+      // Expected: zero-a gets 0% traffic (completely excluded), zero-b gets 100%
+      const pctA = distribution['zero-a'] ?? 0; // undefined means 0 requests
       assert.ok(
-        pctA >= 0 && pctA <= 5,
-        `zero-a should get 0-5% with zero slot weight, got ${pctA.toFixed(2)}%`
+        pctA === 0,
+        `zero-a should get 0% traffic with zero slot weight, got ${pctA.toFixed(2)}%`
+      );
+
+      const pctB = distribution['zero-b'] ?? 0;
+      assert.ok(
+        pctB >= 99 && pctB <= 101,
+        `zero-b should get ~100% traffic when zero-a excluded, got ${pctB.toFixed(2)}%`
       );
 
       console.log(
-        `Zero weight: A=${distribution['zero-a']?.toFixed(2)}%, B=${distribution['zero-b']?.toFixed(2)}%`
+        `Zero weight: A=${distribution['zero-a']?.toFixed(2) ?? '0'}%, B=${distribution['zero-b']?.toFixed(2)}%`
       );
     });
 

@@ -370,6 +370,7 @@ export class ProxyServerManager {
               if (
                 !res.headersSent &&
                 !res.socket?.destroyed &&
+                !req.socket?.destroyed &&
                 route.upstreams.length > 1 &&
                 retryCount < MAX_RETRIES
               ) {
@@ -453,7 +454,7 @@ export class ProxyServerManager {
                       if (config.timeSlotWeight?.enabled) {
                         timeSlotCalculator.recordFailure(nextUpstream.provider);
                       }
-                      if (!res.headersSent) {
+                      if (!res.headersSent && !res.socket?.destroyed && !req.socket?.destroyed) {
                         res.writeHead(502, { 'Content-Type': 'application/json' });
                         res.end(
                           JSON.stringify({

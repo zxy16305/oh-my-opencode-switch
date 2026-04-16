@@ -135,6 +135,10 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
       });
     }
 
+    if (clientRes.headersSent || clientRes.socket?.destroyed) {
+      proxyRes.resume(); // drain the stream to free resources
+      return;
+    }
     clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
     proxyRes.pipe(clientRes);
 
@@ -149,10 +153,14 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
       if (options.onError) {
         options.onError(err, 'response');
       }
-      if (!clientRes.headersSent) {
+      if (!clientRes.headersSent && !clientRes.socket?.destroyed) {
         sendError(clientRes, 502, 'Upstream response stream error');
       } else {
-        clientRes.end();
+        try {
+          clientRes.end();
+        } catch {
+          // ignore - socket may already be destroyed
+        }
       }
     });
   });
@@ -183,10 +191,14 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
   clientReq.on('error', (err) => {
     console.error('[proxy] client request stream error:', err.message);
     proxyReq.destroy();
-    if (!clientRes.headersSent) {
+    if (!clientRes.headersSent && !clientRes.socket?.destroyed) {
       sendError(clientRes, 400, `Bad Request: ${err.message}`);
     } else {
-      clientRes.end();
+      try {
+        clientRes.end();
+      } catch {
+        // ignore - socket may already be destroyed
+      }
     }
   });
 }

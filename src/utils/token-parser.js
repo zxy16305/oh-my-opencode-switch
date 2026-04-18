@@ -23,6 +23,10 @@ export function parseTokenUsage(responseBody) {
     'total_tokens',
     'reasoning_tokens',
     'prompt_tokens_details',
+    'input_tokens_details',
+    'cached_tokens',
+    'prompt_cache_hit_tokens',
+    'prompt_cache_miss_tokens',
     'cache_creation_input_tokens',
     'cache_read_input_tokens',
   ];
@@ -40,12 +44,20 @@ export function parseTokenUsage(responseBody) {
   const inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
   const outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
 
-  // Cache tokens: OpenAI uses cached_tokens, Anthropic uses cache_read_input_tokens
+  // Cache tokens: providers may report cache hits in several OpenAI-compatible shapes
   const cacheRead =
-    usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? 0;
+    usage.prompt_tokens_details?.cached_tokens ??
+    usage.input_tokens_details?.cached_tokens ??
+    usage.cached_tokens ??
+    usage.prompt_cache_hit_tokens ??
+    usage.cache_read_input_tokens ??
+    0;
 
-  // Anthropic has cache_write via cache_creation_input_tokens
-  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  // Cache writes can appear either at top level or nested under prompt_tokens_details
+  const cacheWrite =
+    usage.cache_creation_input_tokens ??
+    usage.prompt_tokens_details?.cache_creation_input_tokens ??
+    0;
 
   // Reasoning tokens (OpenAI specific)
   const reasoningTokens = usage.reasoning_tokens ?? 0;

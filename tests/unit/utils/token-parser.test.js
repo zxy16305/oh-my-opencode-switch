@@ -69,6 +69,56 @@ describe('parseTokenUsage', () => {
         total_tokens: 150, // calculated from input + output
       });
     });
+
+    it('should parse context cache fields for baidu/deepseek-v3.2 responses', () => {
+      const response = {
+        model: 'baidu/deepseek-v3.2',
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 300,
+          total_tokens: 1500,
+          prompt_cache_hit_tokens: 900,
+          prompt_cache_miss_tokens: 300,
+        },
+      };
+
+      const result = parseTokenUsage(response);
+
+      assert.deepEqual(result, {
+        input_tokens: 1200,
+        output_tokens: 300,
+        cache_read: 900,
+        cache_write: 0,
+        reasoning_tokens: 0,
+        total_tokens: 1500,
+      });
+    });
+
+    it('should parse context cache fields for alibaba-coding-plan-cn/qwen3.6-plus responses', () => {
+      const response = {
+        model: 'alibaba-coding-plan-cn/qwen3.6-plus',
+        usage: {
+          prompt_tokens: 2200,
+          completion_tokens: 180,
+          total_tokens: 2380,
+          prompt_tokens_details: {
+            cached_tokens: 1600,
+            cache_creation_input_tokens: 400,
+          },
+        },
+      };
+
+      const result = parseTokenUsage(response);
+
+      assert.deepEqual(result, {
+        input_tokens: 2200,
+        output_tokens: 180,
+        cache_read: 1600,
+        cache_write: 400,
+        reasoning_tokens: 0,
+        total_tokens: 2380,
+      });
+    });
   });
 
   describe('Anthropic format', () => {

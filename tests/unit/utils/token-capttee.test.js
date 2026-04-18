@@ -341,4 +341,120 @@ describe('TokenCaptivee', () => {
       });
     });
   });
+
+  describe('Responses API format', () => {
+    it('should capture usage from response.completed event', async () => {
+      const chunks = [
+        'data: {"type":"response.created","response":{"id":"resp_123"}}\n\n',
+        'data: {"type":"response.output.text.delta","delta":{"text":"Hello"}}\n\n',
+        'data: {"type":"response.output.text.delta","delta":{"text":" world"}}\n\n',
+        'data: {"type":"response.completed","response":{"id":"resp_123","usage":{"input_tokens":200,"output_tokens":100,"total_tokens":300,"cache_read_input_tokens":50}}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      stream = new TokenCaptivee();
+      stream.on('data', (chunk) => forwardedChunks.push(chunk));
+
+      for (const chunk of chunks) {
+        stream.write(chunk);
+      }
+      stream.end();
+      await new Promise((resolve) => stream.on('finish', resolve));
+
+      const usage = stream.getUsage();
+
+      assert.deepEqual(usage, {
+        input_tokens: 200,
+        output_tokens: 100,
+        cache_read: 50,
+        cache_write: 0,
+        reasoning_tokens: 0,
+        total_tokens: 300,
+      });
+
+      const forwardedData = Buffer.concat(forwardedChunks).toString();
+      assert.strictEqual(forwardedData, chunks.join(''));
+    });
+
+    it('should handle both Chat Completions usage and response.completed in same stream (response.completed takes precedence)', async () => {
+      const chunks = [
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}\n\n',
+        'data: {"type":"response.completed","response":{"usage":{"input_tokens":200,"output_tokens":100,"total_tokens":300}}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      stream = new TokenCaptivee();
+      stream.on('data', (chunk) => forwardedChunks.push(chunk));
+
+      for (const chunk of chunks) {
+        stream.write(chunk);
+      }
+      stream.end();
+      await new Promise((resolve) => stream.on('finish', resolve));
+
+      const usage = stream.getUsage();
+
+      // Response.completed comes after Chat Completions usage, so it should take precedence
+      assert.deepEqual(usage, {
+        input_tokens: 200,
+        output_tokens: 100,
+        cache_read: 0,
+        cache_write: 0,
+        reasoning_tokens: 0,
+        total_tokens: 300,
+      });
+    });
+
+    it('should ignore response.completed event without usage field', async () => {
+      const chunks = [
+        'data: {"type":"response.created","response":{"id":"resp_123"}}\n\n',
+        'data: {"type":"response.completed","response":{"id":"resp_123"}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      stream = new TokenCaptivee();
+      stream.on('data', (chunk) => forwardedChunks.push(chunk));
+
+      for (const chunk of chunks) {
+        stream.write(chunk);
+      }
+      stream.end();
+      await new Promise((resolve) => stream.on('finish', resolve));
+
+      const usage = stream.getUsage();
+      assert.strictEqual(usage, null);
+
+      const forwardedData = Buffer.concat(forwardedChunks).toString();
+      assert.strictEqual(forwardedData, chunks.join(''));
+    });
+
+    it('should handle malformed response.completed event gracefully', async () => {
+      const chunks = [
+        'data: {"type":"response.completed", invalid json}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":50}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      stream = new TokenCaptivee();
+      stream.on('data', (chunk) => forwardedChunks.push(chunk));
+
+      for (const chunk of chunks) {
+        stream.write(chunk);
+      }
+      stream.end();
+      await new Promise((resolve) => stream.on('finish', resolve));
+
+      // Should fall back to Chat Completions usage
+      const usage = stream.getUsage();
+      assert.deepEqual(usage, {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read: 0,
+        cache_write: 0,
+        reasoning_tokens: 0,
+        total_tokens: 150,
+      });
+    });
+  });
 });

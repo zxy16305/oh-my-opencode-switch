@@ -75,6 +75,18 @@ export class TokenCaptivee extends Transform {
     if (dataContent.includes('"usage"')) {
       this._lastUsageLine = dataContent;
     }
+
+    // Detect Responses API response.completed event
+    if (dataContent.includes('"type"') && dataContent.includes('"response.completed"')) {
+      try {
+        const parsed = JSON.parse(dataContent);
+        if (parsed.type === 'response.completed' && parsed.response?.usage) {
+          this._usage = parseTokenUsage(parsed.response);
+        }
+      } catch {
+        // Silently ignore parse errors
+      }
+    }
   }
 
   _extractUsageFromLine(dataContent) {

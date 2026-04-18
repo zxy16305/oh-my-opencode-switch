@@ -20,6 +20,9 @@ import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/p
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { calculateErrorAdjustment } from './weight/index.js';
 import { TokenCaptivee } from '../utils/token-capttee.js';
+import { resolveEndpoint } from './endpoint-resolver.js';
+import { transformRequestBody } from './request-transformer.js';
+import { ResponseTransformer } from './response-transformer.js';
 import { formatTokenCompact } from '../utils/access-log.js';
 import {
   handleDebug,
@@ -266,6 +269,7 @@ export class ProxyServerManager {
 
           const route = routes[model];
           let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
+          const endpointResult = resolveEndpoint(model, requestBody);
           const category = req.headers['x-opencode-category'] || null;
           const agent = req.headers['x-opencode-agent'] || null;
 
@@ -306,14 +310,18 @@ export class ProxyServerManager {
             }
           }
 
-          const targetUrl = `${upstream.baseURL}/chat/completions`;
+          // endpointResult.endpointPath is a relative path (e.g., /chat/completions, /responses)
+          // upstream.baseURL already includes the version prefix (e.g., /v1, /v4)
+          const targetUrl = `${upstream.baseURL}${endpointResult.endpointPath}`;
 
           const extraHeaders = {};
           if (upstream.apiKey) {
             extraHeaders['authorization'] = `Bearer ${upstream.apiKey}`;
           }
 
-          const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
+          const forwardBody = endpointResult.needsTransform
+            ? transformRequestBody(requestBody, upstream.model)
+            : JSON.stringify({ ...requestBody, model: upstream.model });
 
           if (options.debugbody) {
             (async () => {
@@ -336,6 +344,7 @@ export class ProxyServerManager {
                 model,
                 target: upstream.provider,
                 upstreamModel: upstream.model,
+                endpoint: endpointResult.endpointPath,
                 timestamp: new Date().toISOString(),
               };
 
@@ -350,6 +359,12 @@ export class ProxyServerManager {
                 `${msgDir}/forwarded.json`,
                 JSON.stringify(JSON.parse(forwardBody), null, 2)
               ).catch(() => {});
+              if (endpointResult.needsTransform) {
+                fs.writeFile(
+                  `${msgDir}/transformed.json`,
+                  JSON.stringify(JSON.parse(forwardBody), null, 2)
+                ).catch(() => {});
+              }
                 logger.raw(`[debugbody] Saved -> ${msgDir}/`);
               } catch {
                 // Silent failure
@@ -367,7 +382,9 @@ export class ProxyServerManager {
           forwardRequest(req, res, targetUrl, {
             body: forwardBody,
             headers: extraHeaders,
-            responseTransform: capttee,
+            responseTransform: endpointResult.needsTransform
+              ? chainTransforms(new ResponseTransformer(), capttee)
+              : capttee,
             onProxyRes: (proxyRes) => {
               ttfb = Date.now() - startTime;
               proxyResStatusCode = proxyRes.statusCode;
@@ -413,6 +430,7 @@ export class ProxyServerManager {
                 provider: upstream.provider,
                 model: upstream.model,
                 virtualModel: model,
+                endpoint: endpointResult.endpointPath,
                 status: proxyResStatusCode,
                 ttfb,
                 duration,
@@ -479,7 +497,7 @@ export class ProxyServerManager {
                     `after ${upstream.id} error: ${err.message}`
                   );
 
-                  const retryUrl = `${nextUpstream.baseURL}/chat/completions`;
+                  const retryUrl = `${nextUpstream.baseURL}${endpointResult.endpointPath}`;
                   const retryHeaders = {};
                   if (nextUpstream.apiKey) {
                     retryHeaders['authorization'] = `Bearer ${nextUpstream.apiKey}`;
@@ -970,6 +988,13 @@ export class ProxyServerManager {
   listInstances() {
     return [...this.instances.keys()];
   }
+}
+
+function chainTransforms(...transforms) {
+  for (let i = 1; i < transforms.length; i++) {
+    transforms[i - 1].pipe(transforms[i]);
+  }
+  return transforms[0];
 }
 
 function serializeRoutes(routes) {

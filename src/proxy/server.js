@@ -213,7 +213,7 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
  * @returns {Promise<{ server: http.Server, port: number }>}
  */
 export async function createServer(config = {}) {
-  const port = config.port || DEFAULT_PORT;
+  const port = config.port ?? DEFAULT_PORT;
 
   const available = await isPortAvailable(port);
   if (!available) {
@@ -247,8 +247,9 @@ export async function createServer(config = {}) {
 
   return new Promise((resolve, reject) => {
     server.listen(port, () => {
-      logger.info(`[proxy] server listening on port ${port}`);
-      resolve({ server, port });
+      const actualPort = server.address()?.port ?? port;
+      logger.info(`[proxy] server listening on port ${actualPort}`);
+      resolve({ server, port: actualPort });
     });
 
     server.once('error', (err) => {

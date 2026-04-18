@@ -5,6 +5,17 @@ import { OosError } from './errors.js';
 
 const TIME_RANGE_PATTERN = /^(\d+)(h|d)$/;
 
+function desuffix(valStr) {
+  const lower = valStr.toLowerCase();
+  if (lower.endsWith('k')) {
+    return parseFloat(lower) * 1000;
+  }
+  if (lower.endsWith('m')) {
+    return parseFloat(lower) * 1000000;
+  }
+  return parseFloat(lower) || 0;
+}
+
 export function parseTimeRange(last) {
   const match = TIME_RANGE_PATTERN.exec(last);
   if (!match) {
@@ -28,7 +39,7 @@ export function parseTimeRange(last) {
 }
 
 const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
+  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?(?:\s+tok=i([0-9.]+[kKmM]?)\/o([0-9.]+[kKmM]?)\/c([0-9.]+[kKmM]?)\/r([0-9.]+[kKmM]?)\/t([0-9.]+[kKmM]?))?/;
 
 export function parseLogLine(line) {
   const match = LOG_LINE_PATTERN.exec(line);
@@ -48,6 +59,11 @@ export function parseLogLine(line) {
     status,
     ttfb,
     duration,
+    tokenInput,
+    tokenOutput,
+    tokenCache,
+    tokenReasoning,
+    tokenTotal,
   ] = match;
 
   return {
@@ -61,6 +77,13 @@ export function parseLogLine(line) {
     status: parseInt(status, 10),
     ttfb: ttfb ? parseInt(ttfb, 10) : 0,
     duration: duration ? parseInt(duration, 10) : 0,
+    tokens: {
+      input: tokenInput ? desuffix(tokenInput) : 0,
+      output: tokenOutput ? desuffix(tokenOutput) : 0,
+      cache: tokenCache ? desuffix(tokenCache) : 0,
+      reasoning: tokenReasoning ? desuffix(tokenReasoning) : 0,
+      total: tokenTotal ? desuffix(tokenTotal) : 0,
+    },
   };
 }
 

@@ -20,6 +20,8 @@ import { diffProxyConfigs } from '../utils/config-diff.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
 import { createTimeSlotWeightCalculator } from '../utils/time-slot-stats.js';
 import { calculateErrorAdjustment } from './weight/index.js';
+import { TokenCaptivee } from '../utils/token-capttee.js';
+import { formatTokenCompact } from '../utils/access-log.js';
 import {
   handleDebug,
   handleStats,
@@ -345,10 +347,12 @@ export class ProxyServerManager {
           let ttfb = null;
           let proxyResStatusCode = null;
           let retryCount = 0;
+          let capttee = new TokenCaptivee();
 
           forwardRequest(req, res, targetUrl, {
             body: forwardBody,
             headers: extraHeaders,
+            responseTransform: capttee,
             onProxyRes: (proxyRes) => {
               ttfb = Date.now() - startTime;
               proxyResStatusCode = proxyRes.statusCode;
@@ -378,6 +382,14 @@ export class ProxyServerManager {
 
               recordUpstreamStats(model, upstream.id, ttfb, duration, proxyResStatusCode >= 400);
 
+              let tokens;
+              try {
+                const rawUsage = capttee.getUsage();
+                tokens = rawUsage ? formatTokenCompact(rawUsage) : undefined;
+              } catch {
+                tokens = undefined; // Graceful degradation
+              }
+
               logAccess({
                 sessionId: sessionId || null,
                 agent,
@@ -388,6 +400,7 @@ export class ProxyServerManager {
                 status: proxyResStatusCode,
                 ttfb,
                 duration,
+                tokens,
                 body: requestBody,
               }).catch(() => {
                 /* intentionally silent: best-effort access logging */
@@ -430,9 +443,12 @@ export class ProxyServerManager {
                     retryHeaders['authorization'] = `Bearer ${nextUpstream.apiKey}`;
                   }
 
+                  const retryCapttee = new TokenCaptivee();
+
                   forwardRequest(req, res, retryUrl, {
                     body: forwardBody,
                     headers: retryHeaders,
+                    responseTransform: retryCapttee,
                     onProxyRes: (proxyRes) => {
                       ttfb = Date.now() - startTime;
                       proxyResStatusCode = proxyRes.statusCode;
@@ -466,6 +482,15 @@ export class ProxyServerManager {
                         duration,
                         proxyResStatusCode >= 400
                       );
+
+                      let tokens;
+                      try {
+                        const rawUsage = retryCapttee.getUsage();
+                        tokens = rawUsage ? formatTokenCompact(rawUsage) : undefined;
+                      } catch {
+                        tokens = undefined;
+                      }
+
                       logAccess({
                         sessionId: sessionId || null,
                         agent,
@@ -476,6 +501,7 @@ export class ProxyServerManager {
                         status: proxyResStatusCode,
                         ttfb,
                         duration,
+                        tokens,
                         body: requestBody,
                       }).catch(() => {});
                     },

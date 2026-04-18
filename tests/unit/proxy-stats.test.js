@@ -260,3 +260,71 @@ describe('generateStats – ttfb fields', () => {
     assert.strictEqual(group.ttfbP99, 0, 'ttfbP99 should be 0 for old format logs');
   });
 });
+
+describe('parseLogLine – token fields', () => {
+  it('should parse log line with compact token field', () => {
+    const line =
+      '[2024-01-01T00:00:00.000] session=- provider=ali model=glm-4 virtualModel=lb status=200 ttfb=50ms duration=1000ms tok=i100/o50/c30/r0/t150';
+    const result = parseLogLine(line);
+
+    assert.ok(result, 'should parse the line');
+    assert.strictEqual(result.tokens.input, 100);
+    assert.strictEqual(result.tokens.output, 50);
+    assert.strictEqual(result.tokens.cache, 30);
+    assert.strictEqual(result.tokens.reasoning, 0);
+    assert.strictEqual(result.tokens.total, 150);
+  });
+
+  it('should parse log line with k/m suffixes', () => {
+    const line =
+      '[2024-01-01T00:00:00.000] session=- provider=ali model=glm-4 virtualModel=lb status=200 ttfb=50ms duration=1000ms tok=i1.1m/o500k/c200k/r30k/t1.95m';
+    const result = parseLogLine(line);
+
+    assert.ok(result, 'should parse the line');
+    assert.strictEqual(result.tokens.input, 1100000);
+    assert.strictEqual(result.tokens.output, 500000);
+    assert.strictEqual(result.tokens.cache, 200000);
+    assert.strictEqual(result.tokens.reasoning, 30000);
+    assert.strictEqual(result.tokens.total, 1950000);
+  });
+
+  it('should parse old log line without token field (backward compatible)', () => {
+    const line =
+      '[2024-01-01T00:00:00.000] session=- provider=ali model=glm-4 virtualModel=lb status=200 ttfb=50ms duration=1000ms';
+    const result = parseLogLine(line);
+
+    assert.ok(result, 'should parse the line');
+    assert.strictEqual(result.tokens.input, 0);
+    assert.strictEqual(result.tokens.output, 0);
+    assert.strictEqual(result.tokens.cache, 0);
+    assert.strictEqual(result.tokens.reasoning, 0);
+    assert.strictEqual(result.tokens.total, 0);
+  });
+
+  it('should parse log line with zero token values', () => {
+    const line =
+      '[2024-01-01T00:00:00.000] session=- provider=ali model=glm-4 virtualModel=lb status=200 ttfb=50ms duration=1000ms tok=i0/o0/c0/r0/t0';
+    const result = parseLogLine(line);
+
+    assert.ok(result, 'should parse the line');
+    assert.strictEqual(result.tokens.input, 0);
+    assert.strictEqual(result.tokens.output, 0);
+    assert.strictEqual(result.tokens.cache, 0);
+    assert.strictEqual(result.tokens.reasoning, 0);
+    assert.strictEqual(result.tokens.total, 0);
+  });
+
+  it('should parse log line with token field and session id', () => {
+    const line =
+      '[2024-01-01T00:00:00.000] session=abc-123 provider=ali model=glm-4 virtualModel=lb status=200 ttfb=120ms duration=800ms tok=i500/o250/c100/r50/t900';
+    const result = parseLogLine(line);
+
+    assert.ok(result);
+    assert.strictEqual(result.sessionId, 'abc-123');
+    assert.strictEqual(result.tokens.input, 500);
+    assert.strictEqual(result.tokens.output, 250);
+    assert.strictEqual(result.tokens.cache, 100);
+    assert.strictEqual(result.tokens.reasoning, 50);
+    assert.strictEqual(result.tokens.total, 900);
+  });
+});

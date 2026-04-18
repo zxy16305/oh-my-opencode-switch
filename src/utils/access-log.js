@@ -112,7 +112,42 @@ export function formatLogEntry(entry) {
     entry.duration ? `duration=${entry.duration}ms` : '',
     entry.error ? `error=${entry.error}` : '',
   ];
+  if (entry.tokens) {
+    const tokenStr = typeof entry.tokens === 'string' ? entry.tokens : formatTokenCompact(entry.tokens);
+    parts.push(tokenStr);
+  }
   return parts.filter(Boolean).join(' ') + '\n';
+}
+
+export function formatTokenCompact(parsed) {
+  const input = parsed.input_tokens ?? 0;
+  const output = parsed.output_tokens ?? 0;
+  const cacheRead = parsed.cache_read ?? 0;
+  const cacheWrite = parsed.cache_write ?? 0;
+  const reasoning = parsed.reasoning_tokens ?? 0;
+  const total = parsed.total_tokens ?? 0;
+
+  const cache = cacheRead + cacheWrite;
+
+  const formatNum = (n) => {
+    if (n >= 1000000) {
+      const mVal = n / 1000000;
+      const str = mVal.toString();
+      return str.includes('.') && str.split('.')[1].length > 2
+        ? `${mVal.toFixed(2)}m`
+        : `${str}m`;
+    }
+    if (n >= 1000) {
+      const kVal = n / 1000;
+      const str = kVal.toString();
+      return str.includes('.') && str.split('.')[1].length > 2
+        ? `${kVal.toFixed(2)}k`
+        : `${str}k`;
+    }
+    return String(n);
+  };
+
+  return `tok=i${formatNum(input)}/o${formatNum(output)}/c${formatNum(cache)}/r${formatNum(reasoning)}/t${formatNum(total)}`;
 }
 
 async function rotateLogIfNeeded() {

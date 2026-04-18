@@ -4,11 +4,22 @@ import { getLogPath } from '../../utils/access-log.js';
 
 /**
  * Accesslog entry format:
- * { timestamp, sessionId, category, provider, model, virtualModel, status, ttfb, duration }
+ * { timestamp, sessionId, category, provider, model, virtualModel, status, ttfb, duration, tokens }
  */
 
+function desuffix(valStr) {
+  const lower = valStr.toLowerCase();
+  if (lower.endsWith('k')) {
+    return parseFloat(lower) * 1000;
+  }
+  if (lower.endsWith('m')) {
+    return parseFloat(lower) * 1000000;
+  }
+  return parseFloat(lower) || 0;
+}
+
 const LOG_LINE_PATTERN =
-  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?/;
+  /^\[([^\]]+)\]\s+session=(\S+)(?:\s+agent=(\S+))?(?:\s+category=(\S+))?\s+provider=(\S+)\s+model=(\S+)\s+virtualModel=(\S+)\s+status=(\d+)(?:\s+ttfb=(\d+)ms)?(?:\s+duration=(\d+)ms)?(?:\s+tok=i([0-9.]+[kKmM]?)\/o([0-9.]+[kKmM]?)\/c([0-9.]+[kKmM]?)\/r([0-9.]+[kKmM]?)\/t([0-9.]+[kKmM]?))?/;
 
 /**
  * Parse a single log line into an entry object
@@ -33,6 +44,11 @@ function parseLogLine(line) {
     status,
     ttfb,
     duration,
+    tokenInput,
+    tokenOutput,
+    tokenCache,
+    tokenReasoning,
+    tokenTotal,
   ] = match;
 
   return {
@@ -46,6 +62,13 @@ function parseLogLine(line) {
     ttfb: ttfb ? parseInt(ttfb, 10) : 0,
     duration: duration ? parseInt(duration, 10) : 0,
     category: category || null,
+    tokens: {
+      input: tokenInput ? desuffix(tokenInput) : 0,
+      output: tokenOutput ? desuffix(tokenOutput) : 0,
+      cache: tokenCache ? desuffix(tokenCache) : 0,
+      reasoning: tokenReasoning ? desuffix(tokenReasoning) : 0,
+      total: tokenTotal ? desuffix(tokenTotal) : 0,
+    },
   };
 }
 

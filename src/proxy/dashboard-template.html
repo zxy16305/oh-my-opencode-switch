@@ -147,6 +147,13 @@
       }
       #logTable th:nth-child(7),
       #logTable td:nth-child(7) {
+        width: 180px;
+        font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.75rem;
+        color: #6366f1;
+      }
+      #logTable th:nth-child(8),
+      #logTable td:nth-child(8) {
         width: 200px;
         font-family: monospace;
         font-size: 0.75rem;
@@ -318,12 +325,13 @@
                 <th>状态码</th>
                 <th>TTFB</th>
                 <th>耗时</th>
+                <th>Tokens</th>
                 <th>会话ID</th>
               </tr>
             </thead>
             <tbody id="logTableBody">
               <tr class="log-empty">
-                <td colspan="7" style="text-align: center; color: #999; padding: 40px">
+                <td colspan="8" style="text-align: center; color: #999; padding: 40px">
                   等待日志数据...
                 </td>
               </tr>
@@ -747,6 +755,7 @@
 
         const tr = document.createElement('tr');
         tr.className = 'log-row';
+        const tokenDisplay = log.tokens || '-';
         tr.innerHTML = `
                 <td>${formatTimestamp(log.timestamp)}</td>
                 <td>${log.virtualModel || '-'}</td>
@@ -754,6 +763,7 @@
                 <td><span class="${getStatusClass(log.status)}">${log.status}</span></td>
                 <td>${formatDuration(log.ttfb)}</td>
                 <td>${formatDuration(log.duration)}</td>
+                <td>${tokenDisplay}</td>
                 <td>${log.sessionId || '-'}</td>
               `;
 
@@ -778,7 +788,7 @@
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = `
                 <tr class="log-empty">
-                  <td colspan="7" style="text-align: center; color: #999; padding: 40px">
+                  <td colspan="8" style="text-align: center; color: #999; padding: 40px">
                     等待日志数据...
                   </td>
                 </tr>

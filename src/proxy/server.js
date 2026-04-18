@@ -140,9 +140,14 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
       return;
     }
     clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
-    proxyRes.pipe(clientRes);
+    
+    let finalStream = proxyRes;
+    if (options.responseTransform) {
+      finalStream = proxyRes.pipe(options.responseTransform);
+    }
+    finalStream.pipe(clientRes);
 
-    proxyRes.on('end', () => {
+    finalStream.on('end', () => {
       if (options.onStreamEnd) {
         options.onStreamEnd();
       }

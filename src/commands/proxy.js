@@ -229,6 +229,7 @@ export function registerProxyCommands(program) {
     .option('-p, --port <port>', 'Port to listen on (overrides config file)')
     .option('-c, --config <path>', 'Path to config file')
     .option('-n, --name <name>', 'Instance name (default: "default")')
+    .option('--debugbody', 'Print request body for debugging')
     .action(startAction);
 
   proxy

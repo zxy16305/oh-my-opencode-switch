@@ -1,3 +1,5 @@
+import fs from 'fs/promises';
+import crypto from 'crypto';
 import { createServer, shutdownServer, isPortAvailable, forwardRequest } from './server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
@@ -11,8 +13,8 @@ import {
 } from './router.js';
 import { CircuitBreaker } from './circuitbreaker.js';
 import { logger } from '../utils/logger.js';
-import { getProxyConfigPath } from '../utils/proxy-paths.js';
-import { exists } from '../utils/files.js';
+import { getProxyConfigPath, getDebugBodiesDir } from '../utils/proxy-paths.js';
+import { exists, ensureDir } from '../utils/files.js';
 import { logAccess } from '../utils/access-log.js';
 import { diffProxyConfigs } from '../utils/config-diff.js';
 import { authenticate, createAuthErrorResponse, extractApiKey } from '../utils/proxy-auth.js';
@@ -308,6 +310,37 @@ export class ProxyServerManager {
           }
 
           const forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
+
+          if (options.debugbody) {
+            (async () => {
+              try {
+                const debugDir = getDebugBodiesDir();
+                await ensureDir(debugDir);
+                const timestamp = new Date().toISOString().replace(/[:-]/g, '').slice(0, 18);
+                const id = crypto.randomUUID().slice(0, 8);
+                const base = `${timestamp}-${id}`;
+                const originalPath = `${debugDir}/${base}.original.json`;
+                const forwardedPath = `${debugDir}/${base}.forwarded.json`;
+                const metaPath = `${debugDir}/${base}.meta.json`;
+                const meta = {
+                  model,
+                  target: upstream.provider,
+                  upstreamModel: upstream.model,
+                  timestamp: new Date().toISOString(),
+                };
+                // Write files in parallel, no await needed (fire-and-forget)
+                fs.writeFile(originalPath, JSON.stringify(requestBody, null, 2));
+                fs.writeFile(forwardedPath, JSON.stringify(JSON.parse(forwardBody), null, 2));
+                fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+                logger.raw(`[debugbody] Saved -> ${originalPath}`);
+                logger.raw(`[debugbody] Saved -> ${forwardedPath}`);
+                logger.raw(`[debugbody] Saved -> ${metaPath}`);
+              } catch (err) {
+                logger.warn(`[debugbody] Failed to write debug files: ${err.message}`);
+              }
+            })();
+          }
+
           const startTime = Date.now();
           let ttfb = null;
           let proxyResStatusCode = null;

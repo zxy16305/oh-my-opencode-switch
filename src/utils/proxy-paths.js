@@ -38,3 +38,12 @@ export const getOpencodeAuthPath = () => {
 export const getProxyTimeSlotsPath = () => {
   return path.join(getOosDir(), 'proxy-time-slots.json');
 };
+
+/**
+ * Get the path to the debug bodies directory
+ * ~/.config/opencode/.oos/debug-bodies/
+ * @returns {string} Path to debug-bodies directory
+ */
+export const getDebugBodiesDir = () => {
+  return path.join(getOosDir(), 'debug-bodies');
+};

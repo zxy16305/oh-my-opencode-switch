@@ -112,11 +112,13 @@
         padding: 12px 10px;
         font-size: 0.8rem;
         white-space: nowrap;
+        text-align: left;
       }
       #logTable td {
         padding: 10px;
         white-space: nowrap;
         font-size: 0.85rem;
+        vertical-align: middle;
       }
       #logTable th:nth-child(1),
       #logTable td:nth-child(1) {
@@ -137,23 +139,121 @@
       }
       #logTable th:nth-child(5),
       #logTable td:nth-child(5) {
-        width: 80px;
+        width: 140px;
         text-align: right;
+        font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.75rem;
+      }
+      .latency-summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .latency-header {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px;
+        line-height: 1.1;
+      }
+      .latency-header-title {
+        color: #0f172a;
+        font-weight: 700;
+      }
+      .latency-header-hint {
+        color: #64748b;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .latency-divider {
+        color: #94a3b8;
+      }
+      .latency-value {
+        color: #0f172a;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
       }
       #logTable th:nth-child(6),
       #logTable td:nth-child(6) {
-        width: 80px;
-        text-align: right;
+        width: 250px;
+        font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+        font-size: 0.75rem;
+        color: #475569;
+      }
+      .token-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .token-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+      .token-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      .token-value {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .token-chip-input {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+      }
+      .token-chip-input .token-label {
+        color: #2563eb;
+      }
+      .token-chip-output {
+        background: #f5f3ff;
+        border-color: #ddd6fe;
+      }
+      .token-chip-output .token-label {
+        color: #7c3aed;
+      }
+      .token-chip-cache {
+        background: #ecfeff;
+        border-color: #a5f3fc;
+      }
+      .token-chip-cache .token-label {
+        color: #0891b2;
+      }
+      .token-chip-reasoning {
+        background: #fff7ed;
+        border-color: #fed7aa;
+      }
+      .token-chip-reasoning .token-label {
+        color: #ea580c;
+      }
+      .token-chip-total {
+        background: #f0fdf4;
+        border-color: #bbf7d0;
+      }
+      .token-chip-total .token-label {
+        color: #16a34a;
+      }
+      .token-plain,
+      .token-empty {
+        color: #64748b;
+      }
+      .token-plain {
+        font-variant-numeric: tabular-nums;
       }
       #logTable th:nth-child(7),
       #logTable td:nth-child(7) {
-        width: 180px;
-        font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
-        font-size: 0.75rem;
-        color: #6366f1;
-      }
-      #logTable th:nth-child(8),
-      #logTable td:nth-child(8) {
         width: 200px;
         font-family: monospace;
         font-size: 0.75rem;
@@ -323,15 +423,19 @@
                 <th>路由</th>
                 <th>Provider/Model</th>
                 <th>状态码</th>
-                <th>TTFB</th>
-                <th>耗时</th>
+                <th>
+                  <span class="latency-header">
+                    <span class="latency-header-title">时延</span>
+                    <span class="latency-header-hint">首包 / 总计</span>
+                  </span>
+                </th>
                 <th>Tokens</th>
                 <th>会话ID</th>
               </tr>
             </thead>
             <tbody id="logTableBody">
               <tr class="log-empty">
-                <td colspan="8" style="text-align: center; color: #999; padding: 40px">
+                <td colspan="7" style="text-align: center; color: #999; padding: 40px">
                   等待日志数据...
                 </td>
               </tr>
@@ -746,6 +850,65 @@
         });
       }
 
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function formatTokenDisplay(tokens) {
+        if (!tokens) {
+          return '<span class="token-empty">-</span>';
+        }
+
+        const tokenText = String(tokens);
+        const compactMatch = tokenText.match(/^tok=(.+)$/);
+
+        if (!compactMatch) {
+          return `<span class="token-plain">${escapeHtml(tokenText)}</span>`;
+        }
+
+        const tokenMeta = {
+          i: { label: '入', className: 'token-chip-input' },
+          o: { label: '出', className: 'token-chip-output' },
+          c: { label: '缓', className: 'token-chip-cache' },
+          r: { label: '思', className: 'token-chip-reasoning' },
+          t: { label: '总', className: 'token-chip-total' },
+        };
+
+        const chips = compactMatch[1]
+          .split('/')
+          .map((part) => {
+            const match = part.match(/^([a-z])(.*)$/i);
+            if (!match) {
+              return null;
+            }
+
+            const [, key, rawValue] = match;
+            const meta = tokenMeta[key.toLowerCase()];
+            if (!meta) {
+              return null;
+            }
+
+            return `<span class="token-chip ${meta.className}"><span class="token-label">${meta.label}</span><span class="token-value">${escapeHtml(rawValue)}</span></span>`;
+          })
+          .filter(Boolean)
+          .join('');
+
+        if (!chips) {
+          return `<span class="token-plain">${escapeHtml(tokenText)}</span>`;
+        }
+
+        return `<div class="token-metrics">${chips}</div>`;
+      }
+
+      function formatLatencyDisplay(ttfb, duration) {
+        return `<span class="latency-summary"><span class="latency-value">${escapeHtml(formatDuration(ttfb))}</span><span class="latency-divider">/</span><span class="latency-value">${escapeHtml(formatDuration(duration))}</span></span>`;
+      }
+
       function addLogEntry(log, prepend = true) {
         const tbody = document.getElementById('logTableBody');
         const emptyRow = tbody.querySelector('.log-empty');
@@ -755,16 +918,16 @@
 
         const tr = document.createElement('tr');
         tr.className = 'log-row';
-        const tokenDisplay = log.tokens || '-';
+        const latencyDisplay = formatLatencyDisplay(log.ttfb, log.duration);
+        const tokenDisplay = formatTokenDisplay(log.tokens);
         tr.innerHTML = `
-                <td>${formatTimestamp(log.timestamp)}</td>
-                <td>${log.virtualModel || '-'}</td>
-                <td>${log.provider || '-'}/${log.model || '-'}</td>
-                <td><span class="${getStatusClass(log.status)}">${log.status}</span></td>
-                <td>${formatDuration(log.ttfb)}</td>
-                <td>${formatDuration(log.duration)}</td>
+                <td>${escapeHtml(formatTimestamp(log.timestamp))}</td>
+                <td>${escapeHtml(log.virtualModel || '-')}</td>
+                <td>${escapeHtml(log.provider || '-')} / ${escapeHtml(log.model || '-')}</td>
+                <td><span class="${getStatusClass(log.status)}">${escapeHtml(log.status)}</span></td>
+                <td>${latencyDisplay}</td>
                 <td>${tokenDisplay}</td>
-                <td>${log.sessionId || '-'}</td>
+                <td>${escapeHtml(log.sessionId || '-')}</td>
               `;
 
         if (prepend) {
@@ -788,7 +951,7 @@
         const tbody = document.getElementById('logTableBody');
         tbody.innerHTML = `
                 <tr class="log-empty">
-                  <td colspan="8" style="text-align: center; color: #999; padding: 40px">
+                  <td colspan="7" style="text-align: center; color: #999; padding: 40px">
                     等待日志数据...
                   </td>
                 </tr>

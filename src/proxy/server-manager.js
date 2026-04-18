@@ -1,5 +1,4 @@
 import fs from 'fs/promises';
-import crypto from 'crypto';
 import { createServer, shutdownServer, isPortAvailable, forwardRequest } from './server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
@@ -39,6 +38,8 @@ const DEFAULT_CIRCUIT_BREAKER_OPTIONS = {
   cooldownTimeMs: 60000,
 };
 const MAX_RETRIES = 1;
+const TIME_SLOT_CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
+const ERROR_RATE_CHECK_INTERVAL_MS = 10 * 1000; // 10 seconds
 
 function createInstanceState(config = {}) {
   return {
@@ -117,10 +118,11 @@ export class ProxyServerManager {
       for (const upstream of route.upstreams || []) {
         if (!upstream.baseURL) {
           const provider = upstream.provider || 'unknown';
-          logger.warn(
-            `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
-              `provider "${provider}" has no baseURL (not in opencode.json and models.dev unreachable).`
-          );
+              logger.warn(
+                `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
+                `provider "${provider}" has no baseURL ` +
+                `(not in opencode.json and models.dev unreachable).`
+              );
           continue;
         }
         validUpstreams.push(upstream);
@@ -318,27 +320,39 @@ export class ProxyServerManager {
               try {
                 const debugDir = getDebugBodiesDir();
                 await ensureDir(debugDir);
-                const timestamp = new Date().toISOString().replace(/[:-]/g, '').slice(0, 18);
-                const id = crypto.randomUUID().slice(0, 8);
-                const base = `${timestamp}-${id}`;
-                const originalPath = `${debugDir}/${base}.original.json`;
-                const forwardedPath = `${debugDir}/${base}.forwarded.json`;
-                const metaPath = `${debugDir}/${base}.meta.json`;
-                const meta = {
-                  model,
-                  target: upstream.provider,
-                  upstreamModel: upstream.model,
-                  timestamp: new Date().toISOString(),
-                };
-                // Write files in parallel, no await needed (fire-and-forget)
-                fs.writeFile(originalPath, JSON.stringify(requestBody, null, 2));
-                fs.writeFile(forwardedPath, JSON.stringify(JSON.parse(forwardBody), null, 2));
-                fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
-                logger.raw(`[debugbody] Saved -> ${originalPath}`);
-                logger.raw(`[debugbody] Saved -> ${forwardedPath}`);
-                logger.raw(`[debugbody] Saved -> ${metaPath}`);
-              } catch (err) {
-                logger.warn(`[debugbody] Failed to write debug files: ${err.message}`);
+              const timestamp = new Date()
+                .toISOString()
+                .replace(/[:-]/g, '')
+                .slice(0, 18);
+              const safeSessionId = (sessionId || 'unknown').replace(
+                /[/\\:*?"<>|]/g,
+                '_'
+              );
+              const dirName = `${timestamp}-${safeSessionId}`;
+              const msgDir = `${debugDir}/${dirName}`;
+              await ensureDir(msgDir);
+
+              const meta = {
+                model,
+                target: upstream.provider,
+                upstreamModel: upstream.model,
+                timestamp: new Date().toISOString(),
+              };
+
+              // Store paths for later response write
+              capttee._debugPaths = { msgDir, meta };
+
+              fs.writeFile(
+                `${msgDir}/original.json`,
+                JSON.stringify(requestBody, null, 2)
+              ).catch(() => {});
+              fs.writeFile(
+                `${msgDir}/forwarded.json`,
+                JSON.stringify(JSON.parse(forwardBody), null, 2)
+              ).catch(() => {});
+                logger.raw(`[debugbody] Saved -> ${msgDir}/`);
+              } catch {
+                // Silent failure
               }
             })();
           }
@@ -346,6 +360,7 @@ export class ProxyServerManager {
           const startTime = Date.now();
           let ttfb = null;
           let proxyResStatusCode = null;
+          let proxyResHeaders = null;
           let retryCount = 0;
           let capttee = new TokenCaptivee();
 
@@ -356,6 +371,7 @@ export class ProxyServerManager {
             onProxyRes: (proxyRes) => {
               ttfb = Date.now() - startTime;
               proxyResStatusCode = proxyRes.statusCode;
+              proxyResHeaders = { ...proxyRes.headers };
               proxyRes.headers['x-used-provider'] = upstream.id;
               proxyRes.headers['x-retry-count'] = retryCount > 0 ? String(retryCount) : '0';
               if (sessionId) {
@@ -405,6 +421,31 @@ export class ProxyServerManager {
               }).catch(() => {
                 /* intentionally silent: best-effort access logging */
               });
+
+              if (options.debugbody && capttee._debugPaths) {
+                try {
+                  const { msgDir, meta } = capttee._debugPaths;
+                  const response = capttee.getFullResponse();
+              const isSSE = response.includes('data:');
+              const responseFile = isSSE
+                ? `${msgDir}/response.sse`
+                : `${msgDir}/response.json`;
+
+              const completeMeta = {
+                ...meta,
+                statusCode: proxyResStatusCode,
+                responseHeaders: proxyResHeaders || {},
+              };
+
+              fs.writeFile(responseFile, response).catch(() => {});
+              fs.writeFile(
+                `${msgDir}/meta.json`,
+                JSON.stringify(completeMeta, null, 2)
+              ).catch(() => {});
+                } catch {
+                  // Silent failure
+                }
+              }
             },
             onError: (err) => {
               circuitBreaker.recordFailure(upstream.id);
@@ -434,7 +475,8 @@ export class ProxyServerManager {
                 if (nextUpstream && nextUpstream.baseURL) {
                   retryCount++;
                   logger.warn(
-                    `Retrying request on ${nextUpstream.id} after ${upstream.id} error: ${err.message}`
+                    `Retrying request on ${nextUpstream.id} ` +
+                    `after ${upstream.id} error: ${err.message}`
                   );
 
                   const retryUrl = `${nextUpstream.baseURL}/chat/completions`;
@@ -445,6 +487,49 @@ export class ProxyServerManager {
 
                   const retryCapttee = new TokenCaptivee();
 
+                  if (options.debugbody) {
+                    (async () => {
+                      try {
+                        const debugDir = getDebugBodiesDir();
+                        await ensureDir(debugDir);
+                        const timestamp = new Date()
+                          .toISOString()
+                          .replace(/[:-]/g, '')
+                          .slice(0, 18);
+                        const safeSessionId = (sessionId || 'unknown').replace(
+                          /[/\\:*?"<>|]/g,
+                          '_'
+                        );
+                        const dirName = `${timestamp}-retry-${safeSessionId}`;
+                        const msgDir = `${debugDir}/${dirName}`;
+                        await ensureDir(msgDir);
+
+                        const meta = {
+                          model,
+                          target: nextUpstream.provider,
+                          upstreamModel: nextUpstream.model,
+                          timestamp: new Date().toISOString(),
+                          isRetry: true,
+                          retryFrom: upstream.id,
+                        };
+
+                        retryCapttee._debugPaths = { msgDir, meta };
+
+                        fs.writeFile(
+                          `${msgDir}/original.json`,
+                          JSON.stringify(requestBody, null, 2)
+                        ).catch(() => {});
+                        fs.writeFile(
+                          `${msgDir}/forwarded.json`,
+                          JSON.stringify(JSON.parse(forwardBody), null, 2)
+                        ).catch(() => {});
+                        logger.raw(`[debugbody] Saved -> ${msgDir}/`);
+                      } catch {
+                        // Silent failure
+                      }
+                    })();
+                  }
+
                   forwardRequest(req, res, retryUrl, {
                     body: forwardBody,
                     headers: retryHeaders,
@@ -452,6 +537,7 @@ export class ProxyServerManager {
                     onProxyRes: (proxyRes) => {
                       ttfb = Date.now() - startTime;
                       proxyResStatusCode = proxyRes.statusCode;
+                      proxyResHeaders = { ...proxyRes.headers };
                       proxyRes.headers['x-used-provider'] = nextUpstream.id;
                       proxyRes.headers['x-retry-count'] = String(retryCount);
                       if (sessionId) {
@@ -466,8 +552,16 @@ export class ProxyServerManager {
                         }
                       } else {
                         circuitBreaker.recordSuccess(nextUpstream.id);
-                        recordUpstreamLatency(model, nextUpstream.id, Date.now() - startTime);
-                        weightManager.recordSuccess(model, nextUpstream.id, Date.now() - startTime);
+                        recordUpstreamLatency(
+                          model,
+                          nextUpstream.id,
+                          Date.now() - startTime
+                        );
+                        weightManager.recordSuccess(
+                          model,
+                          nextUpstream.id,
+                          Date.now() - startTime
+                        );
                         if (config.timeSlotWeight?.enabled) {
                           timeSlotCalculator.recordSuccess(nextUpstream.provider);
                         }
@@ -504,6 +598,31 @@ export class ProxyServerManager {
                         tokens,
                         body: requestBody,
                       }).catch(() => {});
+
+                      if (options.debugbody && retryCapttee._debugPaths) {
+                        try {
+                          const { msgDir, meta } = retryCapttee._debugPaths;
+                          const response = retryCapttee.getFullResponse();
+                          const isSSE = response.includes('data:');
+                          const responseFile = isSSE
+                            ? `${msgDir}/response.sse`
+                            : `${msgDir}/response.json`;
+
+                          const completeMeta = {
+                            ...meta,
+                            statusCode: proxyResStatusCode,
+                            responseHeaders: proxyResHeaders || {},
+                          };
+
+                          fs.writeFile(responseFile, response).catch(() => {});
+                          fs.writeFile(
+                            `${msgDir}/meta.json`,
+                            JSON.stringify(completeMeta, null, 2)
+                          ).catch(() => {});
+                        } catch {
+                          // Silent failure
+                        }
+                      }
                     },
                     onError: (retryErr) => {
                       circuitBreaker.recordFailure(nextUpstream.id);
@@ -513,7 +632,11 @@ export class ProxyServerManager {
                       if (config.timeSlotWeight?.enabled) {
                         timeSlotCalculator.recordFailure(nextUpstream.provider);
                       }
-                      if (!res.headersSent && !res.socket?.destroyed && !req.socket?.destroyed) {
+                      if (
+                        !res.headersSent &&
+                        !res.socket?.destroyed &&
+                        !req.socket?.destroyed
+                      ) {
                         res.writeHead(502, { 'Content-Type': 'application/json' });
                         res.end(
                           JSON.stringify({
@@ -592,7 +715,7 @@ export class ProxyServerManager {
 
       const timeSlotCheckTimer = setInterval(() => {
         weightManager.checkTimeSlotChange(routes);
-      }, 60000);
+      }, TIME_SLOT_CHECK_INTERVAL_MS);
       timeSlotCheckTimer.unref();
       inst.timeSlotCheckTimer = timeSlotCheckTimer;
 
@@ -612,7 +735,7 @@ export class ProxyServerManager {
             }
           }
         }
-      }, 10000);
+      }, ERROR_RATE_CHECK_INTERVAL_MS);
       errorRateCheckTimer.unref();
       inst.errorRateCheckTimer = errorRateCheckTimer;
 

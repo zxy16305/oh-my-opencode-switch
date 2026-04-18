@@ -13,11 +13,13 @@ export class TokenCaptivee extends Transform {
     this._lastUsageLine = null;
     this._isSSE = null;
     this._jsonBuffer = '';
+    this._responseChunks = [];
   }
 
   _transform(chunk, _encoding, callback) {
     const data = chunk.toString();
     this.push(chunk);
+    this._responseChunks.push(chunk);
 
     if (this._isSSE === null) {
       this._isSSE = this._detectSSE(data);
@@ -99,5 +101,9 @@ export class TokenCaptivee extends Transform {
 
   getUsage() {
     return this._usage;
+  }
+
+  getFullResponse() {
+    return Buffer.concat(this._responseChunks).toString();
   }
 }

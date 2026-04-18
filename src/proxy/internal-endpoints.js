@@ -21,20 +21,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { promises as fs } from 'fs';
 
-// SSE clients for real-time log streaming
-let sseLogCallbackRegistered = false;
-
 /**
  * Setup SSE log callback to push logs to all SSE clients
  * @param {Set} sseClients - Set of SSE client responses
  */
 export function setupSSELogCallback(sseClients) {
-  if (sseLogCallbackRegistered) {
-    return;
-  }
-
-  // Register log callback to push to all SSE clients
-  onLogAdded((logEntry) => {
+  return onLogAdded((logEntry) => {
     for (const clientRes of sseClients) {
       try {
         clientRes.write(`data: ${JSON.stringify(logEntry)}\n\n`);
@@ -46,8 +38,6 @@ export function setupSSELogCallback(sseClients) {
       }
     }
   });
-
-  sseLogCallbackRegistered = true;
 }
 
 /**

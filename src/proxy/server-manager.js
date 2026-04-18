@@ -52,6 +52,7 @@ function createInstanceState(config = {}) {
     periodicWeightAdjustTimer: null,
     timeSlotSaveTimer: null,
     sseClients: new Set(),
+    cleanupSSELogCallback: null,
     timeSlotCalculator: createTimeSlotWeightCalculator({ config: config.timeSlotWeight || {} }),
     timeSlotCheckTimer: null,
     errorRateCheckTimer: null,
@@ -98,7 +99,12 @@ export class ProxyServerManager {
     // Create instance with config (timeSlotCalculator needs config)
     const inst = this._getOrCreateInstance(instanceName, config);
 
-    const port = parseInt(options.port, 10) || config.port || DEFAULT_PORT;
+    const parsedOptionPort =
+      options.port === undefined ? undefined : parseInt(options.port, 10);
+    const port =
+      parsedOptionPort !== undefined && !Number.isNaN(parsedOptionPort)
+        ? parsedOptionPort
+        : (config.port ?? DEFAULT_PORT);
 
     const available = await isPortAvailable(port);
     if (!available) {
@@ -152,7 +158,8 @@ export class ProxyServerManager {
 
     const auth = config.auth;
 
-    setupSSELogCallback(inst.sseClients);
+    inst.cleanupSSELogCallback?.();
+    inst.cleanupSSELogCallback = setupSSELogCallback(inst.sseClients);
 
     const circuitBreaker = inst.circuitBreaker;
     const sseClients = inst.sseClients;
@@ -821,6 +828,20 @@ export class ProxyServerManager {
     }
 
     try {
+      if (inst.cleanupSSELogCallback) {
+        inst.cleanupSSELogCallback();
+        inst.cleanupSSELogCallback = null;
+      }
+
+      for (const clientRes of inst.sseClients) {
+        try {
+          clientRes.end();
+        } catch {
+          // ignore - client may already be closed
+        }
+      }
+      inst.sseClients.clear();
+
       if (inst.periodicWeightAdjustTimer) {
         clearInterval(inst.periodicWeightAdjustTimer);
         inst.periodicWeightAdjustTimer = null;

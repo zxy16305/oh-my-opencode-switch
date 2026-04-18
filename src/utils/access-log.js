@@ -165,6 +165,17 @@ async function rotateLogIfNeeded() {
 
 export function onLogAdded(callback) {
   logCallbacks.push(callback);
+
+  return () => {
+    removeLogAdded(callback);
+  };
+}
+
+export function removeLogAdded(callback) {
+  const index = logCallbacks.indexOf(callback);
+  if (index !== -1) {
+    logCallbacks.splice(index, 1);
+  }
 }
 
 export function logAccess(entry) {

@@ -152,7 +152,7 @@ describe('Integration – Sticky Strategy Weight Distribution', () => {
         `Provider ${upstream.id} (weight=${upstream.weight}) should get ~${expectedPercentage.toFixed(1)}% ` +
           `± ${tolerance.toFixed(1)}%, got ${percentage.toFixed(2)}%`
       );
-    });
+    }
   });
 
   test('weight recovery: traffic redistributes when weight changes from 8 to 100', () => {

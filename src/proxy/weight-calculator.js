@@ -36,15 +36,11 @@ export function calculateEffectiveWeight(params) {
 
   // Apply dynamic weight if enabled
   if (dynamicWeightConfig && dynamicWeightConfig.enabled) {
-    const configuredWeight = weightManager.getConfiguredWeight(upstream);
-
-    const wmWeight = weightManager.getWeight(routeKey, upstream.id);
-    // If WeightManager has no state for this upstream (returns default 100),
-    // fall back to configuredWeight which includes time slot adjustments
-    if (wmWeight === 100 && !weightManager.getState(routeKey, upstream.id)) {
-      effectiveWeight = configuredWeight;
+    const state = weightManager.getState(routeKey, upstream.id);
+    if (!state) {
+      effectiveWeight = staticWeight;
     } else {
-      effectiveWeight = wmWeight;
+      effectiveWeight = weightManager.getWeight(routeKey, upstream.id);
     }
   }
 

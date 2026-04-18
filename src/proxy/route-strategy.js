@@ -42,14 +42,17 @@ function selectLeastLoadedUpstream(
   const validUpstreams = [];
   for (const upstream of upstreams) {
     const configuredWeight = weightManager.getConfiguredWeight(upstream);
-    const effectiveWeight = calculateEffectiveWeight({
-      sm,
-      routeKey,
-      upstream,
-      staticWeight: configuredWeight,
-      dynamicWeightConfig,
-      weightManager,
-    });
+    const effectiveWeight = Math.max(
+      1,
+      calculateEffectiveWeight({
+        sm,
+        routeKey,
+        upstream,
+        staticWeight: configuredWeight,
+        dynamicWeightConfig,
+        weightManager,
+      })
+    );
     if (effectiveWeight > 0) {
       validUpstreams.push({ upstream, effectiveWeight });
     }
@@ -70,28 +73,28 @@ function selectLeastLoadedUpstream(
     if (score < bestScore) {
       bestScore = score;
       candidates.length = 0;
-      candidates.push(upstream);
+      candidates.push({ upstream, effectiveWeight });
     } else if (score === bestScore) {
-      candidates.push(upstream);
+      candidates.push({ upstream, effectiveWeight });
     }
   }
 
   // Tie-breaking: use weighted random selection among candidates
   if (candidates.length === 1) {
-    return candidates[0];
+    return candidates[0].upstream;
   }
 
-  const totalWeight = candidates.reduce((sum, u) => sum + (u.weight ?? 100), 0);
+  const totalWeight = candidates.reduce((sum, candidate) => sum + candidate.effectiveWeight, 0);
   let random = Math.random() * totalWeight;
 
   for (const candidate of candidates) {
-    random -= candidate.weight ?? 100;
+    random -= candidate.effectiveWeight;
     if (random <= 0) {
-      return candidate;
+      return candidate.upstream;
     }
   }
 
-  return candidates[candidates.length - 1];
+  return candidates[candidates.length - 1].upstream;
 }
 
 export { selectLeastLoadedUpstream };

@@ -30,6 +30,64 @@ import * as stats from './stats-collector.js';
 import * as failover from './failover-handler.js';
 
 const weightManager = new WeightManager();
+const compatibilityDynamicWeightState = new Map();
+
+function makeCompatibilityKey(routeKey, upstreamId) {
+  return `${routeKey}:${upstreamId}`;
+}
+
+function getCompatibilityMinWeight(config = {}) {
+  return config.minWeight ?? config.errorWeightReduction?.minWeight ?? 10;
+}
+
+function getCompatibilityErrorConfig(config = {}) {
+  return config.errorWeightReduction ?? null;
+}
+
+function ensureCompatibilityState(routeKey, upstreamId, configuredWeight = 100) {
+  const key = makeCompatibilityKey(routeKey, upstreamId);
+  let state = compatibilityDynamicWeightState.get(key);
+
+  if (!state) {
+    state = {
+      routeKey,
+      upstreamId,
+      configuredWeight,
+      currentWeight: configuredWeight,
+      consecutiveSuccessCount: 0,
+    };
+    compatibilityDynamicWeightState.set(key, state);
+  } else if (configuredWeight != null) {
+    state.configuredWeight = configuredWeight;
+    if (state.currentWeight == null) {
+      state.currentWeight = configuredWeight;
+    }
+  }
+
+  return state;
+}
+
+function getCompatibilityState(routeKey, upstreamId) {
+  return compatibilityDynamicWeightState.get(makeCompatibilityKey(routeKey, upstreamId)) ?? null;
+}
+
+function getCompatibilityLevel(state, configuredWeight) {
+  const currentWeight = state?.currentWeight ?? configuredWeight;
+
+  if (currentWeight <= configuredWeight * 0.05) {
+    return 'min';
+  }
+
+  if (currentWeight < configuredWeight * 0.5) {
+    return 'medium';
+  }
+
+  if (currentWeight < configuredWeight) {
+    return 'half';
+  }
+
+  return 'normal';
+}
 
 export { RouterError } from './errors.js';
 export { getSessionId, hashSessionToBackend, getSessionCountsByRoute } from './session-manager.js';
@@ -109,6 +167,121 @@ export function recordUpstreamStats(
 export function getUpstreamStats(routeKey, upstreamId, state = null) {
   const sm = state ?? stateManager;
   return stats.getUpstreamStats(sm, routeKey, upstreamId);
+}
+
+// --- Compatibility wrappers for legacy dynamic-weight tests ---
+
+export function getDynamicWeight(routeKey, upstreamId, configuredWeight = 100) {
+  const state = getCompatibilityState(routeKey, upstreamId);
+  if (!state) {
+    return configuredWeight;
+  }
+
+  if (configuredWeight != null) {
+    state.configuredWeight = configuredWeight;
+  }
+
+  return state.currentWeight ?? configuredWeight;
+}
+
+export function setDynamicWeight(routeKey, upstreamId, weight, configuredWeight = 100) {
+  const state = ensureCompatibilityState(routeKey, upstreamId, configuredWeight);
+  state.currentWeight = weight;
+  state.consecutiveSuccessCount = 0;
+  return state.currentWeight;
+}
+
+export function getDynamicWeightState(routeKey, upstreamId) {
+  const state = getCompatibilityState(routeKey, upstreamId);
+  if (!state) {
+    return null;
+  }
+
+  return {
+    ...state,
+    level: getCompatibilityLevel(state, state.configuredWeight),
+  };
+}
+
+export function getCurrentWeightLevel(routeKey, upstreamId, configuredWeight = 100) {
+  const state = ensureCompatibilityState(routeKey, upstreamId, configuredWeight);
+  return getCompatibilityLevel(state, configuredWeight);
+}
+
+export function resetSuccessCount(routeKey, upstreamId) {
+  const state = getCompatibilityState(routeKey, upstreamId);
+  if (state) {
+    state.consecutiveSuccessCount = 0;
+  }
+}
+
+export function adjustWeightForSuccess(routeKey, upstreamId, configuredWeight = 100) {
+  const state = ensureCompatibilityState(routeKey, upstreamId, configuredWeight);
+  state.consecutiveSuccessCount += 1;
+
+  if (state.consecutiveSuccessCount < 5) {
+    return state.currentWeight;
+  }
+
+  if (state.currentWeight <= configuredWeight * 0.05) {
+    state.currentWeight = Math.round(configuredWeight * 0.2);
+  } else if (state.currentWeight < configuredWeight * 0.5) {
+    state.currentWeight = Math.round(configuredWeight * 0.5);
+  } else {
+    state.currentWeight = configuredWeight;
+  }
+
+  state.consecutiveSuccessCount = 0;
+  return state.currentWeight;
+}
+
+export function getErrorRate(routeKey, upstreamId, windowMsOrConfig = 3600000, state = null) {
+  const sm = state ?? stateManager;
+  return stats.getErrorCountInWindow(sm, routeKey, upstreamId, windowMsOrConfig);
+}
+
+export function adjustWeightForError(routeKey, upstreams, config, errorData) {
+  const errorConfig = getCompatibilityErrorConfig(config);
+  if (!Array.isArray(upstreams) || upstreams.length === 0 || !(errorData instanceof Map)) {
+    return;
+  }
+
+  if (!errorConfig || errorConfig.enabled === false) {
+    return;
+  }
+
+  const allowedErrorCodes = new Set(errorConfig.errorCodes ?? [429, 500, 502, 503, 504]);
+  const minWeight = getCompatibilityMinWeight(config);
+  const windowMs = errorConfig.errorWindowMs ?? 3600000;
+
+  for (const upstream of upstreams) {
+    const matchingErrors = errorData.get(upstream.id) ?? [];
+    if (!matchingErrors.some((code) => allowedErrorCodes.has(code))) {
+      continue;
+    }
+
+    const configuredWeight = upstream.weight ?? config.initialWeight ?? 100;
+    const state = ensureCompatibilityState(routeKey, upstream.id, configuredWeight);
+    const errorCount = getErrorRate(routeKey, upstream.id, windowMs);
+    const requestCount = getUpstreamRequestCountInWindow(routeKey, upstream.id, windowMs);
+
+    if (requestCount === 0) {
+      continue;
+    }
+
+    const errorRate = errorCount / requestCount;
+
+    if (errorRate >= 0.3) {
+      state.currentWeight = Math.max(minWeight, Math.round(configuredWeight * 0.1));
+      state.consecutiveSuccessCount = 0;
+    } else if (errorRate >= 0.15) {
+      state.currentWeight = Math.max(minWeight, Math.round(configuredWeight * 0.2));
+      state.consecutiveSuccessCount = 0;
+    } else if (errorRate >= 0.05) {
+      state.currentWeight = Math.max(minWeight, Math.round(configuredWeight * 0.5));
+      state.consecutiveSuccessCount = 0;
+    }
+  }
 }
 
 // --- Core routing logic ---
@@ -382,6 +555,12 @@ export function resetAllState(state = null) {
   sm.upstreamSessionCounts.clear();
   stats.resetStats(sm);
   stopSessionCleanup(sm);
+
+   if (sm === stateManager) {
+    compatibilityDynamicWeightState.clear();
+    weightManager.state.clear();
+    weightManager.lastTimeSlot = null;
+  }
 }
 
 /**

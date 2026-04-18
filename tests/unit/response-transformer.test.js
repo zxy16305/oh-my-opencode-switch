@@ -87,6 +87,30 @@ describe('ResponseTransformer', () => {
     assert.ok(output.includes('data: [DONE]'));
   });
 
+  test('response.completed preserves cache usage fields for downstream token parsing', async () => {
+    const input =
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":124550,"output_tokens":135,"total_tokens":124685,"input_tokens_details":{"cached_tokens":120000},"prompt_tokens_details":{"cache_creation_input_tokens":4500}}}}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.ok(output.includes('"prompt_tokens":124550'));
+    assert.ok(output.includes('"completion_tokens":135'));
+    assert.ok(output.includes('"total_tokens":124685'));
+    assert.ok(output.includes('"input_tokens_details":{"cached_tokens":120000}'));
+    assert.ok(
+      output.includes(
+        '"prompt_tokens_details":{"cache_creation_input_tokens":4500,"cached_tokens":120000}'
+      ) ||
+        output.includes(
+          '"prompt_tokens_details":{"cached_tokens":120000,"cache_creation_input_tokens":4500}'
+        )
+    );
+    assert.ok(output.includes('data: [DONE]'));
+  });
+
   // -------------------------------------------------------------------------
   // Test 4: Partial chunk handling (write partial data, then rest, verify output)
   // -------------------------------------------------------------------------

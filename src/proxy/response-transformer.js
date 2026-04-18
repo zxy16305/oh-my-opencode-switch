@@ -127,8 +127,41 @@ export class ResponseTransformer extends Transform {
       return;
     }
 
-    const { input_tokens = 0, output_tokens = 0 } = response.usage;
-    const total_tokens = input_tokens + output_tokens;
+    const {
+      input_tokens = 0,
+      output_tokens = 0,
+      total_tokens: explicitTotalTokens,
+      cache_read_input_tokens,
+      cache_creation_input_tokens,
+      cached_tokens,
+      prompt_cache_hit_tokens,
+      prompt_cache_miss_tokens,
+      input_tokens_details,
+      prompt_tokens_details,
+    } = response.usage;
+    const total_tokens = explicitTotalTokens ?? (input_tokens + output_tokens);
+
+    const normalizedPromptTokensDetails = {
+      ...(prompt_tokens_details || {}),
+    };
+
+    const cacheRead =
+      normalizedPromptTokensDetails.cached_tokens ??
+      input_tokens_details?.cached_tokens ??
+      cached_tokens ??
+      prompt_cache_hit_tokens ??
+      cache_read_input_tokens;
+
+    const cacheWrite =
+      normalizedPromptTokensDetails.cache_creation_input_tokens ?? cache_creation_input_tokens;
+
+    if (cacheRead !== undefined) {
+      normalizedPromptTokensDetails.cached_tokens = cacheRead;
+    }
+
+    if (cacheWrite !== undefined) {
+      normalizedPromptTokensDetails.cache_creation_input_tokens = cacheWrite;
+    }
 
     const usageChunk = {
       id: this._completionId,
@@ -138,6 +171,19 @@ export class ResponseTransformer extends Transform {
         prompt_tokens: input_tokens,
         completion_tokens: output_tokens,
         total_tokens: total_tokens,
+        ...(cache_read_input_tokens !== undefined
+          ? { cache_read_input_tokens }
+          : {}),
+        ...(cache_creation_input_tokens !== undefined
+          ? { cache_creation_input_tokens }
+          : {}),
+        ...(cached_tokens !== undefined ? { cached_tokens } : {}),
+        ...(prompt_cache_hit_tokens !== undefined ? { prompt_cache_hit_tokens } : {}),
+        ...(prompt_cache_miss_tokens !== undefined ? { prompt_cache_miss_tokens } : {}),
+        ...(input_tokens_details !== undefined ? { input_tokens_details } : {}),
+        ...(Object.keys(normalizedPromptTokensDetails).length > 0
+          ? { prompt_tokens_details: normalizedPromptTokensDetails }
+          : {}),
       },
     };
 

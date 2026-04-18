@@ -20,6 +20,7 @@ import { registerProxyCommands } from '../src/commands/proxy.js';
 import { registerProxyRegisterCommands } from '../src/commands/proxy-register.js';
 import { registerProxyReloadCommand } from '../src/commands/proxy-reload.js';
 import { registerAnalyticsCommands } from '../src/commands/analytics/index.js';
+import { registerPluginCommands } from '../src/commands/plugin.js';
 import { logger } from '../src/utils/logger.js';
 import { OosError } from '../src/utils/errors.js';
 
@@ -49,6 +50,7 @@ registerProxyCommands(program);
 registerProxyRegisterCommands(program);
 registerProxyReloadCommand(program);
 registerAnalyticsCommands(program);
+registerPluginCommands(program);
 
 program.exitOverride();
 

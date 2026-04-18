@@ -36,7 +36,7 @@ import { getTimeSlotType } from '../../src/utils/time-slot-detector.js';
  * @returns {'high' | 'medium' | 'low'}
  */
 function getCurrentSlotType() {
-  return getTimeSlotType(new Date().getHours());
+  return getTimeSlotType(new Date());
 }
 
 /**

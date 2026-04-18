@@ -32,6 +32,7 @@
     "atomically": "^2.0.3",
     "blessed": "^0.1.81",
     "chalk": "^4.1.2",
+    "chinese-workday": "^2.0.0",
     "commander": "^11.1.0",
     "comment-json": "^4.6.2",
     "handlebars": "^4.7.9",

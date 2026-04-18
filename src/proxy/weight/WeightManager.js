@@ -18,7 +18,7 @@ export class WeightManager {
 
   // === 初始化 ===
   initRoutes(routes) {
-    this.lastTimeSlot = getTimeSlotType(new Date().getHours());
+    this.lastTimeSlot = getTimeSlotType(new Date());
     for (const [routeKey, route] of Object.entries(routes)) {
       for (const upstream of route.upstreams) {
         const key = this.makeKey(routeKey, upstream.id);
@@ -47,13 +47,13 @@ export class WeightManager {
   }
 
   getConfiguredWeight(upstream) {
-    const slot = this.lastTimeSlot ?? getTimeSlotType(new Date().getHours());
+    const slot = this.lastTimeSlot ?? getTimeSlotType(new Date());
     return upstream.timeSlotWeights?.[slot] ?? upstream.weight ?? 100;
   }
 
   // === 热加载 ===
   reloadConfig(routes) {
-    this.lastTimeSlot = getTimeSlotType(new Date().getHours());
+    this.lastTimeSlot = getTimeSlotType(new Date());
     const validKeys = new Set();
 
     for (const [routeKey, route] of Object.entries(routes)) {
@@ -80,7 +80,7 @@ export class WeightManager {
 
   // === 时段检查 ===
   checkTimeSlotChange(routes) {
-    const currentSlot = getTimeSlotType(new Date().getHours());
+    const currentSlot = getTimeSlotType(new Date());
     if (currentSlot === this.lastTimeSlot) return false;
 
     this.lastTimeSlot = currentSlot;

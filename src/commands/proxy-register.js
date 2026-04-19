@@ -83,7 +83,12 @@ export async function registerAction(options = {}) {
     models: {},
   });
 
-  const chatProvider = buildProviderConfig('@ai-sdk/openai-compatible', `http://localhost:${port}/v1`, 'OOS Proxy (Chat)');
+  const chatProvider = buildProviderConfig(
+    '@ai-sdk/openai-compatible',
+    `http://localhost:${port}/v1`,
+    'OOS Proxy (Chat)',
+    { setCacheKey: true },
+  );
   const responsesProvider = buildProviderConfig(
     '@ai-sdk/openai',
     `http://localhost:${port}/v1`,

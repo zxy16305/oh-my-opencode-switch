@@ -111,6 +111,7 @@ describe('Proxy Register - registerAction', () => {
     assert.strictEqual(proxyProvider.name, 'OOS Proxy (Chat)');
     assert.strictEqual(proxyProvider.options.baseURL, 'http://localhost:3000/v1');
     assert.strictEqual(proxyProvider.options.apiKey, 'oos-proxy-placeholder-key');
+    assert.strictEqual(proxyProvider.options.setCacheKey, true);
     assert.ok(proxyProvider.models['lb-doubao']);
 
     const modelConfig = proxyProvider.models['lb-doubao'];

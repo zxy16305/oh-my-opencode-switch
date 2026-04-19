@@ -188,6 +188,9 @@ describe('Proxy Endpoint Routing Integration', () => {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
+      res.write(
+        'data: {"type":"response.created","response":{"id":"resp_123","object":"response","status":"in_progress"}}\n\n'
+      );
       res.write('data: {"type":"response.output_text.delta","delta":"Hello"}\n\n');
       res.write('data: {"type":"response.output_text.delta","delta":" world"}\n\n');
       res.write(
@@ -252,6 +255,10 @@ describe('Proxy Endpoint Routing Integration', () => {
       assert.ok(
         clientRes.body.includes('"content":"Hello"'),
         'Response should contain transformed content'
+      );
+      assert.ok(
+        !clientRes.body.includes('response.created'),
+        'Response should not leak raw Responses API lifecycle events'
       );
       assert.ok(clientRes.body.includes('[DONE]'), 'Response should contain [DONE]');
       assert.ok(clientRes.body.includes('prompt_tokens'), 'Response should contain usage info');

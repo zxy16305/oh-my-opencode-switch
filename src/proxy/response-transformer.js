@@ -57,6 +57,10 @@ export class ResponseTransformer extends Transform {
   _transformEvent(event) {
     const { type } = event;
 
+    if (type === 'response.created') {
+      return null;
+    }
+
     if (type === 'response.output_text.delta') {
       return this._transformTextDelta(event);
     }
@@ -138,6 +142,7 @@ export class ResponseTransformer extends Transform {
       prompt_cache_miss_tokens,
       input_tokens_details,
       prompt_tokens_details,
+      completion_tokens_details,
     } = response.usage;
     const total_tokens = explicitTotalTokens ?? (input_tokens + output_tokens);
 
@@ -181,6 +186,7 @@ export class ResponseTransformer extends Transform {
         ...(prompt_cache_hit_tokens !== undefined ? { prompt_cache_hit_tokens } : {}),
         ...(prompt_cache_miss_tokens !== undefined ? { prompt_cache_miss_tokens } : {}),
         ...(input_tokens_details !== undefined ? { input_tokens_details } : {}),
+        ...(completion_tokens_details !== undefined ? { completion_tokens_details } : {}),
         ...(Object.keys(normalizedPromptTokensDetails).length > 0
           ? { prompt_tokens_details: normalizedPromptTokensDetails }
           : {}),

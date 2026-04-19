@@ -70,6 +70,18 @@ describe('ResponseTransformer', () => {
   // Test 3: Response completed → usage event + [DONE]
   // -------------------------------------------------------------------------
 
+  test('response.created is ignored so legacy validators only see transformed chunks', async () => {
+    const input =
+      'data: {"type":"response.created","response":{"id":"resp_123","object":"response"}}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.equal(output, '');
+  });
+
   test('response.completed injects usage event and [DONE]', async () => {
     const input = 'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":20}}}\n\n';
     const outputPromise = collectStreamOutput(transformer);
@@ -108,6 +120,22 @@ describe('ResponseTransformer', () => {
           '"prompt_tokens_details":{"cached_tokens":120000,"cache_creation_input_tokens":4500}'
         )
     );
+    assert.ok(output.includes('data: [DONE]'));
+  });
+
+  test('response.completed preserves completion_tokens_details including reasoning_tokens', async () => {
+    const input =
+      'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":50,"total_tokens":60,"completion_tokens_details":{"reasoning_tokens":35,"accepted_prediction_tokens":10,"rejected_prediction_tokens":5}}}}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.ok(output.includes('"prompt_tokens":10'));
+    assert.ok(output.includes('"completion_tokens":50'));
+    assert.ok(output.includes('"total_tokens":60'));
+    assert.ok(output.includes('"completion_tokens_details":{"reasoning_tokens":35,"accepted_prediction_tokens":10,"rejected_prediction_tokens":5}'));
     assert.ok(output.includes('data: [DONE]'));
   });
 

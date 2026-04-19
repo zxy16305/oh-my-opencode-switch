@@ -206,6 +206,12 @@
     "route": {
       "type": "object",
       "properties": {
+        "protocol": {
+          "type": "string",
+          "enum": ["chat", "responses"],
+          "default": "chat",
+          "description": "API protocol: 'chat' uses the full transformation pipeline, 'responses' is a passthrough with only model replacement"
+        },
         "strategy": {
           "type": "string",
           "enum": ["sticky"],

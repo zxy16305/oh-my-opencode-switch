@@ -311,6 +311,7 @@ describe('Proxy Register - registerAction', () => {
       '@ai-sdk/openai',
       'Responses provider should use @ai-sdk/openai (native SDK), not @ai-sdk/openai-compatible',
     );
+    assert.strictEqual(responsesProvider.options.setCacheKey, true);
     assert.ok(responsesProvider.models['gpt-5-proxy']);
   });
 });

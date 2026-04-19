@@ -72,12 +72,13 @@ export async function registerAction(options = {}) {
   }
 
   // 5. Build provider configs
-  const buildProviderConfig = (npm, baseURL, name) => ({
+  const buildProviderConfig = (npm, baseURL, name, extraOptions = {}) => ({
     npm,
     name,
     options: {
       baseURL,
       apiKey: PLACEHOLDER_API_KEY,
+      ...extraOptions,
     },
     models: {},
   });
@@ -86,7 +87,8 @@ export async function registerAction(options = {}) {
   const responsesProvider = buildProviderConfig(
     '@ai-sdk/openai',
     `http://localhost:${port}/v1`,
-    'OOS Proxy (Responses)'
+    'OOS Proxy (Responses)',
+    { setCacheKey: true },
   );
 
   const chatModels = [];

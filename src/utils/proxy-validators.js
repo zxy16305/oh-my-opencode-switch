@@ -20,6 +20,7 @@ export const upstreamSchema = z.object({
 
 export const routeSchema = z.object({
   strategy: z.enum(['round-robin', 'random', 'weighted', 'sticky']).default('round-robin'),
+  protocol: z.enum(['chat', 'responses']).default('chat'), // 预留: 未来可加 'anthropic'
   upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
   metadata: z.record(z.unknown()).optional(),
   dynamicWeight: z

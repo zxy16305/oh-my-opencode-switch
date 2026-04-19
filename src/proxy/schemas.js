@@ -34,6 +34,7 @@ export const routeSchema = z.object({
     .enum(['round-robin', 'random', 'weighted', 'sticky'])
     .default('sticky')
     .transform(() => 'sticky'), // 静默转为 sticky，向后兼容
+  protocol: z.enum(['chat', 'responses']).default('chat'), // 预留: 未来可加 'anthropic'
   upstreams: z.array(upstreamSchema).min(1, 'At least one upstream is required'),
   metadata: z.record(z.unknown()).optional(),
   stickyReassignThreshold: z.number().int().positive().optional().default(10),

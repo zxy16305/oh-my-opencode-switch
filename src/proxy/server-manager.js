@@ -23,6 +23,7 @@ import { TokenCaptivee } from '../utils/token-capttee.js';
 import { resolveEndpoint } from './endpoint-resolver.js';
 import { transformRequestBody } from './request-transformer.js';
 import { ResponseTransformer } from './response-transformer.js';
+import { detectProtocol } from './protocol-detector.js';
 import { formatTokenCompact } from '../utils/access-log.js';
 import {
   handleDebug,
@@ -99,8 +100,7 @@ export class ProxyServerManager {
     // Create instance with config (timeSlotCalculator needs config)
     const inst = this._getOrCreateInstance(instanceName, config);
 
-    const parsedOptionPort =
-      options.port === undefined ? undefined : parseInt(options.port, 10);
+    const parsedOptionPort = options.port === undefined ? undefined : parseInt(options.port, 10);
     const port =
       parsedOptionPort !== undefined && !Number.isNaN(parsedOptionPort)
         ? parsedOptionPort
@@ -127,11 +127,11 @@ export class ProxyServerManager {
       for (const upstream of route.upstreams || []) {
         if (!upstream.baseURL) {
           const provider = upstream.provider || 'unknown';
-              logger.warn(
-                `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
-                `provider "${provider}" has no baseURL ` +
-                `(not in opencode.json and models.dev unreachable).`
-              );
+          logger.warn(
+            `Skipping upstream "${upstream.id || provider}" in route "${routeName}": ` +
+              `provider "${provider}" has no baseURL ` +
+              `(not in opencode.json and models.dev unreachable).`
+          );
           continue;
         }
         validUpstreams.push(upstream);
@@ -274,9 +274,22 @@ export class ProxyServerManager {
             return;
           }
 
+          const { protocol, endpointPath } = detectProtocol(req);
+
           const route = routes[model];
           let { upstream, sessionId, routeKey } = routeRequest(model, routes, req, requestBody);
-          const endpointResult = resolveEndpoint(model, requestBody);
+
+          // resolveEndpoint + transformRequestBody only for chat protocol
+          // responses protocol: passthrough with model replacement only
+          let endpointResult;
+          if (protocol === 'chat') {
+            endpointResult = resolveEndpoint(model, requestBody);
+          } else {
+            endpointResult = {
+              endpointPath,
+              needsTransform: false,
+            };
+          }
           const category = req.headers['x-opencode-category'] || null;
           const agent = req.headers['x-opencode-agent'] || null;
 
@@ -317,61 +330,63 @@ export class ProxyServerManager {
             }
           }
 
-          // endpointResult.endpointPath is a relative path (e.g., /chat/completions, /responses)
+          // endpointPath is a relative path (e.g., /chat/completions, /responses)
           // upstream.baseURL already includes the version prefix (e.g., /v1, /v4)
-          const targetUrl = `${upstream.baseURL}${endpointResult.endpointPath}`;
+          const targetUrl = `${upstream.baseURL}${endpointPath}`;
 
           const extraHeaders = {};
           if (upstream.apiKey) {
             extraHeaders['authorization'] = `Bearer ${upstream.apiKey}`;
           }
 
-          const forwardBody = endpointResult.needsTransform
-            ? transformRequestBody(requestBody, upstream.model)
-            : JSON.stringify({ ...requestBody, model: upstream.model });
+          let forwardBody;
+          if (protocol === 'responses') {
+            forwardBody = JSON.stringify({ ...requestBody, model: upstream.model });
+          } else {
+            try {
+              forwardBody = endpointResult.needsTransform
+                ? transformRequestBody(requestBody, upstream.model)
+                : JSON.stringify({ ...requestBody, model: upstream.model });
+            } catch (transformError) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(
+                JSON.stringify({
+                  error: { message: transformError.message || 'Request transformation failed' },
+                })
+              );
+              return;
+            }
+          }
+
+          const capttee = new TokenCaptivee();
 
           if (options.debugbody) {
             (async () => {
               try {
                 const debugDir = getDebugBodiesDir();
                 await ensureDir(debugDir);
-              const timestamp = new Date()
-                .toISOString()
-                .replace(/[:-]/g, '')
-                .slice(0, 18);
-              const safeSessionId = (sessionId || 'unknown').replace(
-                /[/\\:*?"<>|]/g,
-                '_'
-              );
-              const dirName = `${timestamp}-${safeSessionId}`;
-              const msgDir = `${debugDir}/${dirName}`;
-              await ensureDir(msgDir);
+                const timestamp = new Date().toISOString().replace(/[:-]/g, '').slice(0, 18);
+                const safeSessionId = (sessionId || 'unknown').replace(/[/\\:*?"<>|]/g, '_');
+                const dirName = `${timestamp}-${safeSessionId}`;
+                const msgDir = `${debugDir}/${dirName}`;
+                await ensureDir(msgDir);
 
-              const meta = {
-                model,
-                target: upstream.provider,
-                upstreamModel: upstream.model,
-                endpoint: endpointResult.endpointPath,
-                timestamp: new Date().toISOString(),
-              };
+                const meta = {
+                  model,
+                  target: upstream.provider,
+                  upstreamModel: upstream.model,
+                  endpoint: endpointPath,
+                  timestamp: new Date().toISOString(),
+                };
 
-              // Store paths for later response write
-              capttee._debugPaths = { msgDir, meta };
+                // Store paths for later response write
+                capttee._debugPaths = { msgDir, meta };
 
-              fs.writeFile(
-                `${msgDir}/original.json`,
-                body
-              ).catch(() => {});
-              fs.writeFile(
-                `${msgDir}/forwarded.json`,
-                forwardBody
-              ).catch(() => {});
-              if (endpointResult.needsTransform) {
-                fs.writeFile(
-                  `${msgDir}/transformed.json`,
-                  forwardBody
-                ).catch(() => {});
-              }
+                fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
+                if (endpointResult.needsTransform) {
+                  fs.writeFile(`${msgDir}/transformed.json`, forwardBody).catch(() => {});
+                }
                 logger.raw(`[debugbody] Saved -> ${msgDir}/`);
               } catch {
                 // Silent failure
@@ -384,7 +399,6 @@ export class ProxyServerManager {
           let proxyResStatusCode = null;
           let proxyResHeaders = null;
           let retryCount = 0;
-          let capttee = new TokenCaptivee();
 
           forwardRequest(req, res, targetUrl, {
             body: forwardBody,
@@ -437,7 +451,7 @@ export class ProxyServerManager {
                 provider: upstream.provider,
                 model: upstream.model,
                 virtualModel: model,
-                endpoint: endpointResult.endpointPath,
+                endpoint: endpointPath,
                 status: proxyResStatusCode,
                 ttfb,
                 duration,
@@ -451,22 +465,19 @@ export class ProxyServerManager {
                 try {
                   const { msgDir, meta } = capttee._debugPaths;
                   const response = capttee.getFullResponse();
-              const isSSE = response.includes('data:');
-              const responseFile = isSSE
-                ? `${msgDir}/response.sse`
-                : `${msgDir}/response.json`;
+                  const isSSE = response.includes('data:');
+                  const responseFile = isSSE ? `${msgDir}/response.sse` : `${msgDir}/response.json`;
 
-              const completeMeta = {
-                ...meta,
-                statusCode: proxyResStatusCode,
-                responseHeaders: proxyResHeaders || {},
-              };
+                  const completeMeta = {
+                    ...meta,
+                    statusCode: proxyResStatusCode,
+                    responseHeaders: proxyResHeaders || {},
+                  };
 
-              fs.writeFile(responseFile, response).catch(() => {});
-              fs.writeFile(
-                `${msgDir}/meta.json`,
-                JSON.stringify(completeMeta, null, 2)
-              ).catch(() => {});
+                  fs.writeFile(responseFile, response).catch(() => {});
+                  fs.writeFile(`${msgDir}/meta.json`, JSON.stringify(completeMeta, null, 2)).catch(
+                    () => {}
+                  );
                 } catch {
                   // Silent failure
                 }
@@ -501,10 +512,10 @@ export class ProxyServerManager {
                   retryCount++;
                   logger.warn(
                     `Retrying request on ${nextUpstream.id} ` +
-                    `after ${upstream.id} error: ${err.message}`
+                      `after ${upstream.id} error: ${err.message}`
                   );
 
-                  const retryUrl = `${nextUpstream.baseURL}${endpointResult.endpointPath}`;
+                  const retryUrl = `${nextUpstream.baseURL}${endpointPath}`;
                   const retryHeaders = {};
                   if (nextUpstream.apiKey) {
                     retryHeaders['authorization'] = `Bearer ${nextUpstream.apiKey}`;
@@ -540,14 +551,8 @@ export class ProxyServerManager {
 
                         retryCapttee._debugPaths = { msgDir, meta };
 
-                        fs.writeFile(
-                          `${msgDir}/original.json`,
-                          body
-                        ).catch(() => {});
-                        fs.writeFile(
-                          `${msgDir}/forwarded.json`,
-                          forwardBody
-                        ).catch(() => {});
+                        fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                        fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
                         logger.raw(`[debugbody] Saved -> ${msgDir}/`);
                       } catch {
                         // Silent failure
@@ -577,16 +582,8 @@ export class ProxyServerManager {
                         }
                       } else {
                         circuitBreaker.recordSuccess(nextUpstream.id);
-                        recordUpstreamLatency(
-                          model,
-                          nextUpstream.id,
-                          Date.now() - startTime
-                        );
-                        weightManager.recordSuccess(
-                          model,
-                          nextUpstream.id,
-                          Date.now() - startTime
-                        );
+                        recordUpstreamLatency(model, nextUpstream.id, Date.now() - startTime);
+                        weightManager.recordSuccess(model, nextUpstream.id, Date.now() - startTime);
                         if (config.timeSlotWeight?.enabled) {
                           timeSlotCalculator.recordSuccess(nextUpstream.provider);
                         }
@@ -657,11 +654,7 @@ export class ProxyServerManager {
                       if (config.timeSlotWeight?.enabled) {
                         timeSlotCalculator.recordFailure(nextUpstream.provider);
                       }
-                      if (
-                        !res.headersSent &&
-                        !res.socket?.destroyed &&
-                        !req.socket?.destroyed
-                      ) {
+                      if (!res.headersSent && !res.socket?.destroyed && !req.socket?.destroyed) {
                         res.writeHead(502, { 'Content-Type': 'application/json' });
                         res.end(
                           JSON.stringify({

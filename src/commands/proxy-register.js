@@ -141,14 +141,9 @@ export async function registerAction(options = {}) {
         output: limit.output ?? Infinity,
       });
 
-      // Use first upstream's modalities and name
-      if (!modalities) {
-        if (modelMetadata) {
-          modalities = modelMetadata.modalities || null;
-          modelName = modelMetadata.name || virtualModel;
-        } else {
-          modelName = virtualModel;
-        }
+      // Use first upstream's modalities (name comes from virtualModel/LB name)
+      if (!modalities && modelMetadata) {
+        modalities = modelMetadata.modalities || null;
       }
     }
 

@@ -161,4 +161,101 @@ describe('Proxy Register - registerAction', () => {
     assert.strictEqual(modelConfig.limit.context, 16384);
     assert.strictEqual(modelConfig.limit.output, 4096);
   });
+
+  test('3. Registered model name uses virtualModel (LB name), not upstream display name', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
+    const opencodeConfig = {
+      provider: {
+        myprovider: {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'My Provider',
+          options: { baseURL: 'https://api.example.com/v1' },
+          models: {
+            'upstream-model-id': {
+              name: 'Upstream Display Name',
+              limit: { context: 8192, output: 2048 },
+            },
+          },
+        },
+      },
+    };
+    await writeJson(opencodePath, opencodeConfig);
+
+    const proxyConfig = {
+      port: 3002,
+      routes: {
+        'lb-model': {
+          strategy: 'round-robin',
+          upstreams: [{ provider: 'myprovider', model: 'upstream-model-id' }],
+        },
+      },
+    };
+
+    ProxyConfigManager.prototype.readConfig = async function () {
+      return proxyConfig;
+    };
+
+    await registerAction({ opencodePath });
+
+    const result = await readJson(opencodePath);
+    const proxyProvider = result.provider['opencode-proxy'];
+
+    assert.ok(proxyProvider);
+    assert.ok(proxyProvider.models['lb-model']);
+
+    const modelConfig = proxyProvider.models['lb-model'];
+    assert.strictEqual(
+      modelConfig.name,
+      'lb-model (Proxy)',
+      'Model name should use virtualModel (LB name), not upstream display name "Upstream Display Name"'
+    );
+  });
+
+  test('4. Modalities are preserved from first upstream', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
+    const opencodeConfig = {
+      provider: {
+        visionprovider: {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Vision Provider',
+          options: { baseURL: 'https://api.vision.com/v1' },
+          models: {
+            'vision-model': {
+              name: 'Vision Model Display Name',
+              modalities: ['text', 'image'],
+              limit: { context: 16384, output: 4096 },
+            },
+          },
+        },
+      },
+    };
+    await writeJson(opencodePath, opencodeConfig);
+
+    const proxyConfig = {
+      port: 3003,
+      routes: {
+        'lb-vision': {
+          strategy: 'sticky',
+          upstreams: [{ provider: 'visionprovider', model: 'vision-model' }],
+        },
+      },
+    };
+
+    ProxyConfigManager.prototype.readConfig = async function () {
+      return proxyConfig;
+    };
+
+    await registerAction({ opencodePath });
+
+    const result = await readJson(opencodePath);
+    const proxyProvider = result.provider['opencode-proxy'];
+
+    const modelConfig = proxyProvider.models['lb-vision'];
+    assert.strictEqual(modelConfig.name, 'lb-vision (Proxy)');
+    assert.deepEqual(modelConfig.modalities, ['text', 'image']);
+  });
 });

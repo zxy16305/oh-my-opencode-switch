@@ -1,9 +1,9 @@
 /**
- * Integration tests for proxy sticky session soft rotation.
+ * Integration tests for proxy sticky session affinity.
  *
  * Verifies:
  * - Upstream request count tracking
- * - Soft rotation every 10 requests
+ * - No in-session switching by request count
  * - /_internal/stats endpoint
  */
 
@@ -114,7 +114,7 @@ describe('Upstream Request Count Tracking', () => {
   });
 });
 
-describe('Sticky Session Soft Rotation', () => {
+describe('Sticky Session Affinity', () => {
   beforeEach(() => {
     resetAllState();
   });
@@ -141,20 +141,22 @@ describe('Sticky Session Soft Rotation', () => {
     assert.equal(selectedUpstreams.size, 1, 'Should stay on same upstream before 10 requests');
   });
 
-  it('should check for rotation at 10th request', () => {
+  it('should still keep session on same upstream at 10th request', () => {
     const upstreams = createTestUpstreams([3001, 3002, 3003]);
     const routes = createTestRoutes(upstreams);
 
     const sessionId = 'test-session-2';
+    const selectedUpstreams = new Set();
 
     // Route 10 requests with same session
     for (let i = 0; i < 10; i++) {
-      routeRequest(
+      const result = routeRequest(
         'test-route',
         routes,
         { headers: { 'x-opencode-session': sessionId } },
         { model: 'test-route' }
       );
+      selectedUpstreams.add(result.upstream.id);
     }
 
     const requestCounts = getUpstreamRequestCounts();
@@ -166,6 +168,7 @@ describe('Sticky Session Soft Rotation', () => {
       total += count;
     }
     assert.equal(total, 10, 'Should have tracked 10 requests');
+    assert.equal(selectedUpstreams.size, 1, 'Same session should stay on one upstream');
   });
 
   it('should distribute new sessions to least loaded upstream', () => {

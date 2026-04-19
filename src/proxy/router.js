@@ -15,12 +15,11 @@ import {
   startSessionCleanup,
   stopSessionCleanup,
   incrementSessionCount,
-  decrementSessionCount,
 } from './session-manager.js';
 
 // Route-strategy: used internally only (no wrapper needed)
 import { selectLeastLoadedUpstream } from './route-strategy.js';
-import { calculateEffectiveWeight, calculateLeastLoadedScore } from './weight-calculator.js';
+import { calculateEffectiveWeight } from './weight-calculator.js';
 import { WeightManager } from './weight/index.js';
 
 // Stats-collector: namespace import to avoid name collision with exported wrappers
@@ -351,56 +350,7 @@ export function selectUpstreamSticky(
 
       stats.incrementUpstreamRequestCount(sm, routeKey, existing.upstreamId);
 
-      // Every 10 requests, check sliding window request counts for soft rotation
-      if (existing.requestCount % 10 === 0) {
-        const requestCounts = new Map();
-        for (const upstream of upstreams) {
-          requestCounts.set(
-            upstream.id,
-            stats.getUpstreamRequestCountInWindow(sm, routeKey, upstream.id)
-          );
-        }
-
-        const effectiveWeights = new Map();
-        for (const upstream of upstreams) {
-          const ew = calculateEffectiveWeight({
-            sm,
-            routeKey,
-            upstream,
-            staticWeight: weightManager.getConfiguredWeight(upstream),
-            dynamicWeightConfig,
-            weightManager,
-          });
-          effectiveWeights.set(upstream.id, ew);
-        }
-
-        const currentRequestCount = requestCounts.get(existing.upstreamId);
-        const currentEffectiveWeight = effectiveWeights.get(existing.upstreamId);
-        const currentScore = calculateLeastLoadedScore(currentRequestCount, currentEffectiveWeight);
-
-        let minScore = Infinity;
-        let minScoreUpstream = null;
-
-        for (const upstream of upstreams) {
-          if (upstream.id === existing.upstreamId) continue;
-
-          const requestCount = requestCounts.get(upstream.id);
-          const effectiveWeight = effectiveWeights.get(upstream.id);
-          const score = calculateLeastLoadedScore(requestCount, effectiveWeight);
-
-          if (score < minScore) {
-            minScore = score;
-            minScoreUpstream = upstream;
-          }
-        }
-
-        if (minScoreUpstream && minScore < currentScore) {
-          decrementSessionCount(sm, routeKey, existing.upstreamId);
-          incrementSessionCount(sm, routeKey, minScoreUpstream.id);
-          existing.upstreamId = minScoreUpstream.id;
-          existing.requestCount = 1;
-        }
-      }
+      // Keep strict session affinity: do not switch upstream within the same session.
 
       return upstreamIdMap.get(existing.upstreamId) ?? mapped;
     }

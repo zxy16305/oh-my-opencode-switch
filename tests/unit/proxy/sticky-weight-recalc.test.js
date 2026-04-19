@@ -214,7 +214,7 @@ describe('Sticky weight recalculation – Unequal weight distribution', () => {
   });
 });
 
-describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)', () => {
+describe('Sticky weight recalculation – Strict in-session affinity', () => {
   let sm;
   let routeKey;
 
@@ -229,7 +229,7 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     resetAllState();
   });
 
-  function setupRebalanceScenario({ sessionMap, windowCountsA, windowCountsB }) {
+  function setupAffinityScenario({ sessionMap, windowCountsA, windowCountsB }) {
     const upstreams = [
       makeUpstream({ id: 'upstream-a', weight: 100 }),
       makeUpstream({ id: 'upstream-b', weight: 100 }),
@@ -248,22 +248,17 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     return upstreams;
   }
 
-  test('session switches to less loaded upstream on 10th request check', () => {
-    const upstreams = setupRebalanceScenario({
+  test('session keeps current upstream when requestCount reaches 10', () => {
+    const upstreams = setupAffinityScenario({
       sessionMap: {
         upstreamId: 'upstream-a',
         routeKey,
         timestamp: Date.now(),
-        requestCount: 9, // Will reach 10 after next call → triggers check
+        requestCount: 9,
       },
-      windowCountsA: 10, // upstream-a has 10 requests in window
-      windowCountsB: 1, // upstream-b has only 1
+      windowCountsA: 10,
+      windowCountsB: 1,
     });
-
-    // Scores should be:
-    // upstream-a: (11 + 1) / 100 = 0.12 (11 because increment adds 1 more)
-    // upstream-b: (1 + 1) / 100 = 0.02
-    // Since 0.02 < 0.12, session should switch to upstream-b
 
     const result = selectUpstreamSticky(
       upstreams,
@@ -279,13 +274,17 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
 
     assert.equal(
       result.id,
-      'upstream-b',
-      'Session should switch to less loaded upstream-b after rebalance check'
+      'upstream-a',
+      'Session should keep current upstream and not rebalance at requestCount=10'
     );
+
+    const sessionEntry = sm.sessionMap.get('rebalance-session');
+    assert.equal(sessionEntry.requestCount, 10, 'requestCount should continue incrementing');
+    assert.equal(sessionEntry.upstreamId, 'upstream-a', 'upstreamId should remain unchanged');
   });
 
-  test('session stays on current upstream when it has lower score', () => {
-    const upstreams = setupRebalanceScenario({
+  test('session stays on current upstream regardless of comparative load score', () => {
+    const upstreams = setupAffinityScenario({
       sessionMap: {
         upstreamId: 'upstream-a',
         routeKey,
@@ -314,111 +313,16 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
     assert.equal(
       result.id,
       'upstream-a',
-      'Session should stay on upstream-a since it has lower load score'
+      'Session should stay on upstream-a and ignore score-based in-session switching'
     );
   });
 
-  test('rebalance respects weight differences when scores are calculated', () => {
-    const sm2 = createStateManager();
-
-    const upstreams = [
-      makeUpstream({ id: 'high-weight', weight: 200 }),
-      makeUpstream({ id: 'low-weight', weight: 100 }),
-    ];
-
-    // Set session on high-weight upstream with requestCount = 9
-    const sessionMapData = sm2.sessionMap;
-    sessionMapData.set('weighted-rebalance-session', {
-      upstreamId: 'high-weight',
-      routeKey: 'weighted-route',
-      timestamp: Date.now(),
-      requestCount: 9,
-    });
-
-    // Both have same window counts, but different weights
-    injectSlidingWindowEntry(sm2, 'weighted-route', 'high-weight', 10);
-    injectSlidingWindowEntry(sm2, 'weighted-route', 'low-weight', 5);
-
-    const result = selectUpstreamSticky(
-      upstreams,
-      'weighted-route',
-      'weighted-rebalance-session',
-      null,
-      10,
-      2,
-      null,
-      null,
-      sm2
-    );
-
-    // high-weight score: (10+1+1)/200 = 0.06 (increment adds 1, formula adds 1)
-    // low-weight score: (5+1)/100 = 0.06
-    // Scores are equal, so no switch (minScore < currentScore requires strict less)
-    // Actually let me recompute:
-    // After increment, window has 11 for high-weight
-    // high-weight score: (11+1)/200 = 0.06
-    // low-weight score: (5+1)/100 = 0.06
-    // 0.06 is NOT < 0.06, so no switch
-    assert.equal(
-      result.id,
-      'high-weight',
-      'When scores are equal, session should stay on current upstream'
-    );
-  });
-
-  test('no rebalance check before 10 requests accumulated', () => {
+  test('session keeps affinity when requestCount reaches other multiples (20, 30, ...)', () => {
     const upstreams = [
       makeUpstream({ id: 'upstream-a', weight: 100 }),
       makeUpstream({ id: 'upstream-b', weight: 100 }),
     ];
 
-    const sessionMapData = sm.sessionMap;
-    sessionMapData.set('early-session', {
-      upstreamId: 'upstream-a',
-      routeKey,
-      timestamp: Date.now(),
-      requestCount: 5, // Only 5, should NOT trigger check
-    });
-
-    // Inject heavy load on upstream-b to make it worse
-    injectSlidingWindowEntry(sm, routeKey, 'upstream-b', 20);
-
-    const result = selectUpstreamSticky(
-      upstreams,
-      routeKey,
-      'early-session',
-      null,
-      10,
-      2,
-      null,
-      null,
-      sm
-    );
-
-    // No rebalance check (not at 10), so should stay on upstream-a
-    assert.equal(
-      result.id,
-      'upstream-a',
-      'Should stay on current upstream since request count < 10'
-    );
-
-    // Verify no switch happened despite upstream-b being heavily loaded
-    const sessionEntry = sm.sessionMap.get('early-session');
-    assert.equal(sessionEntry.requestCount, 6, 'requestCount should increment normally');
-    assert.equal(
-      sessionEntry.upstreamId,
-      'upstream-a',
-      'upstreamId should not change below threshold'
-    );
-  });
-
-  test('rebalance check fires at multiples of 10 (20, 30, etc.)', () => {
-    const upstreams = [
-      makeUpstream({ id: 'upstream-a', weight: 100 }),
-      makeUpstream({ id: 'upstream-b', weight: 100 }),
-    ];
-
-    // Start with requestCount = 19 → next will be 20 → should check
     const sessionMapData = sm.sessionMap;
     sessionMapData.set('multi-ten-session', {
       upstreamId: 'upstream-a',
@@ -427,7 +331,6 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
       requestCount: 19,
     });
 
-    // Make upstream-b much less loaded
     injectSlidingWindowEntry(sm, routeKey, 'upstream-a', 15);
     injectSlidingWindowEntry(sm, routeKey, 'upstream-b', 1);
 
@@ -443,51 +346,14 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
       sm
     );
 
-    // After increment: upstream-a has 16 in window
-    // upstream-a score: (16+1)/100 = 0.17
-    // upstream-b score: (1+1)/100 = 0.02
-    // Should switch to upstream-b
-    assert.equal(
-      result.id,
-      'upstream-b',
-      'Rebalance should trigger at requestCount=20 (multiple of 10)'
-    );
+    assert.equal(result.id, 'upstream-a', 'Affinity should hold at requestCount=20');
+
+    const sessionEntry = sm.sessionMap.get('multi-ten-session');
+    assert.equal(sessionEntry.requestCount, 20, 'requestCount should keep increasing');
+    assert.equal(sessionEntry.upstreamId, 'upstream-a', 'upstream should remain unchanged');
   });
 
-  test('session requestCount resets to 1 after switch', () => {
-    const upstreams = [
-      makeUpstream({ id: 'upstream-a', weight: 100 }),
-      makeUpstream({ id: 'upstream-b', weight: 100 }),
-    ];
-
-    const sessionMapData = sm.sessionMap;
-    sessionMapData.set('reset-check-session', {
-      upstreamId: 'upstream-a',
-      routeKey,
-      timestamp: Date.now(),
-      requestCount: 9,
-    });
-
-    // Make upstream-b less loaded
-    injectSlidingWindowEntry(sm, routeKey, 'upstream-a', 10);
-    injectSlidingWindowEntry(sm, routeKey, 'upstream-b', 0);
-
-    selectUpstreamSticky(upstreams, routeKey, 'reset-check-session', null, 10, 2, null, null, sm);
-
-    const sessionEntry = sm.sessionMap.get('reset-check-session');
-    assert.equal(
-      sessionEntry.requestCount,
-      1,
-      'requestCount should reset to 1 after switching upstream'
-    );
-    assert.equal(
-      sessionEntry.upstreamId,
-      'upstream-b',
-      'upstreamId should be updated to new upstream'
-    );
-  });
-
-  test('rebalance with model-scoped session key', () => {
+  test('model-scoped session key also keeps affinity without reassign', () => {
     const sm2 = createStateManager();
 
     const upstreams = [
@@ -522,11 +388,11 @@ describe('Sticky weight recalculation – Rebalance trigger (every 10 requests)'
       sm2
     );
 
-    assert.equal(
-      result.id,
-      'upstream-b',
-      'Session with model should switch to less loaded upstream'
-    );
+    assert.equal(result.id, 'upstream-a', 'Model-scoped session should preserve affinity');
+
+    const sessionEntry = sm2.sessionMap.get(sessionKey);
+    assert.equal(sessionEntry.requestCount, 10, 'requestCount should continue incrementing');
+    assert.equal(sessionEntry.upstreamId, 'upstream-a', 'upstream should remain unchanged');
   });
 });
 
@@ -597,7 +463,7 @@ describe('Sticky weight recalculation – Single upstream edge case', () => {
   });
 });
 
-describe('Sticky weight recalculation – Score calculation accuracy', () => {
+describe('Sticky weight recalculation – Score calculation no longer drives in-session switch', () => {
   let sm;
   let routeKey;
 
@@ -612,7 +478,7 @@ describe('Sticky weight recalculation – Score calculation accuracy', () => {
     resetAllState();
   });
 
-  test('session stays when scores are nearly equal (minGap not strictly enforced)', () => {
+  test('session keeps affinity even when another upstream score is slightly better', () => {
     const upstreams = [
       makeUpstream({ id: 'upstream-a', weight: 100 }),
       makeUpstream({ id: 'upstream-b', weight: 100 }),
@@ -648,8 +514,8 @@ describe('Sticky weight recalculation – Score calculation accuracy', () => {
     // 0.06 < 0.07, should switch to upstream-b
     assert.equal(
       result.id,
-      'upstream-b',
-      'Should switch when candidate has even slightly lower score'
+      'upstream-a',
+      'Should keep current upstream and ignore score-based in-session switching'
     );
   });
 });

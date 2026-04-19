@@ -72,8 +72,8 @@ export async function registerAction(options = {}) {
   }
 
   // 5. Build provider configs
-  const buildProviderConfig = (baseURL, name) => ({
-    npm: '@ai-sdk/openai-compatible',
+  const buildProviderConfig = (npm, baseURL, name) => ({
+    npm,
     name,
     options: {
       baseURL,
@@ -82,8 +82,9 @@ export async function registerAction(options = {}) {
     models: {},
   });
 
-  const chatProvider = buildProviderConfig(`http://localhost:${port}/v1`, 'OOS Proxy (Chat)');
+  const chatProvider = buildProviderConfig('@ai-sdk/openai-compatible', `http://localhost:${port}/v1`, 'OOS Proxy (Chat)');
   const responsesProvider = buildProviderConfig(
+    '@ai-sdk/openai',
     `http://localhost:${port}/v1`,
     'OOS Proxy (Responses)'
   );

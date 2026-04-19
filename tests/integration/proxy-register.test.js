@@ -306,6 +306,11 @@ describe('Proxy Register - registerAction', () => {
     assert.strictEqual(responsesProvider.name, 'OOS Proxy (Responses)');
     assert.strictEqual(responsesProvider.options.baseURL, 'http://localhost:3009/v1');
     assert.strictEqual(responsesProvider.options.apiKey, 'oos-proxy-placeholder-key');
+    assert.strictEqual(
+      responsesProvider.npm,
+      '@ai-sdk/openai',
+      'Responses provider should use @ai-sdk/openai (native SDK), not @ai-sdk/openai-compatible',
+    );
     assert.ok(responsesProvider.models['gpt-5-proxy']);
   });
 });

@@ -105,7 +105,10 @@ oos proxy register
 此命令会：
 
 1. 读取 proxy-config.json 中的路由配置
-2. 在 opencode.json 中创建代理 provider
+2. 在 opencode.json 中创建代理 provider（按协议区分）
+   - chat 协议：`opencode-proxy`，name 为 `OOS Proxy (Chat)`，baseURL 为 `http://localhost:<port>/v1`
+   - responses 协议：`opencode-proxy-responses`，name 为 `OOS Proxy (Responses)`，baseURL 同样为 `http://localhost:<port>/v1`
+   - 两个 provider 均会填充占位 API Key，避免 SDK 初始化阶段因缺少 key 报错
 3. 为每个路由创建虚拟模型条目
 4. 自动计算模型限制（context/output）
 
@@ -129,7 +132,7 @@ oos proxy unregister
 **虚拟模型命名**：
 
 - 模型名称保持路由名称不变
-- OpenCode 中显示为：`<routeName> (Proxy)`
+- 在 OpenCode 中显示为：`<routeName> (Proxy)`
 
 **模型限制计算优先级**：
 

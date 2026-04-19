@@ -108,6 +108,9 @@ describe('Proxy Register - registerAction', () => {
     const proxyProvider = result.provider['opencode-proxy'];
 
     assert.ok(proxyProvider);
+    assert.strictEqual(proxyProvider.name, 'OOS Proxy (Chat)');
+    assert.strictEqual(proxyProvider.options.baseURL, 'http://localhost:3000/v1');
+    assert.strictEqual(proxyProvider.options.apiKey, 'oos-proxy-placeholder-key');
     assert.ok(proxyProvider.models['lb-doubao']);
 
     const modelConfig = proxyProvider.models['lb-doubao'];
@@ -257,5 +260,52 @@ describe('Proxy Register - registerAction', () => {
     const modelConfig = proxyProvider.models['lb-vision'];
     assert.strictEqual(modelConfig.name, 'lb-vision (Proxy)');
     assert.deepEqual(modelConfig.modalities, ['text', 'image']);
+  });
+
+  test('5. Responses routes register separate provider name and /v1 baseURL', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
+    const opencodeConfig = {
+      provider: {
+        openai: {
+          npm: '@ai-sdk/openai',
+          name: 'OpenAI',
+          options: { baseURL: 'https://api.openai.com/v1', apiKey: 'sk-test' },
+          models: {
+            'gpt-5': {
+              limit: { context: 200000, output: 16000 },
+            },
+          },
+        },
+      },
+    };
+    await writeJson(opencodePath, opencodeConfig);
+
+    const proxyConfig = {
+      port: 3009,
+      routes: {
+        'gpt-5-proxy': {
+          protocol: 'responses',
+          strategy: 'sticky',
+          upstreams: [{ provider: 'openai', model: 'gpt-5' }],
+        },
+      },
+    };
+
+    ProxyConfigManager.prototype.readConfig = async function () {
+      return proxyConfig;
+    };
+
+    await registerAction({ opencodePath });
+
+    const result = await readJson(opencodePath);
+    const responsesProvider = result.provider['opencode-proxy-responses'];
+
+    assert.ok(responsesProvider);
+    assert.strictEqual(responsesProvider.name, 'OOS Proxy (Responses)');
+    assert.strictEqual(responsesProvider.options.baseURL, 'http://localhost:3009/v1');
+    assert.strictEqual(responsesProvider.options.apiKey, 'oos-proxy-placeholder-key');
+    assert.ok(responsesProvider.models['gpt-5-proxy']);
   });
 });

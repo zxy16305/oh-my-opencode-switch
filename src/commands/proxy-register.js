@@ -9,6 +9,7 @@ import { getModelLimit } from '../utils/provider-discovery.js';
 const DEFAULT_PROXY_PORT = 3000;
 const PROVIDER_ID = 'opencode-proxy';
 const PROVIDER_ID_RESPONSES = 'opencode-proxy-responses';
+const PLACEHOLDER_API_KEY = 'oos-proxy-placeholder-key';
 
 /**
  * Register proxy provider in opencode.json
@@ -71,17 +72,21 @@ export async function registerAction(options = {}) {
   }
 
   // 5. Build provider configs
-  const buildProviderConfig = (baseURL) => ({
+  const buildProviderConfig = (baseURL, name) => ({
     npm: '@ai-sdk/openai-compatible',
-    name: 'OOS Proxy',
+    name,
     options: {
       baseURL,
+      apiKey: PLACEHOLDER_API_KEY,
     },
     models: {},
   });
 
-  const chatProvider = buildProviderConfig(`http://localhost:${port}/v1`);
-  const responsesProvider = buildProviderConfig(`http://localhost:${port}/v1/responses`);
+  const chatProvider = buildProviderConfig(`http://localhost:${port}/v1`, 'OOS Proxy (Chat)');
+  const responsesProvider = buildProviderConfig(
+    `http://localhost:${port}/v1`,
+    'OOS Proxy (Responses)'
+  );
 
   const chatModels = [];
   const responsesModels = [];

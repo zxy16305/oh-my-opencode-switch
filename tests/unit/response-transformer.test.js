@@ -82,6 +82,18 @@ describe('ResponseTransformer', () => {
     assert.equal(output, '');
   });
 
+  test('response.in_progress is ignored so legacy validators do not see lifecycle events', async () => {
+    const input =
+      'data: {"type":"response.in_progress","response":{"id":"resp_123","object":"response","status":"in_progress"}}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.equal(output, '');
+  });
+
   test('response.completed injects usage event and [DONE]', async () => {
     const input = 'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":20}}}\n\n';
     const outputPromise = collectStreamOutput(transformer);

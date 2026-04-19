@@ -57,7 +57,7 @@ export class ResponseTransformer extends Transform {
   _transformEvent(event) {
     const { type } = event;
 
-    if (type === 'response.created') {
+    if (type === 'response.created' || type === 'response.in_progress') {
       return null;
     }
 

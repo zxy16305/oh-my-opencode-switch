@@ -121,6 +121,78 @@ describe('parseTokenUsage', () => {
     });
   });
 
+  describe('real provider shapes (no cache)', () => {
+    it('should parse Baidu GLM5 shape with completion_tokens_details.reasoning_tokens', () => {
+      const response = {
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150,
+          completion_tokens_details: {
+            reasoning_tokens: 30,
+          },
+        },
+      };
+
+      const result = parseTokenUsage(response);
+
+      assert.deepEqual(result, {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_read: 0,
+        cache_write: 0,
+        reasoning_tokens: 30,
+        total_tokens: 150,
+      });
+    });
+
+    it('should parse Alibaba Qwen shape with completion_tokens_details and text_tokens', () => {
+      const response = {
+        usage: {
+          prompt_tokens: 200,
+          completion_tokens: 80,
+          total_tokens: 280,
+          prompt_tokens_details: {
+            text_tokens: 200,
+          },
+          completion_tokens_details: {
+            reasoning_tokens: 40,
+            text_tokens: 40,
+          },
+        },
+      };
+
+      const result = parseTokenUsage(response);
+
+      assert.deepEqual(result, {
+        input_tokens: 200,
+        output_tokens: 80,
+        cache_read: 0,
+        cache_write: 0,
+        reasoning_tokens: 40,
+        total_tokens: 280,
+      });
+    });
+
+    it('should prefer top-level reasoning_tokens over nested', () => {
+      const response = {
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150,
+          reasoning_tokens: 25,
+          completion_tokens_details: {
+            reasoning_tokens: 999,
+          },
+        },
+      };
+
+      const result = parseTokenUsage(response);
+
+      assert.strictEqual(result.reasoning_tokens, 25);
+    });
+  });
+
   describe('Anthropic format', () => {
     it('should parse Anthropic response format', () => {
       const response = {

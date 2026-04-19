@@ -59,8 +59,10 @@ export function parseTokenUsage(responseBody) {
     usage.prompt_tokens_details?.cache_creation_input_tokens ??
     0;
 
-  // Reasoning tokens (OpenAI specific)
-  const reasoningTokens = usage.reasoning_tokens ?? 0;
+  const reasoningTokens =
+    usage.reasoning_tokens ??
+    usage.completion_tokens_details?.reasoning_tokens ??
+    0;
 
   // Total: prefer explicit value, otherwise calculate
   const totalTokens = usage.total_tokens ?? (inputTokens + outputTokens);

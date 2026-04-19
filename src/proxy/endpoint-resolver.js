@@ -4,6 +4,7 @@
  */
 
 const GPT5_REGEX = /^gpt-5(?:$|\.)/;
+const CODEX_REGEX = /codex/i;
 
 /**
  * Resolve the endpoint path for a model request.
@@ -20,6 +21,12 @@ export function resolveEndpoint(model, requestBody) {
   }
 
   if (!GPT5_REGEX.test(model)) {
+    return { endpointPath: '/chat/completions', needsTransform: false };
+  }
+
+  // Codex variants may not support the /responses transform chain consistently
+  // across proxy providers, keep them on chat/completions for compatibility.
+  if (CODEX_REGEX.test(model)) {
     return { endpointPath: '/chat/completions', needsTransform: false };
   }
 

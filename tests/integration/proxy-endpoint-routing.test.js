@@ -742,6 +742,15 @@ describe('Endpoint Routing Edge Cases', () => {
     assert.equal(result.needsTransform, true);
   });
 
+  it('should keep gpt-5.3-codex on /v1/chat/completions for compatibility', async () => {
+    const result = resolveEndpoint('gpt-5.3-codex', {
+      tools: [{ type: 'function', function: {} }],
+      reasoning_effort: 'medium',
+    });
+    assert.equal(result.endpointPath, '/chat/completions');
+    assert.equal(result.needsTransform, false);
+  });
+
   it('should NOT route gpt-50 to /v1/responses', async () => {
     const result = resolveEndpoint('gpt-50', { tools: [{ type: 'function', function: {} }] });
     assert.equal(result.endpointPath, '/chat/completions');

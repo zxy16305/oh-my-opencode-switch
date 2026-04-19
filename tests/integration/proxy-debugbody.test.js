@@ -134,7 +134,6 @@ function createProxyWithDebugBody(port, routesConfig) {
         }
 
         const model = parsed.model;
-        const startTime = Date.now();
         let proxyResStatusCode = null;
         let proxyResHeaders = null;
         const capttee = new TokenCaptivee();
@@ -179,13 +178,13 @@ function createProxyWithDebugBody(port, routesConfig) {
           // Write request files (fire and forget)
           fs.writeFile(
             path.join(msgDir, 'original.json'),
-            JSON.stringify(parsed, null, 2)
+            rawBody.toString() || '{}'
           ).catch(() => {});
 
           const forwardBody = JSON.stringify({ ...parsed, model: selected.model });
           fs.writeFile(
             path.join(msgDir, 'forwarded.json'),
-            JSON.stringify(JSON.parse(forwardBody), null, 2)
+            forwardBody
           ).catch(() => {});
           // --- End debug body setup ---
 

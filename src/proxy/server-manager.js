@@ -360,16 +360,16 @@ export class ProxyServerManager {
 
               fs.writeFile(
                 `${msgDir}/original.json`,
-                JSON.stringify(requestBody, null, 2)
+                body
               ).catch(() => {});
               fs.writeFile(
                 `${msgDir}/forwarded.json`,
-                JSON.stringify(JSON.parse(forwardBody), null, 2)
+                forwardBody
               ).catch(() => {});
               if (endpointResult.needsTransform) {
                 fs.writeFile(
                   `${msgDir}/transformed.json`,
-                  JSON.stringify(JSON.parse(forwardBody), null, 2)
+                  forwardBody
                 ).catch(() => {});
               }
                 logger.raw(`[debugbody] Saved -> ${msgDir}/`);
@@ -542,11 +542,11 @@ export class ProxyServerManager {
 
                         fs.writeFile(
                           `${msgDir}/original.json`,
-                          JSON.stringify(requestBody, null, 2)
+                          body
                         ).catch(() => {});
                         fs.writeFile(
                           `${msgDir}/forwarded.json`,
-                          JSON.stringify(JSON.parse(forwardBody), null, 2)
+                          forwardBody
                         ).catch(() => {});
                         logger.raw(`[debugbody] Saved -> ${msgDir}/`);
                       } catch {

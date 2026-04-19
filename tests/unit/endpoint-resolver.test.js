@@ -60,6 +60,11 @@ describe('resolveEndpoint()', () => {
     assert.deepEqual(result, { endpointPath: '/responses', needsTransform: true });
   });
 
+  test('gpt-5.3-codex + tools → /v1/chat/completions (compat mode)', () => {
+    const result = resolveEndpoint('gpt-5.3-codex', { tools: [{ type: 'function' }] });
+    assert.deepEqual(result, { endpointPath: '/chat/completions', needsTransform: false });
+  });
+
   // -------------------------------------------------------------------------
   // Non-GPT-5 models → /v1/chat/completions
   // -------------------------------------------------------------------------

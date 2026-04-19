@@ -94,6 +94,32 @@ describe('ResponseTransformer', () => {
     assert.equal(output, '');
   });
 
+  test('response.output_item.added is ignored so Responses-only events do not leak', async () => {
+    const input =
+      'data: {"type":"response.output_item.added","item":{"id":"rs_1","type":"reasoning","summary":[]},"output_index":0,"sequence_number":2}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.equal(output, '');
+  });
+
+  test('response.failed is transformed to legacy error object', async () => {
+    const input =
+      'data: {"type":"response.failed","response":{"error":{"code":"bad_request","message":"upstream failed"}}}\n\n';
+    const outputPromise = collectStreamOutput(transformer);
+
+    transformer.write(input);
+    transformer.end();
+
+    const output = await outputPromise;
+    assert.ok(output.includes('"error"'));
+    assert.ok(output.includes('"code":"bad_request"'));
+    assert.ok(output.includes('"message":"upstream failed"'));
+  });
+
   test('response.completed injects usage event and [DONE]', async () => {
     const input = 'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":20}}}\n\n';
     const outputPromise = collectStreamOutput(transformer);

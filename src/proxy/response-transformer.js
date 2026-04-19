@@ -69,8 +69,24 @@ export class ResponseTransformer extends Transform {
       return this._transformToolCallDelta(event);
     }
 
+    if (type === 'response.failed') {
+      return this._transformResponseFailed(event);
+    }
+
+    if (type === 'response.incomplete') {
+      return this._transformResponseIncomplete(event);
+    }
+
+    if (type === 'error') {
+      return this._transformErrorEvent(event);
+    }
+
     if (type === 'response.completed') {
       this._handleResponseCompleted(event);
+      return null;
+    }
+
+    if (type.startsWith('response.')) {
       return null;
     }
 
@@ -121,6 +137,37 @@ export class ResponseTransformer extends Transform {
           finish_reason: null,
         },
       ],
+    };
+  }
+
+  _transformResponseFailed(event) {
+    const error = event.response?.error || {};
+    return {
+      error: {
+        code: error.code || 'RESPONSE_FAILED',
+        message: error.message || 'Response failed',
+      },
+    };
+  }
+
+  _transformResponseIncomplete(event) {
+    const reason = event.response?.incomplete_details?.reason;
+    return {
+      error: {
+        code: 'RESPONSE_INCOMPLETE',
+        message: reason
+          ? `Response incomplete: ${reason}`
+          : 'Response incomplete before completion',
+      },
+    };
+  }
+
+  _transformErrorEvent(event) {
+    return {
+      error: {
+        code: event.code || 'STREAM_ERROR',
+        message: event.message || 'Upstream stream error',
+      },
     };
   }
 

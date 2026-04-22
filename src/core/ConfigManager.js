@@ -63,12 +63,15 @@ export class ConfigManager {
     const configPath = path.join(getBaseConfigDir(), filename);
 
     try {
-      opencodeConfigSchema.parse(config);
+      const cleanConfig = { ...config };
+      delete cleanConfig.oosVersionTag;
+
+      opencodeConfigSchema.parse(cleanConfig);
 
       if (isNewVersion) {
-        await writeJsonWithComments(configPath, config);
+        await writeJsonWithComments(configPath, cleanConfig);
       } else {
-        await writeJson(configPath, config);
+        await writeJson(configPath, cleanConfig);
       }
     } catch (error) {
       if (error instanceof FileSystemError) {

@@ -614,8 +614,8 @@
           const upstreamCount = group.upstreams.length;
           const strategy = group.strategy || '-';
 
-          // Extract token stats from the first upstream (they are per-route)
-          const tokenStats = group.upstreams[0]?.tokenStats || null;
+          // Extract token stats from the route group (they are per-route)
+          const tokenStats = group.tokenStats || null;
           const tokenRateHtml = tokenStats
             ? formatTokenRateDisplay(tokenStats)
             : '<span class="token-empty">-</span>';

@@ -1,9 +1,28 @@
+function parseCompactTokenStr(tokenStr) {
+  const result = { input: 0, output: 0 };
+  if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('tok=')) return result;
+
+  const parts = tokenStr.slice(4).split('/');
+  const parseNum = (s) => {
+    if (!s || s.length < 2) return 0;
+    const num = parseFloat(s.slice(1));
+    const suffix = s.slice(-1);
+    if (suffix === 'k') return Math.round(num * 1000);
+    if (suffix === 'm') return Math.round(num * 1000000);
+    return Math.round(num);
+  };
+  result.input = parseNum(parts[0]);
+  result.output = parseNum(parts[1]);
+  return result;
+}
+
 export function aggregateByModel(accesslogEntries) {
   const statsMap = new Map();
 
   for (const entry of accesslogEntries) {
     const key = `${entry.provider}|${entry.model}`;
     const existing = statsMap.get(key);
+    const parsedTokens = parseCompactTokenStr(entry.tokens);
 
     if (existing) {
       existing.requests++;
@@ -14,6 +33,8 @@ export function aggregateByModel(accesslogEntries) {
       }
       existing.durations.push(entry.duration || 0);
       existing.ttfbs.push(entry.ttfb || 0);
+      existing.inputTokens += parsedTokens.input;
+      existing.outputTokens += parsedTokens.output;
     } else {
       statsMap.set(key, {
         provider: entry.provider,
@@ -23,6 +44,8 @@ export function aggregateByModel(accesslogEntries) {
         failure: entry.status >= 400 ? 1 : 0,
         durations: [entry.duration || 0],
         ttfbs: [entry.ttfb || 0],
+        inputTokens: parsedTokens.input,
+        outputTokens: parsedTokens.output,
       });
     }
   }
@@ -49,6 +72,12 @@ export function aggregateByModel(accesslogEntries) {
       avgDuration: group.requests > 0 ? Math.round(totalDuration / group.requests) : 0,
       durationP95: calculatePercentile(sortedDurations, 95),
       durationP99: calculatePercentile(sortedDurations, 99),
+      totalInputTokens: group.inputTokens || 0,
+      totalOutputTokens: group.outputTokens || 0,
+      avgInputTokens:
+        group.requests > 0 ? Math.round((group.inputTokens || 0) / group.requests) : 0,
+      avgOutputTokens:
+        group.requests > 0 ? Math.round((group.outputTokens || 0) / group.requests) : 0,
     });
   }
 

@@ -8,6 +8,7 @@ import {
   recordUpstreamError,
   recordUpstreamLatency,
   recordUpstreamStats,
+  recordUpstreamTokenStats,
   weightManager,
 } from './router.js';
 import { CircuitBreaker } from './circuitbreaker.js';
@@ -33,6 +34,8 @@ import {
   handleAnalytics,
   handleWeightDiagnostics,
   setupSSELogCallback,
+  handleProxyRegister,
+  handleProfileRerender,
 } from './internal-endpoints.js';
 
 const DEFAULT_PORT = 3000;
@@ -221,6 +224,15 @@ export class ProxyServerManager {
                 })
               );
             }
+            return;
+          }
+
+          if (req.url === '/_internal/proxy-register' && req.method === 'POST') {
+            await handleProxyRegister(req, res);
+            return;
+          }
+          if (req.url === '/_internal/profile-rerender' && req.method === 'POST') {
+            await handleProfileRerender(req, res);
             return;
           }
 
@@ -437,11 +449,20 @@ export class ProxyServerManager {
               recordUpstreamStats(model, upstream.id, ttfb, duration, proxyResStatusCode >= 400);
 
               let tokens;
+              let rawUsage;
               try {
-                const rawUsage = capttee.getUsage();
+                rawUsage = capttee.getUsage();
                 tokens = rawUsage ? formatTokenCompact(rawUsage) : undefined;
               } catch {
                 tokens = undefined; // Graceful degradation
+              }
+
+              if (rawUsage) {
+                recordUpstreamTokenStats(
+                  model,
+                  rawUsage.input_tokens ?? 0,
+                  rawUsage.output_tokens ?? 0
+                );
               }
 
               logAccess({
@@ -600,11 +621,20 @@ export class ProxyServerManager {
                       );
 
                       let tokens;
+                      let retryRawUsage;
                       try {
-                        const rawUsage = retryCapttee.getUsage();
-                        tokens = rawUsage ? formatTokenCompact(rawUsage) : undefined;
+                        retryRawUsage = retryCapttee.getUsage();
+                        tokens = retryRawUsage ? formatTokenCompact(retryRawUsage) : undefined;
                       } catch {
                         tokens = undefined;
+                      }
+
+                      if (retryRawUsage) {
+                        recordUpstreamTokenStats(
+                          model,
+                          retryRawUsage.input_tokens ?? 0,
+                          retryRawUsage.output_tokens ?? 0
+                        );
                       }
 
                       logAccess({

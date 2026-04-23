@@ -466,6 +466,44 @@
             >重载配置</span
           >
           <span id="reloadFeedback" style="font-size: 0.85rem"></span>
+
+          <span
+            id="registerProxyBtn"
+            style="
+              font-size: 0.85rem;
+              font-weight: 500;
+              color: #3b82f6;
+              cursor: pointer;
+              user-select: none;
+              padding: 6px 12px;
+              background: #eff6ff;
+              border-radius: 6px;
+            "
+            role="button"
+            tabindex="0"
+            aria-label="注册代理到 opencode.json"
+            >注册代理</span
+          >
+          <span id="registerProxyFeedback" style="font-size: 0.85rem"></span>
+
+          <span
+            id="rerenderProfileBtn"
+            style="
+              font-size: 0.85rem;
+              font-weight: 500;
+              color: #3b82f6;
+              cursor: pointer;
+              user-select: none;
+              padding: 6px 12px;
+              background: #eff6ff;
+              border-radius: 6px;
+            "
+            role="button"
+            tabindex="0"
+            aria-label="重新生成当前配置文件"
+            >重新生成配置</span
+          >
+          <span id="rerenderProfileFeedback" style="font-size: 0.85rem"></span>
         </div>
       </div>
     </div>
@@ -797,6 +835,94 @@
         }
       }
 
+      function formatFeedbackText(value, fallback) {
+        if (typeof value === 'string') return value;
+        if (value === null || value === undefined) return fallback;
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return fallback;
+        }
+      }
+
+      async function handleRegisterProxy() {
+        const btn = document.getElementById('registerProxyBtn');
+        const feedback = document.getElementById('registerProxyFeedback');
+        if (!btn || !feedback) return;
+
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.6';
+        btn.textContent = '注册中...';
+        feedback.textContent = '';
+
+        try {
+          const res = await fetch('/_internal/proxy-register', { method: 'POST' });
+          let data;
+          try {
+            data = await res.json();
+          } catch (parseErr) {
+            const text = await res.text();
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '响应解析失败: ' + (text || parseErr.message);
+            return;
+          }
+
+          if (res.ok && data.success) {
+            feedback.style.color = '#10b981';
+            feedback.textContent = formatFeedbackText(data.message, '注册成功');
+          } else {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = formatFeedbackText(data.error, '注册失败');
+          }
+        } catch (err) {
+          feedback.style.color = '#ef4444';
+          feedback.textContent = '请求失败: ' + err.message;
+        } finally {
+          btn.style.pointerEvents = 'auto';
+          btn.style.opacity = '1';
+          btn.textContent = '注册代理';
+        }
+      }
+
+      async function handleRerenderProfile() {
+        const btn = document.getElementById('rerenderProfileBtn');
+        const feedback = document.getElementById('rerenderProfileFeedback');
+        if (!btn || !feedback) return;
+
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.6';
+        btn.textContent = '生成中...';
+        feedback.textContent = '';
+
+        try {
+          const res = await fetch('/_internal/profile-rerender', { method: 'POST' });
+          let data;
+          try {
+            data = await res.json();
+          } catch (parseErr) {
+            const text = await res.text();
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '响应解析失败: ' + (text || parseErr.message);
+            return;
+          }
+
+          if (res.ok && data.success) {
+            feedback.style.color = '#10b981';
+            feedback.textContent = formatFeedbackText(data.message, '生成成功');
+          } else {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = formatFeedbackText(data.error, '生成失败');
+          }
+        } catch (err) {
+          feedback.style.color = '#ef4444';
+          feedback.textContent = '请求失败: ' + err.message;
+        } finally {
+          btn.style.pointerEvents = 'auto';
+          btn.style.opacity = '1';
+          btn.textContent = '重新生成配置';
+        }
+      }
+
       document.addEventListener('DOMContentLoaded', () => {
         const reloadBtn = document.getElementById('reloadBtn');
         if (reloadBtn) {
@@ -805,6 +931,28 @@
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               handleReload();
+            }
+          });
+        }
+
+        const registerProxyBtn = document.getElementById('registerProxyBtn');
+        if (registerProxyBtn) {
+          registerProxyBtn.addEventListener('click', handleRegisterProxy);
+          registerProxyBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleRegisterProxy();
+            }
+          });
+        }
+
+        const rerenderProfileBtn = document.getElementById('rerenderProfileBtn');
+        if (rerenderProfileBtn) {
+          rerenderProfileBtn.addEventListener('click', handleRerenderProfile);
+          rerenderProfileBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleRerenderProfile();
             }
           });
         }

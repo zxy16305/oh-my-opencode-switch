@@ -230,6 +230,55 @@ export function resetStats(state) {
   state.latencyState.clear();
   state.upstreamRequestCounts.clear();
   state.upstreamSlidingWindowCounts.clear();
+  state.tokenStatsState.clear();
+}
+
+export function recordUpstreamTokenStats(state, routeKey, inputTokens, outputTokens) {
+  const key = routeKey;
+  if (!state.tokenStatsState.has(key)) {
+    state.tokenStatsState.set(key, { inputTokens: [], outputTokens: [] });
+  }
+  const stats = state.tokenStatsState.get(key);
+  const now = Date.now();
+  stats.inputTokens.push({ timestamp: now, count: inputTokens });
+  stats.outputTokens.push({ timestamp: now, count: outputTokens });
+
+  if (stats.inputTokens.length > TRIM_THRESHOLD) {
+    const windowStart = now - 3600000;
+    stats.inputTokens = stats.inputTokens.filter((e) => e.timestamp >= windowStart);
+    stats.outputTokens = stats.outputTokens.filter((e) => e.timestamp >= windowStart);
+  }
+}
+
+export function getUpstreamTokenRateStats(state, routeKey, windowMs = 3600000) {
+  const key = routeKey;
+  const stats = state.tokenStatsState.get(key);
+  if (!stats) {
+    return {
+      inputTokensPerMinute: 0,
+      outputTokensPerMinute: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      requestCount: 0,
+    };
+  }
+
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  const inputInWindow = stats.inputTokens.filter((e) => e.timestamp >= windowStart);
+  const outputInWindow = stats.outputTokens.filter((e) => e.timestamp >= windowStart);
+
+  const totalInput = inputInWindow.reduce((sum, e) => sum + e.count, 0);
+  const totalOutput = outputInWindow.reduce((sum, e) => sum + e.count, 0);
+  const minutes = windowMs / 60000;
+
+  return {
+    inputTokensPerMinute: minutes > 0 ? Math.round(totalInput / minutes) : 0,
+    outputTokensPerMinute: minutes > 0 ? Math.round(totalOutput / minutes) : 0,
+    totalInputTokens: totalInput,
+    totalOutputTokens: totalOutput,
+    requestCount: inputInWindow.length,
+  };
 }
 
 export { MAX_SAMPLES };

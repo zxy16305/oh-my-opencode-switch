@@ -21,6 +21,8 @@ export class StateManager {
     this.upstreamRequestCounts = new Map();
     /** @type {Map<string, Array<{ timestamp: number }>>} */
     this.upstreamSlidingWindowCounts = new Map();
+    /** @type {Map<string, { inputTokens: Array<{timestamp: number, count: number}>, outputTokens: Array<{timestamp: number, count: number}> }>} */
+    this.tokenStatsState = new Map();
     /** @type {Object|null} */
     this.timeSlotCalculator = null;
     /** @type {NodeJS.Timeout|null} */
@@ -36,6 +38,7 @@ export class StateManager {
     this.latencyState.clear();
     this.upstreamRequestCounts.clear();
     this.upstreamSlidingWindowCounts.clear();
+    this.tokenStatsState.clear();
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);

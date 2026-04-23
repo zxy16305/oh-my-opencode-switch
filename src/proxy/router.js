@@ -168,6 +168,16 @@ export function getUpstreamStats(routeKey, upstreamId, state = null) {
   return stats.getUpstreamStats(sm, routeKey, upstreamId);
 }
 
+export function recordUpstreamTokenStats(routeKey, inputTokens, outputTokens, state = null) {
+  const sm = state ?? stateManager;
+  stats.recordUpstreamTokenStats(sm, routeKey, inputTokens, outputTokens);
+}
+
+export function getUpstreamTokenRateStats(routeKey, windowMs = 3600000, state = null) {
+  const sm = state ?? stateManager;
+  return stats.getUpstreamTokenRateStats(sm, routeKey, windowMs);
+}
+
 // --- Compatibility wrappers for legacy dynamic-weight tests ---
 
 export function getDynamicWeight(routeKey, upstreamId, configuredWeight = 100) {
@@ -506,7 +516,7 @@ export function resetAllState(state = null) {
   stats.resetStats(sm);
   stopSessionCleanup(sm);
 
-   if (sm === stateManager) {
+  if (sm === stateManager) {
     compatibilityDynamicWeightState.clear();
     weightManager.state.clear();
     weightManager.lastTimeSlot = null;

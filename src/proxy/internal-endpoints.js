@@ -4,6 +4,7 @@ import {
   getUpstreamSlidingWindowCounts,
   getSessionUpstreamMap,
   getUpstreamStats,
+  getUpstreamTokenRateStats,
   weightManager,
 } from './router.js';
 import { logger } from '../utils/logger.js';
@@ -152,8 +153,16 @@ export function handleStats(req, res, routes, _circuitBreaker) {
   };
 
   for (const [routeName, route] of Object.entries(routes)) {
+    const tokenRateStats = getUpstreamTokenRateStats(routeName);
+
     response.routes[routeName] = {
       strategy: route.strategy,
+      tokenStats: {
+        inputTokensPerMinute: tokenRateStats.inputTokensPerMinute,
+        outputTokensPerMinute: tokenRateStats.outputTokensPerMinute,
+        totalInputTokens: tokenRateStats.totalInputTokens,
+        totalOutputTokens: tokenRateStats.totalOutputTokens,
+      },
       upstreams: (route.upstreams || []).map((upstream) => {
         const key = `${routeName}:${upstream.id}`;
         const routeRequestCounts = requestCounts.get(routeName);

@@ -84,6 +84,10 @@
         text-align: center;
         min-width: 80px;
       }
+      th:nth-child(14) {
+        text-align: center;
+        min-width: 120px;
+      }
       .col-folded {
         display: none;
       }
@@ -406,6 +410,7 @@
               <th class="col-folded">D95</th>
               <th class="col-folded">D99</th>
               <th>Weight</th>
+              <th>Toks/m</th>
             </tr>
           </thead>
           <tbody id="dataTableBody"></tbody>
@@ -609,6 +614,12 @@
           const upstreamCount = group.upstreams.length;
           const strategy = group.strategy || '-';
 
+          // Extract token stats from the first upstream (they are per-route)
+          const tokenStats = group.upstreams[0]?.tokenStats || null;
+          const tokenRateHtml = tokenStats
+            ? formatTokenRateDisplay(tokenStats)
+            : '<span class="token-empty">-</span>';
+
           group.upstreams.forEach((u, idx) => {
             const tr = document.createElement('tr');
             const isLastInGroup = idx === upstreamCount - 1;
@@ -643,6 +654,7 @@
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP95) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="${foldedClass}">${sampleCount > 0 ? formatDuration(durationP99) : '-'}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums;${groupBorderStyle}" class="weight-cell" onclick="toggleDiagnostic('${routeName}', '${upstreamId}')">${weight}</td>
+                    <td rowspan="${upstreamCount}" style="vertical-align:middle;text-align:center;font-variant-numeric:tabular-nums;${groupBorderStyle}">${tokenRateHtml}</td>
                   `;
             } else {
               tr.innerHTML = `
@@ -699,7 +711,7 @@
 
       function renderDiagnosticRow(routeName, upstreamId, diagData) {
         if (!diagData) {
-          return `<td colspan="13" style="text-align:center;color:#999;">暂无诊断数据</td>`;
+          return `<td colspan="14" style="text-align:center;color:#999;">暂无诊断数据</td>`;
         }
 
         const level = diagData.level || 'normal';
@@ -744,7 +756,7 @@
         }
 
         return `
-          <td colspan="13">
+          <td colspan="14">
             <div style="display:flex;gap:24px;">
               <div class="diagnostic-section" style="flex:0 0 200px;">
                 <h4>当前等级</h4>
@@ -843,6 +855,26 @@
         } catch {
           return fallback;
         }
+      }
+
+      function formatTokenRateCompact(num) {
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+        return String(num);
+      }
+
+      function formatTokenRateDisplay(tokenStats) {
+        if (!tokenStats) {
+          return '<span class="token-empty">-</span>';
+        }
+
+        const inputRate = tokenStats.inputTokensPerMinute ?? 0;
+        const outputRate = tokenStats.outputTokensPerMinute ?? 0;
+
+        if (inputRate === 0 && outputRate === 0) {
+          return '<span class="token-empty">-</span>';
+        }
+
+        return `<div class="token-metrics"><span class="token-chip token-chip-input"><span class="token-label">入</span><span class="token-value">${formatTokenRateCompact(inputRate)}</span></span><span class="token-chip token-chip-output"><span class="token-label">出</span><span class="token-value">${formatTokenRateCompact(outputRate)}</span></span></div>`;
       }
 
       async function handleRegisterProxy() {

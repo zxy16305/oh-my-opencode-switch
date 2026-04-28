@@ -37,6 +37,7 @@ import {
   handleProxyRegister,
   handleProfileRerender,
 } from './internal-endpoints.js';
+import { cleanRemovedUpstreamSessions } from './session-manager.js';
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_INSTANCE_NAME = 'default';
@@ -1210,11 +1211,14 @@ export class ProxyServerManager {
 
       weightManager.reloadConfig(newRoutes);
 
+      const cleanedSessions = cleanRemovedUpstreamSessions(newRoutes);
+
       logger.info(`[${name}] Configuration reloaded successfully`);
 
       return {
         success: true,
         diff,
+        cleanedSessions: cleanedSessions > 0 ? cleanedSessions : undefined,
       };
     } catch (error) {
       logger.error(`[${name}] Failed to reload config: ${error.message}`);

@@ -4,6 +4,7 @@
  */
 
 import { stateManager } from './state-manager.js';
+import { logger } from '../utils/logger.js';
 
 /** Default TTL for session mappings (30 minutes) */
 export const SESSION_MAP_TTL_MS = 30 * 60 * 1000;
@@ -190,4 +191,49 @@ export function stopSessionCleanup(state) {
     clearInterval(interval);
     sm.cleanupInterval = null;
   }
+}
+
+/**
+ * Clean up session mappings for upstreams removed from config during reload.
+ * Follows the same pattern as WeightManager.reloadConfig().
+ *
+ * @param {object} routes - New routes configuration (routeKey → route object)
+ * @param {StateManager} [state] - Optional state manager instance
+ * @returns {number} Number of cleaned session mappings
+ */
+export function cleanRemovedUpstreamSessions(routes, state) {
+  const sm = getState(state);
+
+  // Collect all valid (routeKey, upstreamId) pairs from new config
+  const validKeys = new Set();
+  for (const [routeKey, route] of Object.entries(routes)) {
+    for (const upstream of route.upstreams || []) {
+      if (upstream.id) {
+        validKeys.add(`${routeKey}:${upstream.id}`);
+      }
+    }
+  }
+
+  // Find sessions bound to removed upstreams
+  const toRemove = [];
+  for (const [sessionId, entry] of sm.sessionMap) {
+    const key = `${entry.routeKey}:${entry.upstreamId}`;
+    if (!validKeys.has(key)) {
+      toRemove.push({ sessionId, entry });
+    }
+  }
+
+  // Clean up each stale session
+  for (const { sessionId, entry } of toRemove) {
+    decrementSessionCount(sm, entry.routeKey, entry.upstreamId);
+    sm.sessionMap.delete(sessionId);
+  }
+
+  if (toRemove.length > 0) {
+    logger.info(
+      `[SessionCleanup] Cleaned ${toRemove.length} stale session mapping(s) for removed upstream(s)`
+    );
+  }
+
+  return toRemove.length;
 }

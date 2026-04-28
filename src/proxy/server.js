@@ -127,6 +127,11 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
       options.onProxyRes(proxyRes, clientReq);
     }
 
+    if (clientRes._retry429) {
+      proxyRes.resume(); // Skip response for 429 retry
+      return;
+    }
+
     if (isSSE(proxyRes.headers)) {
       Object.entries(SSE_HEADERS).forEach(([key, value]) => {
         if (!proxyRes.headers[key.toLowerCase()]) {

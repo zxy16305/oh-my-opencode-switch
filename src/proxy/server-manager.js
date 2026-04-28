@@ -422,6 +422,201 @@ export class ProxyServerManager {
               ttfb = Date.now() - startTime;
               proxyResStatusCode = proxyRes.statusCode;
               proxyResHeaders = { ...proxyRes.headers };
+
+              // Handle 429 Too Many Requests - auto retry to next upstream
+              if (proxyRes.statusCode === 429) {
+                if (
+                  !res.headersSent &&
+                  !res.socket?.destroyed &&
+                  !req.socket?.destroyed &&
+                  route.upstreams.length > 1 &&
+                  retryCount < MAX_RETRIES
+                ) {
+                  res._retry429 = true;
+
+                  const nextUpstream = failoverStickySession(
+                    sessionId,
+                    upstream.id,
+                    route.upstreams,
+                    routeKey,
+                    model,
+                    (id) => circuitBreaker.isAvailable(id),
+                    null,
+                    weightManager
+                  );
+
+                  if (nextUpstream && nextUpstream.baseURL) {
+                    retryCount++;
+                    logger.warn(
+                      `Retrying request on ${nextUpstream.id} after ${upstream.id} returned 429 Too Many Requests`
+                    );
+
+                    const retryUrl = `${nextUpstream.baseURL}${endpointPath}`;
+                    const retryHeaders = {};
+                    if (nextUpstream.apiKey) {
+                      retryHeaders['authorization'] = `Bearer ${nextUpstream.apiKey}`;
+                    }
+
+                    const retryCapttee = new TokenCaptivee();
+
+                    if (options.debugbody) {
+                      (async () => {
+                        try {
+                          const debugDir = getDebugBodiesDir();
+                          await ensureDir(debugDir);
+                          const timestamp = new Date()
+                            .toISOString()
+                            .replace(/[:-]/g, '')
+                            .slice(0, 18);
+                          const safeSessionId = (sessionId || 'unknown').replace(
+                            /[/\\:*?"<>|]/g,
+                            '_'
+                          );
+                          const dirName = `${timestamp}-retry-${safeSessionId}`;
+                          const msgDir = `${debugDir}/${dirName}`;
+                          await ensureDir(msgDir);
+
+                          const meta = {
+                            model,
+                            target: nextUpstream.provider,
+                            upstreamModel: nextUpstream.model,
+                            timestamp: new Date().toISOString(),
+                            isRetry: true,
+                            retryFrom: upstream.id,
+                          };
+
+                          retryCapttee._debugPaths = { msgDir, meta };
+
+                          fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                          fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
+                          logger.raw(`[debugbody] Saved -> ${msgDir}/`);
+                        } catch {
+                          // Silent failure
+                        }
+                      })();
+                    }
+
+                    forwardRequest(req, res, retryUrl, {
+                      body: forwardBody,
+                      headers: retryHeaders,
+                      responseTransform: retryCapttee,
+                      onProxyRes: (retryProxyRes) => {
+                        ttfb = Date.now() - startTime;
+                        proxyResStatusCode = retryProxyRes.statusCode;
+                        proxyResHeaders = { ...retryProxyRes.headers };
+                        retryProxyRes.headers['x-used-provider'] = nextUpstream.id;
+                        retryProxyRes.headers['x-retry-count'] = String(retryCount);
+                        if (sessionId) {
+                          retryProxyRes.headers['x-session-id'] = sessionId;
+                        }
+                        if (retryProxyRes.statusCode >= 400) {
+                          circuitBreaker.recordFailure(nextUpstream.id);
+                          recordUpstreamError(model, nextUpstream.id, retryProxyRes.statusCode);
+                          weightManager.recordError(model, nextUpstream.id, retryProxyRes.statusCode);
+                          if (config.timeSlotWeight?.enabled) {
+                            timeSlotCalculator.recordFailure(nextUpstream.provider);
+                          }
+                        } else {
+                          circuitBreaker.recordSuccess(nextUpstream.id);
+                          recordUpstreamLatency(model, nextUpstream.id, Date.now() - startTime);
+                          weightManager.recordSuccess(model, nextUpstream.id, Date.now() - startTime);
+                          if (config.timeSlotWeight?.enabled) {
+                            timeSlotCalculator.recordSuccess(nextUpstream.provider);
+                          }
+                        }
+                      },
+                      onStreamEnd: () => {
+                        const duration = Date.now() - startTime;
+
+                        recordUpstreamStats(
+                          model,
+                          nextUpstream.id,
+                          ttfb,
+                          duration,
+                          proxyResStatusCode >= 400
+                        );
+
+                        let tokens;
+                        let retryRawUsage;
+                        try {
+                          retryRawUsage = retryCapttee.getUsage();
+                          tokens = retryRawUsage ? formatTokenCompact(retryRawUsage) : undefined;
+                        } catch {
+                          tokens = undefined;
+                        }
+
+                        if (retryRawUsage) {
+                          recordUpstreamTokenStats(
+                            model,
+                            retryRawUsage.input_tokens ?? 0,
+                            retryRawUsage.output_tokens ?? 0
+                          );
+                        }
+
+                        logAccess({
+                          sessionId: sessionId || null,
+                          agent,
+                          category,
+                          provider: nextUpstream.provider,
+                          model: nextUpstream.model,
+                          virtualModel: model,
+                          endpoint: endpointPath,
+                          status: proxyResStatusCode,
+                          ttfb,
+                          duration,
+                          tokens,
+                          body: requestBody,
+                        }).catch(() => {});
+
+                        if (options.debugbody && retryCapttee._debugPaths) {
+                          try {
+                            const { msgDir, meta } = retryCapttee._debugPaths;
+                            const response = retryCapttee.getFullResponse();
+                            const isSSE = response.includes('data:');
+                            const responseFile = isSSE
+                              ? `${msgDir}/response.sse`
+                              : `${msgDir}/response.json`;
+
+                            const completeMeta = {
+                              ...meta,
+                              statusCode: proxyResStatusCode,
+                              responseHeaders: proxyResHeaders || {},
+                            };
+
+                            fs.writeFile(responseFile, response).catch(() => {});
+                            fs.writeFile(
+                              `${msgDir}/meta.json`,
+                              JSON.stringify(completeMeta, null, 2)
+                            ).catch(() => {});
+                          } catch {
+                            // Silent failure
+                          }
+                        }
+                      },
+                      onError: (retryErr) => {
+                        circuitBreaker.recordFailure(nextUpstream.id);
+                        recordUpstreamError(model, nextUpstream.id, 502);
+                        weightManager.recordError(model, nextUpstream.id, 502);
+                        logger.error(`Retry failed for ${nextUpstream.id}: ${retryErr.message}`);
+                        if (config.timeSlotWeight?.enabled) {
+                          timeSlotCalculator.recordFailure(nextUpstream.provider);
+                        }
+                        if (!res.headersSent && !res.socket?.destroyed && !req.socket?.destroyed) {
+                          res.writeHead(502, { 'Content-Type': 'application/json' });
+                          res.end(
+                            JSON.stringify({
+                              error: { message: `Bad Gateway: ${retryErr.message}` },
+                            })
+                          );
+                        }
+                      },
+                    });
+
+                    return;
+                  }
+                }
+              }
+
               proxyRes.headers['x-used-provider'] = upstream.id;
               proxyRes.headers['x-retry-count'] = retryCount > 0 ? String(retryCount) : '0';
               if (sessionId) {

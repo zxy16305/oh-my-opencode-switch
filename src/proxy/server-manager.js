@@ -447,6 +447,27 @@ export class ProxyServerManager {
                   );
 
                   if (nextUpstream && nextUpstream.baseURL) {
+                    // Log the original 429 request before retrying
+                    const original429Duration = Date.now() - startTime;
+                    recordUpstreamStats(model, upstream.id, ttfb, original429Duration, true);
+                    recordUpstreamError(model, upstream.id, 429);
+
+                    logAccess({
+                      sessionId: sessionId || null,
+                      agent,
+                      category,
+                      provider: upstream.provider,
+                      model: upstream.model,
+                      virtualModel: model,
+                      endpoint: endpointPath,
+                      status: 429,
+                      ttfb,
+                      duration: original429Duration,
+                      body: requestBody,
+                    }).catch(() => {
+                      /* intentionally silent: best-effort access logging */
+                    });
+
                     retryCount++;
                     logger.warn(
                       `Retrying request on ${nextUpstream.id} after ${upstream.id} returned 429 Too Many Requests`
@@ -610,6 +631,21 @@ export class ProxyServerManager {
                             })
                           );
                         }
+                        logAccess({
+                          sessionId: sessionId || null,
+                          agent,
+                          category,
+                          provider: nextUpstream.provider,
+                          model: nextUpstream.model,
+                          virtualModel: model,
+                          endpoint: endpointPath,
+                          status: 502,
+                          error: retryErr.message,
+                          duration: Date.now() - startTime,
+                          body: requestBody,
+                        }).catch(() => {
+                          /* intentionally silent: best-effort access logging */
+                        });
                       },
                     });
 
@@ -888,6 +924,21 @@ export class ProxyServerManager {
                           })
                         );
                       }
+                      logAccess({
+                        sessionId: sessionId || null,
+                        agent,
+                        category,
+                        provider: nextUpstream.provider,
+                        model: nextUpstream.model,
+                        virtualModel: model,
+                        endpoint: endpointPath,
+                        status: 502,
+                        error: retryErr.message,
+                        duration: Date.now() - startTime,
+                        body: requestBody,
+                      }).catch(() => {
+                        /* intentionally silent: best-effort access logging */
+                      });
                     },
                   });
                   return; // Don't send 502, retry will handle it

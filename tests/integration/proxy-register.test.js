@@ -24,7 +24,13 @@ const MODELS_DEV_DATA = {
     api: 'https://ark.cn-beijing.volces.com/api/v3',
     models: {
       'doubao-seed-2-0-pro': {
+        name: 'Doubao Seed 2.0 Pro',
         limit: { context: 32768, output: 4096 },
+        modalities: ['text'],
+        options: { temperature: 0.2, maxRetries: 3 },
+        toolUse: true,
+        cache: { read: true, write: true },
+        reasoning: { effort: 'medium' },
       },
     },
   },
@@ -79,7 +85,7 @@ afterEach(async () => {
 // ===========================================================================
 
 describe('Proxy Register - registerAction', () => {
-  test('1. Registers proxy with built-in provider using models.dev limit', async () => {
+  test('1. Registers proxy with models.dev metadata when provider is absent', async () => {
     const opencodePath = getOpencodeConfigPath();
     await ensureDir(dirname(opencodePath));
 
@@ -117,6 +123,12 @@ describe('Proxy Register - registerAction', () => {
     const modelConfig = proxyProvider.models['lb-doubao'];
     assert.strictEqual(modelConfig.limit.context, 32768);
     assert.strictEqual(modelConfig.limit.output, 4096);
+    assert.strictEqual(modelConfig.name, 'lb-doubao (Proxy)');
+    assert.deepEqual(modelConfig.modalities, ['text']);
+    assert.deepEqual(modelConfig.options, { temperature: 0.2, maxRetries: 3 });
+    assert.strictEqual(modelConfig.toolUse, true);
+    assert.deepEqual(modelConfig.cache, { read: true, write: true });
+    assert.deepEqual(modelConfig.reasoning, { effort: 'medium' });
   });
 
   test('2. Custom provider limit takes precedence over models.dev limit', async () => {
@@ -217,7 +229,7 @@ describe('Proxy Register - registerAction', () => {
     );
   });
 
-  test('4. Modalities are preserved from first upstream', async () => {
+  test('4. All model fields are preserved from first upstream', async () => {
     const opencodePath = getOpencodeConfigPath();
     await ensureDir(dirname(opencodePath));
 
@@ -232,6 +244,10 @@ describe('Proxy Register - registerAction', () => {
               name: 'Vision Model Display Name',
               modalities: ['text', 'image'],
               limit: { context: 16384, output: 4096 },
+              options: { temperature: 0.6, topP: 0.9 },
+              toolUse: { parallel: true },
+              cache: { read: true },
+              reasoning: { effort: 'high' },
             },
           },
         },
@@ -261,6 +277,10 @@ describe('Proxy Register - registerAction', () => {
     const modelConfig = proxyProvider.models['lb-vision'];
     assert.strictEqual(modelConfig.name, 'lb-vision (Proxy)');
     assert.deepEqual(modelConfig.modalities, ['text', 'image']);
+    assert.deepEqual(modelConfig.options, { temperature: 0.6, topP: 0.9 });
+    assert.deepEqual(modelConfig.toolUse, { parallel: true });
+    assert.deepEqual(modelConfig.cache, { read: true });
+    assert.deepEqual(modelConfig.reasoning, { effort: 'high' });
   });
 
   test('5. Responses routes register separate provider name and /v1 baseURL', async () => {

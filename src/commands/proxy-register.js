@@ -4,7 +4,7 @@ import { getOpencodeConfigPath } from '../utils/proxy-paths.js';
 import { readJson, writeJson, exists, copyFile } from '../utils/files.js';
 import { logger } from '../utils/logger.js';
 import { ConfigError } from '../utils/errors.js';
-import { getModelLimit } from '../utils/provider-discovery.js';
+import { getModelMetadata } from '../utils/provider-discovery.js';
 
 const DEFAULT_PROXY_PORT = 3000;
 const PROVIDER_ID = 'opencode-proxy';
@@ -116,7 +116,7 @@ export async function registerAction(options = {}) {
 
       // Get limits from all upstreams
       const limits = [];
-      let modalities = null;
+      let baseModelMetadata = null;
       let modelName = virtualModel;
 
       for (const upstream of route.upstreams) {
@@ -133,41 +133,43 @@ export async function registerAction(options = {}) {
         let limit = null;
         let modelMetadata = null;
 
-        const providerConfig = opencodeConfig.provider?.[providerName];
-        if (!providerConfig) {
+        const upstreamProviderConfig = opencodeConfig.provider?.[providerName];
+        if (!upstreamProviderConfig) {
           logger.debug(
             `Provider "${providerName}" not found in opencode.json for route "${virtualModel}", checking models.dev...`
           );
-          // Try to get limit from models.dev API
           try {
-            const apiLimit = await getModelLimit(providerName, originalModelName);
-            if (apiLimit) {
-              limit = apiLimit;
+            modelMetadata = await getModelMetadata(providerName, originalModelName);
+            if (modelMetadata) {
+              limit = modelMetadata.limit || null;
               logger.debug(
-                `Got limit from models.dev for ${providerName}/${originalModelName}:`,
-                limit
+                `Got model metadata from models.dev for ${providerName}/${originalModelName}`
               );
             } else {
               logger.debug(
-                `No limit found in models.dev for ${providerName}/${originalModelName}, using default`
+                `No model metadata found in models.dev for ${providerName}/${originalModelName}, using defaults`
               );
             }
           } catch (error) {
             logger.debug(
-              `Failed to get limit from models.dev for ${providerName}/${originalModelName}: ${error.message}`
+              `Failed to get model metadata from models.dev for ${providerName}/${originalModelName}: ${error.message}`
             );
           }
         } else {
-          const originalModel = providerConfig.models?.[originalModelName];
+          const originalModel = upstreamProviderConfig.models?.[originalModelName];
           if (!originalModel) {
             logger.warn(
               `Model "${originalModelName}" not found in provider "${providerName}" for route "${virtualModel}".`
             );
             continue;
           }
-          modelMetadata = originalModel;
+          modelMetadata = JSON.parse(JSON.stringify(originalModel));
           // Use explicit limit from opencode.json if available
           limit = originalModel.limit || null;
+        }
+
+        if (!baseModelMetadata && modelMetadata) {
+          baseModelMetadata = JSON.parse(JSON.stringify(modelMetadata));
         }
 
         // Fallback to default Infinity if no limit found
@@ -179,10 +181,6 @@ export async function registerAction(options = {}) {
           output: limit.output ?? Infinity,
         });
 
-        // Use first upstream's modalities (name comes from virtualModel/LB name)
-        if (!modalities && modelMetadata) {
-          modalities = modelMetadata.modalities || null;
-        }
       }
 
       if (limits.length === 0) {
@@ -202,8 +200,11 @@ export async function registerAction(options = {}) {
 
       // Build model config
       const modelConfig = {
+        ...(baseModelMetadata ? JSON.parse(JSON.stringify(baseModelMetadata)) : {}),
         name: `${modelName} (Proxy)`,
       };
+
+      delete modelConfig.limit;
 
       if (minLimit.context !== Infinity || minLimit.output !== Infinity) {
         const limitConfig = {};
@@ -212,11 +213,6 @@ export async function registerAction(options = {}) {
         if (Object.keys(limitConfig).length > 0) {
           modelConfig.limit = limitConfig;
         }
-      }
-
-      // Add modalities if available
-      if (modalities) {
-        modelConfig.modalities = modalities;
       }
 
       providerConfig.models[virtualModel] = modelConfig;

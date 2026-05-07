@@ -25,7 +25,7 @@ import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import { getOpencodeConfigPath } from '../utils/proxy-paths.js';
 import { readJson, writeJson, exists, copyFile } from '../utils/files.js';
 import { ConfigManager } from '../core/ConfigManager.js';
-import { getModelLimit } from '../utils/provider-discovery.js';
+import { getModelMetadata } from '../utils/provider-discovery.js';
 import {
   getTemplatePath,
   getVariablesPath,
@@ -561,7 +561,7 @@ export async function handleProxyRegister(req, res, options = {}) {
         }
 
         const limits = [];
-        let modalities = null;
+        let baseModelMetadata = null;
         const modelName = virtualModel;
 
         for (const upstream of route.upstreams) {
@@ -579,10 +579,10 @@ export async function handleProxyRegister(req, res, options = {}) {
           const providerConfigEntry = opencodeConfig.provider?.[providerName];
           if (!providerConfigEntry) {
             try {
-              const apiLimit = await getModelLimit(providerName, originalModelName);
-              if (apiLimit) limit = apiLimit;
+              modelMetadata = await getModelMetadata(providerName, originalModelName);
+              if (modelMetadata) limit = modelMetadata.limit || null;
             } catch (error) {
-              logger.debug(`Failed to get limit from models.dev for ${providerName}/${originalModelName}: ${error.message}`);
+              logger.debug(`Failed to get model metadata from models.dev for ${providerName}/${originalModelName}: ${error.message}`);
             }
           } else {
             const originalModel = providerConfigEntry.models?.[originalModelName];
@@ -590,16 +590,16 @@ export async function handleProxyRegister(req, res, options = {}) {
               logger.warn(`Model "${originalModelName}" not found in provider "${providerName}" for route "${virtualModel}".`);
               continue;
             }
-            modelMetadata = originalModel;
+            modelMetadata = JSON.parse(JSON.stringify(originalModel));
             limit = originalModel.limit || null;
+          }
+
+          if (!baseModelMetadata && modelMetadata) {
+            baseModelMetadata = JSON.parse(JSON.stringify(modelMetadata));
           }
 
           if (!limit) limit = { context: Infinity, output: Infinity };
           limits.push({ context: limit.context ?? Infinity, output: limit.output ?? Infinity });
-
-          if (!modalities && modelMetadata) {
-            modalities = modelMetadata.modalities || null;
-          }
         }
 
         if (limits.length === 0) {
@@ -612,7 +612,12 @@ export async function handleProxyRegister(req, res, options = {}) {
           ? limits[0]
           : { context: Math.min(...limits.map((l) => l.context)), output: Math.min(...limits.map((l) => l.output)) };
 
-        const modelConfig = { name: `${modelName} (Proxy)` };
+        const modelConfig = {
+          ...(baseModelMetadata ? JSON.parse(JSON.stringify(baseModelMetadata)) : {}),
+          name: `${modelName} (Proxy)`,
+        };
+
+        delete modelConfig.limit;
 
         if (minLimit.context !== Infinity || minLimit.output !== Infinity) {
           const limitConfig = {};
@@ -620,9 +625,6 @@ export async function handleProxyRegister(req, res, options = {}) {
           if (minLimit.output !== Infinity) limitConfig.output = minLimit.output;
           if (Object.keys(limitConfig).length > 0) modelConfig.limit = limitConfig;
         }
-
-        if (modalities) modelConfig.modalities = modalities;
-
         providerCfg.models[virtualModel] = modelConfig;
         modelList.push(virtualModel);
       }

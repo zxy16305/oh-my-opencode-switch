@@ -151,6 +151,30 @@ export async function getModelLimit(providerName, modelName) {
   return await query();
 }
 
+export async function getModelMetadata(providerName, modelName) {
+  if (!providerName || typeof providerName !== 'string') {
+    return null;
+  }
+
+  if (!modelName || typeof modelName !== 'string') {
+    return null;
+  }
+
+  const data = await loadModelsDev();
+  if (!data) {
+    logger.debug(`No models.dev data available for ${providerName}/${modelName}`);
+    return null;
+  }
+
+  const modelMetadata = data[providerName]?.models?.[modelName];
+  if (!modelMetadata) {
+    logger.debug(`Model metadata not found for ${providerName}/${modelName}`);
+    return null;
+  }
+
+  return JSON.parse(JSON.stringify(modelMetadata));
+}
+
 export function clearDiscoveryCache() {
   memoryCache = null;
   try {
@@ -175,6 +199,7 @@ export function getDiscoveryCacheStats() {
 
 export default {
   discoverProviderBaseURL,
+  getModelMetadata,
   getModelLimit,
   clearDiscoveryCache,
   getDiscoveryCacheStats,

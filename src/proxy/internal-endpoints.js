@@ -37,6 +37,57 @@ const DEFAULT_PROXY_PORT = 3000;
 const PROVIDER_ID = 'opencode-proxy';
 const PROVIDER_ID_RESPONSES = 'opencode-proxy-responses';
 const PLACEHOLDER_API_KEY = 'oos-proxy-placeholder-key';
+const MODEL_METADATA_WHITELIST = ['options', 'variants', 'cost', 'limit', 'modalities', 'reasoning'];
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneDeep(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function mergeMissingModelMetadata(baseMetadata, incomingMetadata) {
+  if (!incomingMetadata) {
+    return baseMetadata;
+  }
+
+  if (!baseMetadata) {
+    return cloneDeep(incomingMetadata);
+  }
+
+  for (const [key, value] of Object.entries(incomingMetadata)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    if (baseMetadata[key] === undefined) {
+      baseMetadata[key] = cloneDeep(value);
+      continue;
+    }
+
+    if (isPlainObject(baseMetadata[key]) && isPlainObject(value)) {
+      mergeMissingModelMetadata(baseMetadata[key], value);
+    }
+  }
+
+  return baseMetadata;
+}
+
+function pickAllowedModelMetadata(metadata) {
+  if (!metadata) {
+    return null;
+  }
+
+  const picked = {};
+  for (const key of MODEL_METADATA_WHITELIST) {
+    if (metadata[key] !== undefined) {
+      picked[key] = cloneDeep(metadata[key]);
+    }
+  }
+
+  return picked;
+}
 
 /**
  * Setup SSE log callback to push logs to all SSE clients
@@ -590,13 +641,14 @@ export async function handleProxyRegister(req, res, options = {}) {
               logger.warn(`Model "${originalModelName}" not found in provider "${providerName}" for route "${virtualModel}".`);
               continue;
             }
-            modelMetadata = JSON.parse(JSON.stringify(originalModel));
+            modelMetadata = cloneDeep(originalModel);
             limit = originalModel.limit || null;
           }
 
-          if (!baseModelMetadata && modelMetadata) {
-            baseModelMetadata = JSON.parse(JSON.stringify(modelMetadata));
-          }
+          baseModelMetadata = mergeMissingModelMetadata(
+            baseModelMetadata,
+            pickAllowedModelMetadata(modelMetadata)
+          );
 
           if (!limit) limit = { context: Infinity, output: Infinity };
           limits.push({ context: limit.context ?? Infinity, output: limit.output ?? Infinity });
@@ -613,7 +665,7 @@ export async function handleProxyRegister(req, res, options = {}) {
           : { context: Math.min(...limits.map((l) => l.context)), output: Math.min(...limits.map((l) => l.output)) };
 
         const modelConfig = {
-          ...(baseModelMetadata ? JSON.parse(JSON.stringify(baseModelMetadata)) : {}),
+          ...(baseModelMetadata ? cloneDeep(baseModelMetadata) : {}),
           name: `${modelName} (Proxy)`,
         };
 

@@ -28,6 +28,7 @@ const MODELS_DEV_DATA = {
         limit: { context: 32768, output: 4096 },
         modalities: ['text'],
         options: { temperature: 0.2, maxRetries: 3 },
+        cost: { input: 0.8, output: 6.4 },
         toolUse: true,
         cache: { read: true, write: true },
         reasoning: { effort: 'medium' },
@@ -39,6 +40,14 @@ const MODELS_DEV_DATA = {
     models: {
       'qwen-max': {
         limit: { context: 32768, output: 8192 },
+      },
+    },
+  },
+  mixed: {
+    api: 'https://mixed.example.com/v1',
+    models: {
+      'base-only': {
+        limit: { context: 65536, output: 4096 },
       },
     },
   },
@@ -126,9 +135,10 @@ describe('Proxy Register - registerAction', () => {
     assert.strictEqual(modelConfig.name, 'lb-doubao (Proxy)');
     assert.deepEqual(modelConfig.modalities, ['text']);
     assert.deepEqual(modelConfig.options, { temperature: 0.2, maxRetries: 3 });
-    assert.strictEqual(modelConfig.toolUse, true);
-    assert.deepEqual(modelConfig.cache, { read: true, write: true });
+    assert.deepEqual(modelConfig.cost, { input: 0.8, output: 6.4 });
     assert.deepEqual(modelConfig.reasoning, { effort: 'medium' });
+    assert.strictEqual(modelConfig.toolUse, undefined);
+    assert.strictEqual(modelConfig.cache, undefined);
   });
 
   test('2. Custom provider limit takes precedence over models.dev limit', async () => {
@@ -240,14 +250,19 @@ describe('Proxy Register - registerAction', () => {
           name: 'Vision Provider',
           options: { baseURL: 'https://api.vision.com/v1' },
           models: {
-            'vision-model': {
-              name: 'Vision Model Display Name',
-              modalities: ['text', 'image'],
-              limit: { context: 16384, output: 4096 },
-              options: { temperature: 0.6, topP: 0.9 },
-              toolUse: { parallel: true },
-              cache: { read: true },
-              reasoning: { effort: 'high' },
+              'vision-model': {
+                name: 'Vision Model Display Name',
+                modalities: ['text', 'image'],
+                limit: { context: 16384, output: 4096 },
+                cost: { input: 1.2, output: 4.8 },
+                options: { temperature: 0.6, topP: 0.9 },
+                variants: {
+                  fast: { model: 'vision-model-fast' },
+                 quality: { model: 'vision-model-quality' },
+               },
+               toolUse: { parallel: true },
+               cache: { read: true },
+               reasoning: { effort: 'high' },
             },
           },
         },
@@ -277,13 +292,75 @@ describe('Proxy Register - registerAction', () => {
     const modelConfig = proxyProvider.models['lb-vision'];
     assert.strictEqual(modelConfig.name, 'lb-vision (Proxy)');
     assert.deepEqual(modelConfig.modalities, ['text', 'image']);
+    assert.deepEqual(modelConfig.cost, { input: 1.2, output: 4.8 });
     assert.deepEqual(modelConfig.options, { temperature: 0.6, topP: 0.9 });
-    assert.deepEqual(modelConfig.toolUse, { parallel: true });
-    assert.deepEqual(modelConfig.cache, { read: true });
+    assert.deepEqual(modelConfig.variants, {
+      fast: { model: 'vision-model-fast' },
+      quality: { model: 'vision-model-quality' },
+    });
     assert.deepEqual(modelConfig.reasoning, { effort: 'high' });
+    assert.strictEqual(modelConfig.toolUse, undefined);
+    assert.strictEqual(modelConfig.cache, undefined);
   });
 
-  test('5. Responses routes register separate provider name and /v1 baseURL', async () => {
+  test('5. Missing options and variants are filled from later upstream metadata', async () => {
+    const opencodePath = getOpencodeConfigPath();
+    await ensureDir(dirname(opencodePath));
+
+    const opencodeConfig = {
+      provider: {
+        richprovider: {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Rich Provider',
+          options: { baseURL: 'https://rich.example.com/v1' },
+          models: {
+            'rich-model': {
+              name: 'Rich Model',
+              limit: { context: 16384, output: 2048 },
+              cost: { input: 2.4, output: 9.6 },
+              options: { temperature: 0.7, topP: 0.8 },
+              variants: {
+                balanced: { model: 'rich-model-balanced' },
+              },
+            },
+          },
+        },
+      },
+    };
+    await writeJson(opencodePath, opencodeConfig);
+
+    const proxyConfig = {
+      port: 3004,
+      routes: {
+        'lb-mixed-metadata': {
+          strategy: 'sticky',
+          upstreams: [
+            { provider: 'mixed', model: 'base-only' },
+            { provider: 'richprovider', model: 'rich-model' },
+          ],
+        },
+      },
+    };
+
+    ProxyConfigManager.prototype.readConfig = async function () {
+      return proxyConfig;
+    };
+
+    await registerAction({ opencodePath });
+
+    const result = await readJson(opencodePath);
+    const modelConfig = result.provider['opencode-proxy'].models['lb-mixed-metadata'];
+
+    assert.deepEqual(modelConfig.options, { temperature: 0.7, topP: 0.8 });
+    assert.deepEqual(modelConfig.variants, {
+      balanced: { model: 'rich-model-balanced' },
+    });
+    assert.deepEqual(modelConfig.cost, { input: 2.4, output: 9.6 });
+    assert.deepEqual(modelConfig.limit, { context: 16384, output: 2048 });
+    assert.strictEqual(modelConfig.name, 'lb-mixed-metadata (Proxy)');
+  });
+
+  test('6. Responses routes register separate provider name and /v1 baseURL', async () => {
     const opencodePath = getOpencodeConfigPath();
     await ensureDir(dirname(opencodePath));
 

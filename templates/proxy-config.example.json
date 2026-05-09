@@ -20,6 +20,11 @@
       ]
     },
     "lb-mixed": {
+      "thinking": {
+        "type": "enabled",
+        "budgetTokens": 8192
+      },
+      "reasoningEffort": "high",
       "upstreams": [
         {
           "provider": "ali",

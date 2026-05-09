@@ -84,6 +84,14 @@ export const routeSchema = z.object({
         errorWindowMs: 3600000,
       },
     }),
+  thinking: z
+    .object({
+      type: z.string(),
+      budgetTokens: z.number().int().positive().optional(),
+    })
+    .passthrough()
+    .optional(),
+  reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
   timeSlotWeight: z
     .object({
       enabled: z.boolean().default(true),

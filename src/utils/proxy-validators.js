@@ -34,6 +34,14 @@ export const routeSchema = z.object({
       recoveryAmount: z.number().int().positive().default(1),
     })
     .optional(),
+  thinking: z
+    .object({
+      type: z.string(),
+      budgetTokens: z.number().int().positive().optional(),
+    })
+    .passthrough()
+    .optional(),
+  reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
   timeSlotWeight: z
     .object({
       enabled: z.boolean().default(true),

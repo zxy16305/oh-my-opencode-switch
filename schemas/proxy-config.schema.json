@@ -203,6 +203,23 @@
         "lookbackDays": 7
       }
     },
+    "thinking": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Thinking mode type (e.g., 'enabled', 'disabled')"
+        },
+        "budgetTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Token budget for thinking"
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": true,
+      "description": "Route-level thinking configuration override. When set, overrides upstream metadata thinking as highest priority during register."
+    },
     "route": {
       "type": "object",
       "properties": {
@@ -236,6 +253,14 @@
         },
         "timeSlotWeight": {
           "$ref": "#/definitions/timeSlotWeight"
+        },
+        "thinking": {
+          "$ref": "#/definitions/thinking"
+        },
+        "reasoningEffort": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Route-level reasoning effort override. When set, overrides upstream metadata reasoning.effort as highest priority during register."
         }
       },
       "required": ["upstreams"],

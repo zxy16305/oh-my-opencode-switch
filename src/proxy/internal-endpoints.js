@@ -37,7 +37,7 @@ const DEFAULT_PROXY_PORT = 3000;
 const PROVIDER_ID = 'opencode-proxy';
 const PROVIDER_ID_RESPONSES = 'opencode-proxy-responses';
 const PLACEHOLDER_API_KEY = 'oos-proxy-placeholder-key';
-const MODEL_METADATA_WHITELIST = ['options', 'variants', 'cost', 'limit', 'modalities', 'reasoning'];
+const MODEL_METADATA_WHITELIST = ['options', 'variants', 'cost', 'limit', 'modalities', 'reasoning', 'thinking'];
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -677,6 +677,17 @@ export async function handleProxyRegister(req, res, options = {}) {
           if (minLimit.output !== Infinity) limitConfig.output = minLimit.output;
           if (Object.keys(limitConfig).length > 0) modelConfig.limit = limitConfig;
         }
+
+        // Route-level thinking override — highest priority
+        if (route.thinking) {
+          modelConfig.thinking = cloneDeep(route.thinking);
+        }
+
+        // Route-level reasoningEffort override — highest priority
+        if (route.reasoningEffort) {
+          modelConfig.reasoning = { effort: route.reasoningEffort };
+        }
+
         providerCfg.models[virtualModel] = modelConfig;
         modelList.push(virtualModel);
       }

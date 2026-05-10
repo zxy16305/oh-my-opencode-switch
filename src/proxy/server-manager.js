@@ -1303,6 +1303,8 @@ function serializeRoutes(routes) {
         timeSlotWeights: u.timeSlotWeights,
       })),
     };
+    if (route.thinking) result[key].thinking = route.thinking;
+    if (route.reasoningEffort) result[key].reasoningEffort = route.reasoningEffort;
   }
   return result;
 }

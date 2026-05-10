@@ -71,5 +71,8 @@ function isRouteModified(oldRoute, newRoute) {
     }
   }
 
+  if (JSON.stringify(oldRoute.thinking) !== JSON.stringify(newRoute.thinking)) return true;
+  if (oldRoute.reasoningEffort !== newRoute.reasoningEffort) return true;
+
   return false;
 }

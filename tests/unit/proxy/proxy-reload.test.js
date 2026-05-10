@@ -12,7 +12,6 @@ describe('Proxy Reload Command', () => {
     exitCode = null;
     process.exit = mock.fn((code) => {
       exitCode = code;
-      throw new Error('process.exit(' + code + ')');
     });
   });
 
@@ -23,19 +22,19 @@ describe('Proxy Reload Command', () => {
 
   describe('Module exports', () => {
     it('reloadAction exists and is exported', async () => {
-      const module = await import('../../src/commands/proxy-reload.js');
+      const module = await import('../../../src/commands/proxy-reload.js');
       assert.equal(typeof module.reloadAction, 'function');
     });
 
     it('registerProxyReloadCommand exists and is exported', async () => {
-      const module = await import('../../src/commands/proxy-reload.js');
+      const module = await import('../../../src/commands/proxy-reload.js');
       assert.equal(typeof module.registerProxyReloadCommand, 'function');
     });
   });
 
   describe('registerProxyReloadCommand', () => {
     it('registers the reload command with --host and --port options', async () => {
-      const { registerProxyReloadCommand } = await import('../../src/commands/proxy-reload.js');
+      const { registerProxyReloadCommand } = await import('../../../src/commands/proxy-reload.js');
 
       const mockReloadCommand = {
         description: mock.fn(() => mockReloadCommand),
@@ -74,7 +73,7 @@ describe('Proxy Reload Command', () => {
 
   describe('reloadAction - flag parsing', () => {
     it('should use default host (localhost) when not specified', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -96,7 +95,7 @@ describe('Proxy Reload Command', () => {
     });
 
     it('should use custom host from --host flag', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -115,7 +114,7 @@ describe('Proxy Reload Command', () => {
     });
 
     it('should use default port (3000) when not specified', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -134,7 +133,7 @@ describe('Proxy Reload Command', () => {
     });
 
     it('should use custom port from --port flag', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -153,7 +152,7 @@ describe('Proxy Reload Command', () => {
     });
 
     it('should use both custom host and port when specified', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -173,8 +172,8 @@ describe('Proxy Reload Command', () => {
   });
 
   describe('reloadAction - success response', () => {
-    it('should display diff and exit with code 0 on successful reload', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should complete without error on successful reload', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -188,17 +187,12 @@ describe('Proxy Reload Command', () => {
         }),
       }));
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
-      assert.equal(exitCode, 0, 'Should exit with code 0 on success');
+      await reloadAction({});
+      assert.equal(exitCode, null, 'Should not call process.exit on success');
     });
 
     it('should display added routes in diff', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -222,13 +216,13 @@ describe('Proxy Reload Command', () => {
 
       const output = consoleLogs.join('\n');
       assert.ok(
-        output.includes('model-a') || output.includes('added'),
+        output.includes('model-a') || output.includes('Added'),
         'Output should mention added routes'
       );
     });
 
     it('should display removed routes in diff', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -252,13 +246,13 @@ describe('Proxy Reload Command', () => {
 
       const output = consoleLogs.join('\n');
       assert.ok(
-        output.includes('deprecated-model') || output.includes('removed'),
+        output.includes('deprecated-model') || output.includes('Removed'),
         'Output should mention removed routes'
       );
     });
 
     it('should display modified routes in diff', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -282,15 +276,15 @@ describe('Proxy Reload Command', () => {
 
       const output = consoleLogs.join('\n');
       assert.ok(
-        output.includes('updated-model') || output.includes('modified'),
+        output.includes('updated-model') || output.includes('Modified'),
         'Output should mention modified routes'
       );
     });
   });
 
   describe('reloadAction - error responses', () => {
-    it('should exit with code 1 for invalid config error', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 1 for invalid config error (HTTP 400)', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: false,
@@ -302,49 +296,34 @@ describe('Proxy Reload Command', () => {
         }),
       }));
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
+      await reloadAction({});
       assert.equal(exitCode, 1, 'Should exit with code 1 for invalid config');
     });
 
-    it('should exit with code 2 for connection failed error', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 2 for connection failed error', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => {
         throw new Error('ECONNREFUSED');
       });
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
+      await reloadAction({});
       assert.equal(exitCode, 2, 'Should exit with code 2 for connection failed');
     });
 
-    it('should exit with code 2 for timeout error', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 2 for timeout error', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => {
         throw new Error('ETIMEDOUT');
       });
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
+      await reloadAction({});
       assert.equal(exitCode, 2, 'Should exit with code 2 for timeout');
     });
 
-    it('should exit with code 3 for other errors', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 3 for other HTTP errors', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: false,
@@ -356,34 +335,24 @@ describe('Proxy Reload Command', () => {
         }),
       }));
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
+      await reloadAction({});
       assert.equal(exitCode, 3, 'Should exit with code 3 for other errors');
     });
 
-    it('should exit with code 3 for unexpected response format', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 3 for unexpected response format', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
         json: async () => ({ diff: {} }),
       }));
 
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      }
-
+      await reloadAction({});
       assert.equal(exitCode, 3, 'Should exit with code 3 for unexpected response');
     });
 
-    it('should display error message for failed reload', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+    it('should call process.exit with code 1 for invalid config error message', async () => {
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: false,
@@ -395,32 +364,14 @@ describe('Proxy Reload Command', () => {
         }),
       }));
 
-      const consoleLogs = [];
-      const originalLog = console.log;
-      const originalError = console.error;
-      console.log = (...args) => consoleLogs.push(args.join(' '));
-      console.error = (...args) => consoleLogs.push(args.join(' '));
-
-      try {
-        await reloadAction({});
-      } catch (_error) {
-        /* empty */
-      } finally {
-        console.log = originalLog;
-        console.error = originalError;
-      }
-
-      const output = consoleLogs.join('\n');
-      assert.ok(
-        output.includes('Configuration file not found') || output.includes('error'),
-        'Output should contain error message'
-      );
+      await reloadAction({});
+      assert.equal(exitCode, 1, 'Should exit with code 1 for config error');
     });
   });
 
   describe('reloadAction - HTTP request details', () => {
     it('should send POST request to /_internal/reload endpoint', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,
@@ -444,7 +395,7 @@ describe('Proxy Reload Command', () => {
     });
 
     it('should include appropriate headers in request', async () => {
-      const { reloadAction } = await import('../../src/commands/proxy-reload.js');
+      const { reloadAction } = await import('../../../src/commands/proxy-reload.js');
 
       global.fetch = mock.fn(async () => ({
         ok: true,

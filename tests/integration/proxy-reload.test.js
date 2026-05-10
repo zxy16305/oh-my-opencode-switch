@@ -16,6 +16,7 @@ import { setupTestHome, cleanupTestHome } from '../helpers/test-home.js';
 import { writeJson, ensureDir } from '../../src/utils/files.js';
 import { getProxyConfigPath, getOpencodeConfigPath } from '../../src/utils/proxy-paths.js';
 import { getOosDir } from '../../src/utils/paths.js';
+import { clearDiscoveryCache, getDiscoveryCacheStats } from '../../src/utils/provider-discovery.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,11 @@ let testHome;
 let manager;
 let backendServer;
 let originalProcessExit;
+
+async function seedModelsDevCache(data) {
+  const cacheFile = getDiscoveryCacheStats().cacheFile;
+  await fs.writeFile(cacheFile, JSON.stringify({ ...data, _cachedAt: Date.now() }, null, 2));
+}
 
 async function getAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -68,6 +74,8 @@ beforeEach(async () => {
     throw new Error(`process.exit(${code}) called during test`);
   };
 
+  clearDiscoveryCache();
+
   await ensureDir(getOosDir());
 
   const opencodeConfigPath = getOpencodeConfigPath();
@@ -82,11 +90,23 @@ beforeEach(async () => {
     },
   });
 
+  await seedModelsDevCache({
+    'alibaba-coding-plan-cn': {
+      api: 'https://coding.dashscope.aliyuncs.com/v1',
+      models: {
+        'glm-4.7': {
+          limit: { context: 200000, output: 4096 },
+        },
+      },
+    },
+  });
+
   manager = new ProxyServerManager();
 });
 
 afterEach(async () => {
   process.exit = originalProcessExit;
+  clearDiscoveryCache();
 
   if (manager) {
     await manager.stopAll().catch(() => {});
@@ -101,6 +121,61 @@ afterEach(async () => {
 });
 
 describe('Proxy Reload - End-to-End', () => {
+  it('should start with mixed upstream baseURL sources from opencode.json and models.dev', async () => {
+    const proxyPort = await getAvailablePort();
+
+    const opencodeConfigPath = getOpencodeConfigPath();
+    await writeJson(opencodeConfigPath, {
+      provider: {
+        baidu: {
+          options: {
+            baseURL: 'https://qianfan.baidubce.com/v2/coding',
+            apiKey: 'baidu-key',
+          },
+        },
+        'czp-proxy': {
+          options: {
+            baseURL: 'https://ai.211server.com/v1',
+            apiKey: 'czp-key',
+          },
+        },
+      },
+    });
+
+    await writeJson(getProxyConfigPath(), {
+      port: proxyPort,
+      routes: {
+        'lb-glm47': {
+          strategy: 'sticky',
+          upstreams: [
+            { provider: 'alibaba-coding-plan-cn', model: 'glm-4.7' },
+            { provider: 'baidu', model: 'minimax-m2.5' },
+            { provider: 'czp-proxy', model: 'qwen3.6-plus' },
+          ],
+        },
+      },
+    });
+
+    await manager.start({ port: proxyPort });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const instance = manager.instances.get('default');
+    const upstreams = instance?._currentRoutes?.['lb-glm47']?.upstreams;
+
+    assert.equal(manager.getStatus('default').running, true);
+    assert.equal(upstreams.length, 3);
+    assert.deepEqual(
+      upstreams.map((upstream) => upstream.baseURL),
+      [
+        'https://coding.dashscope.aliyuncs.com/v1',
+        'https://qianfan.baidubce.com/v2/coding',
+        'https://ai.211server.com/v1',
+      ]
+    );
+
+    await manager.stopAll();
+  });
+
   it('should reload config successfully and return diff', async () => {
     const proxyPort = await getAvailablePort();
     const backendPort = await getAvailablePort();

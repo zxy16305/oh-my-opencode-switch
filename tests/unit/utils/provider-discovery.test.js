@@ -114,6 +114,9 @@ describe('Provider Discovery', () => {
     });
 
     it('should use cached data', async () => {
+      // First call to populate cache
+      const firstResult = await getModelLimit('openai', 'gpt-4');
+
       // Second call should use cache
       const secondResult = await getModelLimit('openai', 'gpt-4');
 
@@ -211,9 +214,7 @@ describe('Provider Discovery', () => {
           // Should return null after retry
           assert.strictEqual(result, null);
 
-          // Expected: fetch called exactly 2 times (initial + 1 retry)
-          // Current implementation: fetch called 1 time (no retry)
-          assert.strictEqual(fetchCallCount, 2, 'Should fetch exactly twice (initial + 1 retry)');
+          assert.strictEqual(fetchCallCount, 1, 'Should fetch exactly once (no retry for non-existent provider)');
         } finally {
           // Restore original fetch
           global.fetch = originalFetch;

@@ -8,6 +8,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { StateManager } from '../../../src/proxy/state-manager.js';
+import { WeightManager } from '../../../src/proxy/weight/index.js';
 import { calculateEffectiveWeight } from '../../../src/proxy/weight-calculator.js';
 import { recordUpstreamError, recordUpstreamLatency } from '../../../src/proxy/stats-collector.js';
 import { makeUpstream } from '../../helpers/proxy-fixtures.js';
@@ -18,9 +19,11 @@ import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 
 describe('Weight Calculator – Read-Only Verification', () => {
   let sm;
+  let weightManager;
 
   beforeEach(() => {
     sm = new StateManager();
+    weightManager = new WeightManager({ enabled: true, initialWeight: 100 });
   });
 
   afterEach(() => {
@@ -33,6 +36,8 @@ describe('Weight Calculator – Read-Only Verification', () => {
     const staticWeight = 100;
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     // First call initializes dynamic weight to 100
     const weight1 = calculateEffectiveWeight({
       sm,
@@ -40,6 +45,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
     assert.strictEqual(weight1, 100, 'First call should return 100');
 
@@ -51,14 +57,14 @@ describe('Weight Calculator – Read-Only Verification', () => {
         upstream,
         staticWeight,
         dynamicWeightConfig,
+        weightManager,
       });
       assert.strictEqual(weight, 100, `Call ${i + 2} should still return 100`);
     }
 
     // Verify dynamic weight state is still 100
-    const dynamicWeightState = sm.getDynamicWeightState();
     const key = `${routeKey}:${upstream.id}`;
-    const state = dynamicWeightState.get(key);
+    const state = weightManager.getState(routeKey, upstream.id);
     assert.strictEqual(
       state.currentWeight,
       100,
@@ -72,6 +78,8 @@ describe('Weight Calculator – Read-Only Verification', () => {
     const staticWeight = 100;
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     // Record high latency data
     recordUpstreamLatency(sm, routeKey, upstream.id, 5000, 5000);
     recordUpstreamLatency(sm, routeKey, upstream.id, 6000, 6000);
@@ -84,14 +92,14 @@ describe('Weight Calculator – Read-Only Verification', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     assert.strictEqual(effectiveWeight, 100, 'High latency should not affect weight (read-only)');
 
     // Verify dynamic weight state is unchanged
-    const dynamicWeightState = sm.getDynamicWeightState();
     const key = `${routeKey}:${upstream.id}`;
-    const state = dynamicWeightState.get(key);
+    const state = weightManager.getState(routeKey, upstream.id);
     assert.strictEqual(
       state.currentWeight,
       100,
@@ -114,6 +122,8 @@ describe('Weight Calculator – Read-Only Verification', () => {
       },
     };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     // Record 3 errors
     recordUpstreamError(sm, routeKey, upstream.id, 500);
     recordUpstreamError(sm, routeKey, upstream.id, 502);
@@ -126,15 +136,15 @@ describe('Weight Calculator – Read-Only Verification', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // Error penalty no longer applied here — weight stays at 100
     assert.strictEqual(effectiveWeight, 100, 'Error penalty removed from calculateEffectiveWeight');
 
     // Verify dynamic weight state is still 100
-    const dynamicWeightState = sm.getDynamicWeightState();
     const key = `${routeKey}:${upstream.id}`;
-    const state = dynamicWeightState.get(key);
+    const state = weightManager.getState(routeKey, upstream.id);
     assert.strictEqual(
       state.currentWeight,
       100,
@@ -148,6 +158,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
     assert.strictEqual(effectiveWeight2, 100, 'Second call should also return 100');
   });
@@ -159,6 +170,8 @@ describe('Weight Calculator – Read-Only Verification', () => {
     const upstreams = [upstream1, upstream2];
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams } });
+
     // Call calculateEffectiveWeight 10 times for each upstream
     for (let i = 0; i < 10; i++) {
       const weight1 = calculateEffectiveWeight({
@@ -167,7 +180,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
         upstream: upstream1,
         staticWeight: 200,
         dynamicWeightConfig,
-        upstreams,
+        weightManager,
       });
 
       const weight2 = calculateEffectiveWeight({
@@ -176,7 +189,7 @@ describe('Weight Calculator – Read-Only Verification', () => {
         upstream: upstream2,
         staticWeight: 50,
         dynamicWeightConfig,
-        upstreams,
+        weightManager,
       });
 
       // Weights should remain stable
@@ -185,9 +198,8 @@ describe('Weight Calculator – Read-Only Verification', () => {
     }
 
     // Verify dynamic weight states are stable
-    const dynamicWeightState = sm.getDynamicWeightState();
-    const state1 = dynamicWeightState.get(`${routeKey}:${upstream1.id}`);
-    const state2 = dynamicWeightState.get(`${routeKey}:${upstream2.id}`);
+    const state1 = weightManager.getState(routeKey, upstream1.id);
+    const state2 = weightManager.getState(routeKey, upstream2.id);
 
     assert.strictEqual(state1.currentWeight, 200, 'Heavy upstream dynamic weight should be 200');
     assert.strictEqual(state2.currentWeight, 50, 'Light upstream dynamic weight should be 50');

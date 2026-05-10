@@ -7,6 +7,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { StateManager } from '../../../src/proxy/state-manager.js';
+import { WeightManager } from '../../../src/proxy/weight/index.js';
 import { calculateEffectiveWeight } from '../../../src/proxy/weight-calculator.js';
 import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 
@@ -16,9 +17,11 @@ import { makeUpstream } from '../../helpers/proxy-fixtures.js';
 
 describe('Weight Calculator – Weight Initialization', () => {
   let sm;
+  let weightManager;
 
   beforeEach(() => {
     sm = new StateManager();
+    weightManager = new WeightManager({ enabled: true, initialWeight: 100 });
   });
 
   afterEach(() => {
@@ -31,12 +34,15 @@ describe('Weight Calculator – Weight Initialization', () => {
     const staticWeight = 200;
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // The effective weight should be 200, not 100
@@ -53,12 +59,15 @@ describe('Weight Calculator – Weight Initialization', () => {
     const staticWeight = 50;
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // The effective weight should be 50, not 100
@@ -76,12 +85,15 @@ describe('Weight Calculator – Weight Initialization', () => {
     const staticWeight = 100; // default weight
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     const effectiveWeight = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // The effective weight should be 100 (default)
@@ -104,6 +116,7 @@ describe('Weight Calculator – Weight Initialization', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // When dynamic weight is disabled, use static weight directly
@@ -125,6 +138,7 @@ describe('Weight Calculator – Weight Initialization', () => {
       upstream,
       staticWeight,
       dynamicWeightConfig: null,
+      weightManager,
     });
 
     // When no dynamic weight config, use static weight directly
@@ -143,13 +157,14 @@ describe('Weight Calculator – Weight Initialization', () => {
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
     // Calculate effective weight for heavy upstream
+    weightManager.initRoutes({ [routeKey]: { upstreams } });
     const effectiveWeight1 = calculateEffectiveWeight({
       sm,
       routeKey,
       upstream: upstream1,
       staticWeight: 200,
       dynamicWeightConfig,
-      upstreams,
+      weightManager,
     });
 
     // Calculate effective weight for light upstream
@@ -159,7 +174,7 @@ describe('Weight Calculator – Weight Initialization', () => {
       upstream: upstream2,
       staticWeight: 50,
       dynamicWeightConfig,
-      upstreams,
+      weightManager,
     });
 
     // Each upstream should have its own configured weight as initial value
@@ -173,18 +188,20 @@ describe('Weight Calculator – Weight Initialization', () => {
     const staticWeight = 200;
     const dynamicWeightConfig = { enabled: true, initialWeight: 100 };
 
+    weightManager.initRoutes({ [routeKey]: { upstreams: [upstream] } });
+
     calculateEffectiveWeight({
       sm,
       routeKey,
       upstream,
       staticWeight,
       dynamicWeightConfig,
+      weightManager,
     });
 
     // Check that the dynamic weight state was initialized with 200
-    const dynamicWeightState = sm.getDynamicWeightState();
     const key = `${routeKey}:${upstream.id}`;
-    const state = dynamicWeightState.get(key);
+    const state = weightManager.getState(routeKey, upstream.id);
 
     assert.ok(state, 'Dynamic weight state should be created');
     assert.strictEqual(state.currentWeight, 200, 'Initial dynamic weight should be 200');

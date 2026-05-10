@@ -7,24 +7,17 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { StateManager } from '../../../src/proxy/state-manager.js';
-import {
-  calculateEffectiveWeight,
-  getConfiguredWeight,
-} from '../../../src/proxy/weight-calculator.js';
+import { calculateEffectiveWeight } from '../../../src/proxy/weight-calculator.js';
+import { WeightManager } from '../../../src/proxy/weight/index.js';
 import { makeUpstream } from '../../helpers/proxy-fixtures.js';
-
-// Helper to determine expected slot type from hour
-function getExpectedSlotType(hour) {
-  if (hour >= 21 || hour <= 7) return 'low';
-  if ((hour >= 10 && hour <= 11) || (hour >= 13 && hour <= 17)) return 'high';
-  return 'medium';
-}
 
 describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () => {
   let sm;
+  let weightManager;
 
   beforeEach(() => {
     sm = new StateManager();
+    weightManager = new WeightManager();
   });
 
   afterEach(() => {
@@ -43,7 +36,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 200,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -51,31 +46,24 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      // Weight will depend on current hour and slot type
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-      const expectedWeight = upstream.timeSlotWeights[slotType];
-
-      assert.strictEqual(
-        effectiveWeight,
-        expectedWeight,
-        `At hour ${currentHour} (${slotType}), weight should be ${expectedWeight}`
-      );
+      assert.strictEqual(effectiveWeight, 50, 'High slot weight should be returned');
     });
 
     test('slot weight REPLACES upstream.weight (not multiplier)', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-2',
-        weight: 100, // base weight
+        weight: 100,
         timeSlotWeights: {
-          high: 50, // slot weight is different from base weight
+          high: 50,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -83,24 +71,14 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      // Current hour determines slot type
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        // Slot weight REPLACES base weight
-        assert.strictEqual(
-          effectiveWeight,
-          50,
-          'Slot weight should REPLACE base weight (100 → 50), not multiply'
-        );
-      } else {
-        // Slot not in config → use base weight
-        assert.strictEqual(effectiveWeight, 100, 'Slot not in partial config → use base weight');
-      }
+      assert.strictEqual(
+        effectiveWeight,
+        50,
+        'Slot weight should REPLACE base weight (100 → 50), not multiply'
+      );
     });
   });
 
@@ -111,7 +89,8 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         id: 'upstream-no-timeslot',
         weight: 150,
       });
-      const staticWeight = 150;
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -119,7 +98,7 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
       assert.strictEqual(
@@ -136,7 +115,8 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         weight: 120,
         timeSlotWeights: undefined,
       });
-      const staticWeight = 120;
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -144,7 +124,7 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
       assert.strictEqual(
@@ -161,7 +141,8 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         weight: 80,
         timeSlotWeights: null,
       });
-      const staticWeight = 80;
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -169,7 +150,7 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
       assert.strictEqual(
@@ -187,10 +168,11 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         id: 'upstream-partial-high',
         weight: 100,
         timeSlotWeights: {
-          high: 30, // only high configured
+          high: 30,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+      weightManager.lastTimeSlot = 'medium';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -198,21 +180,14 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        assert.strictEqual(effectiveWeight, 30, 'High slot configured → use 30');
-      } else {
-        assert.strictEqual(
-          effectiveWeight,
-          100,
-          'Medium/low slot not in partial config → use base weight 100'
-        );
-      }
+      assert.strictEqual(
+        effectiveWeight,
+        100,
+        'Medium slot not in partial config → use base weight 100'
+      );
     });
 
     test('only medium slot configured, current is low → use base weight', () => {
@@ -221,10 +196,11 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         id: 'upstream-partial-medium',
         weight: 100,
         timeSlotWeights: {
-          medium: 80, // only medium configured
+          medium: 80,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+      weightManager.lastTimeSlot = 'low';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -232,21 +208,14 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'medium') {
-        assert.strictEqual(effectiveWeight, 80, 'Medium slot configured → use 80');
-      } else {
-        assert.strictEqual(
-          effectiveWeight,
-          100,
-          'High/low slot not in partial config → use base weight 100'
-        );
-      }
+      assert.strictEqual(
+        effectiveWeight,
+        100,
+        'Low slot not in partial config → use base weight 100'
+      );
     });
 
     test('slot weight undefined uses base weight', () => {
@@ -256,35 +225,50 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         weight: 100,
         timeSlotWeights: {
           high: 50,
-          medium: undefined, // explicitly undefined
+          medium: undefined,
           low: 150,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
 
-      const effectiveWeight = calculateEffectiveWeight({
+      weightManager.lastTimeSlot = 'medium';
+      const staticWeightUndefined = weightManager.getConfiguredWeight(upstream);
+      const effectiveUndefined = calculateEffectiveWeight({
         sm,
         routeKey,
         upstream,
-        staticWeight,
+        staticWeight: staticWeightUndefined,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
+      assert.strictEqual(
+        effectiveUndefined,
+        100,
+        'Medium slot undefined in config → use base weight'
+      );
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
+      weightManager.lastTimeSlot = 'high';
+      const staticWeightHigh = weightManager.getConfiguredWeight(upstream);
+      const effectiveHigh = calculateEffectiveWeight({
+        sm,
+        routeKey,
+        upstream,
+        staticWeight: staticWeightHigh,
+        dynamicWeightConfig: null,
+        weightManager,
+      });
+      assert.strictEqual(effectiveHigh, 50, 'High slot defined → use 50');
 
-      if (slotType === 'medium') {
-        assert.strictEqual(
-          effectiveWeight,
-          100,
-          'Medium slot undefined in config → use base weight'
-        );
-      } else if (slotType === 'high') {
-        assert.strictEqual(effectiveWeight, 50, 'High slot defined → use 50');
-      } else {
-        assert.strictEqual(effectiveWeight, 150, 'Low slot defined → use 150');
-      }
+      weightManager.lastTimeSlot = 'low';
+      const staticWeightLow = weightManager.getConfiguredWeight(upstream);
+      const effectiveLow = calculateEffectiveWeight({
+        sm,
+        routeKey,
+        upstream,
+        staticWeight: staticWeightLow,
+        dynamicWeightConfig: null,
+        weightManager,
+      });
+      assert.strictEqual(effectiveLow, 150, 'Low slot defined → use 150');
     });
   });
 
@@ -299,21 +283,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           high: 50,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
 
-      // OLD system: error-rate dynamic multiplier
-      // We need to seed some data to make the OLD system produce a multiplier
-      // But for simplicity, we'll just test that both systems can coexist
-
-      // Mock OLD system config (disabled to simplify)
-      const timeSlotWeightConfig = {
-        enabled: false,
-        totalErrorThreshold: 0.01,
-        dangerSlotThreshold: 0.05,
-        dangerMultiplier: 0.5,
-        normalMultiplier: 2.0,
-        lookbackDays: 7,
-      };
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -321,20 +293,10 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        // NEW static weight REPLACES base weight → 50
-        // OLD system disabled → no multiplier
-        assert.strictEqual(effectiveWeight, 50, 'NEW static weight applies, OLD disabled');
-      } else {
-        // Slot not in config → use base weight
-        assert.strictEqual(effectiveWeight, 100, 'Slot not in NEW config, OLD disabled');
-      }
+      assert.strictEqual(effectiveWeight, 50, 'NEW static weight applies, OLD disabled');
     });
 
     test('OLD error-rate system logic unchanged', () => {
@@ -343,19 +305,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         id: 'upstream-old-system',
         weight: 100,
         provider: 'test-provider',
-        // No NEW timeSlotWeights
       });
-      const staticWeight = 100;
-
-      // OLD system: disabled
-      const timeSlotWeightConfig = {
-        enabled: false,
-        totalErrorThreshold: 0.01,
-        dangerSlotThreshold: 0.05,
-        dangerMultiplier: 0.5,
-        normalMultiplier: 2.0,
-        lookbackDays: 7,
-      };
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -363,25 +315,26 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig,
+        weightManager,
       });
 
-      // No NEW system, OLD disabled → base weight
       assert.strictEqual(effectiveWeight, 100, 'No NEW config, OLD disabled → base weight');
     });
   });
 
   describe('Edge cases', () => {
-    test('effective weight minimum is 1', () => {
+    test('effective weight minimum is 0', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-min-weight',
         weight: 100,
         timeSlotWeights: {
-          high: 0, // slot weight is 0
+          high: 0,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -389,30 +342,24 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        // Slot weight 0 → but Math.max(1, effectiveWeight) ensures minimum 1
-        assert.strictEqual(effectiveWeight, 1, 'Weight should be clamped to minimum 1');
-      } else {
-        assert.strictEqual(effectiveWeight, 100, 'Slot not in config → base weight');
-      }
+      assert.strictEqual(effectiveWeight, 0, 'Weight should be clamped to minimum 0');
     });
 
-    test('slot weight negative → still clamped to 1', () => {
+    test('slot weight negative → still clamped to 0', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-negative-weight',
         weight: 100,
         timeSlotWeights: {
-          high: -50, // negative slot weight
+          high: -50,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -420,30 +367,23 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        // Negative slot weight → Math.max(1, effectiveWeight) clamps to 1
-        assert.strictEqual(effectiveWeight, 1, 'Negative weight should be clamped to minimum 1');
-      } else {
-        assert.strictEqual(effectiveWeight, 100, 'Slot not in config → base weight');
-      }
+      assert.strictEqual(effectiveWeight, 0, 'Negative weight should be clamped to minimum 0');
     });
 
     test('upstream without weight field defaults to 100', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-no-weight',
-        // No weight field (makeUpstream defaults to 100)
         timeSlotWeights: {
           high: 30,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -451,17 +391,10 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'high') {
-        assert.strictEqual(effectiveWeight, 30, 'High slot configured → use 30');
-      } else {
-        assert.strictEqual(effectiveWeight, 100, 'Slot not in config → use default 100');
-      }
+      assert.strictEqual(effectiveWeight, 30, 'High slot configured → use 30');
     });
   });
 
@@ -477,17 +410,17 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 200,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
 
-      // Seed dynamic weight state with currentWeight=200 (matching the low slot weight)
+      weightManager.lastTimeSlot = 'low';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
+
       const key = `${routeKey}:${upstream.id}`;
-      sm.dynamicWeightState.set(key, {
+      weightManager.state.set(key, {
         currentWeight: 200,
-        lastStaticWeight: 200,
-        lastAdjustment: Date.now(),
-        requestCount: 0,
-        consecutiveSuccessCount: 0,
-        currentWeightLevel: 'normal',
+        configuredWeight: 200,
+        level: 'normal',
+        routeKey,
+        upstreamId: upstream.id,
       });
 
       const dynamicWeightConfig = { enabled: true, minWeight: 10 };
@@ -498,26 +431,14 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'low') {
-        // Dynamic weight returns 200 directly (not truncated to 100)
-        assert.strictEqual(
-          effectiveWeight,
-          200,
-          'Dynamic weight should return 200 without truncation when slot is low'
-        );
-      } else if (slotType === 'high') {
-        // configuredWeight = 50 (high slot), dynamic initialized at 50 or uses existing 200
-        // Since lastStaticWeight=200 > configuredWeight=50, it keeps currentWeight
-        assert.ok(effectiveWeight >= 1, 'Weight should be at least 1');
-      } else {
-        assert.ok(effectiveWeight >= 1, 'Weight should be at least 1');
-      }
+      assert.strictEqual(
+        effectiveWeight,
+        200,
+        'Dynamic weight should return 200 without truncation when slot is low'
+      );
     });
 
     test('timeSlotWeights.low=200 + dynamicWeight reduced to 100 → effectiveWeight=100', () => {
@@ -531,17 +452,17 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 200,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
 
-      // Seed dynamic weight state: was 200 (low slot), reduced to 100 by error/latency
+      weightManager.lastTimeSlot = 'low';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
+
       const key = `${routeKey}:${upstream.id}`;
-      sm.dynamicWeightState.set(key, {
+      weightManager.state.set(key, {
         currentWeight: 100,
-        lastStaticWeight: 200,
-        lastAdjustment: Date.now(),
-        requestCount: 0,
-        consecutiveSuccessCount: 0,
-        currentWeightLevel: 'half',
+        configuredWeight: 200,
+        level: 'half',
+        routeKey,
+        upstreamId: upstream.id,
       });
 
       const dynamicWeightConfig = { enabled: true, minWeight: 10 };
@@ -552,27 +473,14 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      if (slotType === 'low') {
-        // configuredWeight=200, lastStaticWeight=200, currentWeight=100
-        // configuredWeight(200) >= lastStaticWeight(200) → no bump, returns currentWeight=100
-        assert.strictEqual(
-          effectiveWeight,
-          100,
-          'Dynamic weight reduced to 100 should be returned as effective weight'
-        );
-      } else if (slotType === 'high') {
-        // configuredWeight=50, lastStaticWeight=200, configuredWeight < lastStaticWeight → keep
-        assert.strictEqual(effectiveWeight, 100, 'Current weight 100 returned');
-      } else {
-        // configuredWeight=100, lastStaticWeight=200, configuredWeight < lastStaticWeight → keep
-        assert.strictEqual(effectiveWeight, 100, 'Current weight 100 returned');
-      }
+      assert.strictEqual(
+        effectiveWeight,
+        100,
+        'Dynamic weight reduced to 100 should be returned as effective weight'
+      );
     });
 
     test('no timeSlotWeights + dynamicWeight adjusts weight correctly', () => {
@@ -580,19 +488,17 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
       const upstream = makeUpstream({
         id: 'upstream-dynamic-only',
         weight: 100,
-        // No timeSlotWeights
       });
-      const staticWeight = 100;
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
-      // Seed dynamic weight state: weight reduced to 50 due to errors
       const key = `${routeKey}:${upstream.id}`;
-      sm.dynamicWeightState.set(key, {
+      weightManager.state.set(key, {
         currentWeight: 50,
-        lastStaticWeight: 100,
-        lastAdjustment: Date.now(),
-        requestCount: 0,
-        consecutiveSuccessCount: 0,
-        currentWeightLevel: 'half',
+        configuredWeight: 100,
+        level: 'half',
+        routeKey,
+        upstreamId: upstream.id,
       });
 
       const dynamicWeightConfig = { enabled: true, minWeight: 10 };
@@ -603,11 +509,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      // No timeSlotWeights → configuredWeight = upstream.weight = 100
-      // lastStaticWeight=100, configuredWeight=100 → not greater, returns currentWeight=50
       assert.strictEqual(
         effectiveWeight,
         50,
@@ -615,16 +519,15 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
       );
     });
 
-    test('no timeSlotWeights + dynamicWeight at initial weight returns base weight', () => {
+    test('no timeSlotWeights + dynamicWeight at initial weight returns static weight', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-dynamic-initial',
         weight: 150,
-        // No timeSlotWeights
       });
-      const staticWeight = 150;
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
-      // No pre-seeded dynamic weight state → getDynamicWeight initializes with configuredWeight
       const dynamicWeightConfig = { enabled: true, minWeight: 10 };
 
       const effectiveWeight = calculateEffectiveWeight({
@@ -633,15 +536,13 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      // No timeSlotWeights → configuredWeight = upstream.weight = 150
-      // No existing state → initializes with 150, returns 150
       assert.strictEqual(
         effectiveWeight,
         150,
-        'Dynamic weight should initialize to configuredWeight (150) when no prior state'
+        'Without prior state, effective weight equals static weight'
       );
     });
 
@@ -656,29 +557,27 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 200,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'low';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
         routeKey,
         upstream,
         staticWeight,
-        dynamicWeightConfig: null, // dynamic disabled
-        timeSlotWeightConfig: null,
+        dynamicWeightConfig: null,
+        weightManager,
       });
-
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-      const expectedWeight = upstream.timeSlotWeights[slotType];
 
       assert.strictEqual(
         effectiveWeight,
-        expectedWeight,
-        `At hour ${currentHour} (${slotType}), weight should be ${expectedWeight} from timeSlotWeights only`
+        200,
+        'At low slot, weight should be 200 from timeSlotWeights only'
       );
     });
 
-    test('dynamicWeight uses slot weight as configuredWeight, not upstream.weight', () => {
+    test('dynamicWeight uses slot weight as configuredWeight via weightManager.getWeight', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-configured-weight',
@@ -689,48 +588,40 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 200,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'medium';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
+
+      const key = `${routeKey}:${upstream.id}`;
+      weightManager.state.set(key, {
+        currentWeight: 80,
+        configuredWeight: 100,
+        level: 'half',
+        routeKey,
+        upstreamId: upstream.id,
+      });
 
       const dynamicWeightConfig = { enabled: true, minWeight: 10 };
 
-      // First call: initializes dynamic weight state
-      const effectiveWeight1 = calculateEffectiveWeight({
+      const effectiveWeight = calculateEffectiveWeight({
         sm,
         routeKey,
         upstream,
         staticWeight,
         dynamicWeightConfig,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      // Verify the dynamic weight was initialized with the slot weight, not upstream.weight
-      const key = `${routeKey}:${upstream.id}`;
-      const weightState = sm.dynamicWeightState.get(key);
-
-      assert.ok(weightState, 'Dynamic weight state should be created');
-
-      const expectedConfiguredWeight = upstream.timeSlotWeights[slotType] ?? upstream.weight;
       assert.strictEqual(
-        weightState.lastStaticWeight,
-        expectedConfiguredWeight,
-        `Dynamic weight should be initialized with slot weight (${expectedConfiguredWeight}), not upstream.weight (100)`
-      );
-
-      assert.strictEqual(
-        effectiveWeight1,
-        expectedConfiguredWeight,
-        `Effective weight should match slot weight on first call`
+        effectiveWeight,
+        80,
+        'Effective weight returns weightManager state currentWeight (80), not staticWeight (100)'
       );
     });
   });
 
   describe('Different time slot types', () => {
-    test('high load hours (10-11, 13-17) get high slot weight', () => {
-      // This test verifies that at current hour, if it's a high load hour,
-      // the high slot weight is used
+    test('high load hours get high slot weight', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-high-test',
@@ -741,7 +632,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 150,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'high';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -749,22 +642,13 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      const expectedWeight = upstream.timeSlotWeights[slotType];
-      assert.strictEqual(
-        effectiveWeight,
-        expectedWeight,
-        `At hour ${currentHour} (${slotType}), weight should be ${expectedWeight}`
-      );
+      assert.strictEqual(effectiveWeight, 30, 'High slot weight should be used');
     });
 
-    test('medium load hours (8-9, 12, 18-20) get medium slot weight', () => {
-      // Same as above, just checking different slot type
+    test('medium load hours get medium slot weight', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-medium-test',
@@ -775,7 +659,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 150,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'medium';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -783,22 +669,13 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      const expectedWeight = upstream.timeSlotWeights[slotType];
-      assert.strictEqual(
-        effectiveWeight,
-        expectedWeight,
-        `At hour ${currentHour} (${slotType}), weight should be ${expectedWeight}`
-      );
+      assert.strictEqual(effectiveWeight, 100, 'Medium slot weight should be used');
     });
 
-    test('low load hours (21-23, 0-7) get low slot weight', () => {
-      // Same as above, just checking different slot type
+    test('low load hours get low slot weight', () => {
       const routeKey = 'test-route';
       const upstream = makeUpstream({
         id: 'upstream-low-test',
@@ -809,7 +686,9 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
           low: 150,
         },
       });
-      const staticWeight = getConfiguredWeight(upstream);
+
+      weightManager.lastTimeSlot = 'low';
+      const staticWeight = weightManager.getConfiguredWeight(upstream);
 
       const effectiveWeight = calculateEffectiveWeight({
         sm,
@@ -817,18 +696,10 @@ describe('Weight Calculator – NEW Time-Slot Static Weight Configuration', () =
         upstream,
         staticWeight,
         dynamicWeightConfig: null,
-        timeSlotWeightConfig: null,
+        weightManager,
       });
 
-      const currentHour = new Date().getHours();
-      const slotType = getExpectedSlotType(currentHour);
-
-      const expectedWeight = upstream.timeSlotWeights[slotType];
-      assert.strictEqual(
-        effectiveWeight,
-        expectedWeight,
-        `At hour ${currentHour} (${slotType}), weight should be ${expectedWeight}`
-      );
+      assert.strictEqual(effectiveWeight, 150, 'Low slot weight should be used');
     });
   });
 });

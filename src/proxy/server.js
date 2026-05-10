@@ -12,6 +12,7 @@ const httpAgent = new http.Agent({
   maxFreeSockets: 20,
   timeout: 60000,
 });
+httpAgent.unref?.();
 
 const httpsAgent = new https.Agent({
   keepAlive: true,
@@ -21,6 +22,7 @@ const httpsAgent = new https.Agent({
   timeout: 60000,
   rejectUnauthorized: true,
 });
+httpsAgent.unref?.();
 
 const DEFAULT_PORT = 3000;
 export const SSE_HEADERS = {
@@ -267,6 +269,19 @@ export async function createServer(config = {}) {
  * @param {http.Server} server
  * @returns {Promise<void>}
  */
+export function shutdownAgents() {
+  if (httpAgent) {
+    httpAgent.destroy();
+  }
+  if (httpsAgent) {
+    httpsAgent.destroy();
+  }
+}
+
+/**
+ * @param {http.Server} server
+ * @returns {Promise<void>}
+ */
 export function shutdownServer(server) {
   return new Promise((resolve, reject) => {
     if (!server || !server.listening) {
@@ -278,7 +293,6 @@ export function shutdownServer(server) {
       if (err) {
         reject(err);
       } else {
-        logger.info('[proxy] server shut down');
         resolve();
       }
     });

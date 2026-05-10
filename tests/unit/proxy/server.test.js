@@ -3,7 +3,7 @@
  * @module tests/proxy/unit/server.test
  */
 
-import { describe, test, afterEach } from 'node:test';
+import { describe, test, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
@@ -14,6 +14,7 @@ import {
   createServer,
   shutdownServer,
 } from '../../../src/proxy/server.js';
+import { resetAllState } from '../../../src/proxy/router.js';
 
 let nextPort = 49830;
 function allocPort() {
@@ -43,6 +44,11 @@ afterEach(async () => {
     const s = cleanup.pop();
     if (s && s.listening) await stopTracked(s).catch(() => {});
   }
+  resetAllState();
+});
+
+after(() => {
+  resetAllState();
 });
 
 function httpGet(port, path, options = {}) {

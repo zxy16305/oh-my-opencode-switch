@@ -11,19 +11,7 @@ import {
   StateManager,
   stateManager,
   createStateManager,
-  getTimeSlotCalculator,
   resetAllState,
-  // State accessors
-  getSessionUpstreamMap,
-  getUpstreamSessionCounts,
-  getRoundRobinCounters,
-  getDynamicWeightState,
-  getRecoveryTimers,
-  getStatsState,
-  getErrorState,
-  getLatencyState,
-  getUpstreamRequestCounts,
-  getUpstreamSlidingWindowCounts,
 } from '../../../src/proxy/state-manager.js';
 
 describe('StateManager - constructor and singleton', () => {
@@ -48,7 +36,7 @@ describe('StateManager - constructor and singleton', () => {
   });
 });
 
-describe('StateManager - timeSlotCalculator singleton', () => {
+describe('StateManager - timeSlotCalculator', () => {
   let manager;
 
   beforeEach(() => {
@@ -59,28 +47,26 @@ describe('StateManager - timeSlotCalculator singleton', () => {
     manager.reset();
   });
 
-  test('getTimeSlotCalculator returns null initially', () => {
-    const calculator = manager.getTimeSlotCalculator();
-    assert.equal(calculator, null);
+  test('timeSlotCalculator is null initially', () => {
+    assert.equal(manager.timeSlotCalculator, null);
   });
 
-  test('setTimeSlotCalculator stores the calculator', () => {
+  test('timeSlotCalculator can be set and retrieved', () => {
     const mockCalculator = { getTimeSlotWeight: () => 1.0 };
-    manager.setTimeSlotCalculator(mockCalculator);
-    const result = manager.getTimeSlotCalculator();
-    assert.strictEqual(result, mockCalculator);
+    manager.timeSlotCalculator = mockCalculator;
+    assert.strictEqual(manager.timeSlotCalculator, mockCalculator);
   });
 
-  test('getTimeSlotCalculator from module returns the same instance', () => {
-    const mockCalculator = { getTimeSlotWeight: () => 1.0 };
-    stateManager.setTimeSlotCalculator(mockCalculator);
-    const result = getTimeSlotCalculator();
-    assert.strictEqual(result, mockCalculator);
-    stateManager.reset();
+  test('reset clears timeSlotCalculator', () => {
+    manager.timeSlotCalculator = { getTimeSlotWeight: () => 1.0 };
+    assert.ok(manager.timeSlotCalculator !== null);
+
+    manager.reset();
+    assert.equal(manager.timeSlotCalculator, null);
   });
 });
 
-describe('StateManager - state variable accessors', () => {
+describe('StateManager - state maps are initialized', () => {
   let manager;
 
   beforeEach(() => {
@@ -91,54 +77,45 @@ describe('StateManager - state variable accessors', () => {
     manager.reset();
   });
 
-  test('getSessionUpstreamMap returns a Map', () => {
-    const map = manager.getSessionUpstreamMap();
-    assert.ok(map instanceof Map);
+  test('sessionMap is a Map', () => {
+    assert.ok(manager.sessionMap instanceof Map);
   });
 
-  test('getUpstreamSessionCounts returns a Map', () => {
-    const map = manager.getUpstreamSessionCounts();
-    assert.ok(map instanceof Map);
+  test('upstreamSessionCounts is a Map', () => {
+    assert.ok(manager.upstreamSessionCounts instanceof Map);
   });
 
-  test('getRoundRobinCounters returns a Map', () => {
-    const map = manager.getRoundRobinCounters();
-    assert.ok(map instanceof Map);
+  test('roundRobinCounters is a Map', () => {
+    assert.ok(manager.roundRobinCounters instanceof Map);
   });
 
-  test('getDynamicWeightState returns a Map', () => {
-    const map = manager.getDynamicWeightState();
-    assert.ok(map instanceof Map);
+  test('dynamicWeightState is not present (handled separately)', () => {
+    // dynamicWeightState is managed by router.js compatibility layer, not StateManager
+    assert.equal(manager.dynamicWeightState, undefined);
   });
 
-  test('getRecoveryTimers returns a Map', () => {
-    const map = manager.getRecoveryTimers();
-    assert.ok(map instanceof Map);
+  test('statsState is a Map', () => {
+    assert.ok(manager.statsState instanceof Map);
   });
 
-  test('getStatsState returns a Map', () => {
-    const map = manager.getStatsState();
-    assert.ok(map instanceof Map);
+  test('errorState is a Map', () => {
+    assert.ok(manager.errorState instanceof Map);
   });
 
-  test('getErrorState returns a Map', () => {
-    const map = manager.getErrorState();
-    assert.ok(map instanceof Map);
+  test('latencyState is a Map', () => {
+    assert.ok(manager.latencyState instanceof Map);
   });
 
-  test('getLatencyState returns a Map', () => {
-    const map = manager.getLatencyState();
-    assert.ok(map instanceof Map);
+  test('upstreamRequestCounts is a Map', () => {
+    assert.ok(manager.upstreamRequestCounts instanceof Map);
   });
 
-  test('getUpstreamRequestCounts returns a Map', () => {
-    const map = manager.getUpstreamRequestCounts();
-    assert.ok(map instanceof Map);
+  test('upstreamSlidingWindowCounts is a Map', () => {
+    assert.ok(manager.upstreamSlidingWindowCounts instanceof Map);
   });
 
-  test('getUpstreamSlidingWindowCounts returns a Map', () => {
-    const map = manager.getUpstreamSlidingWindowCounts();
-    assert.ok(map instanceof Map);
+  test('tokenStatsState is a Map', () => {
+    assert.ok(manager.tokenStatsState instanceof Map);
   });
 });
 
@@ -149,136 +126,114 @@ describe('StateManager - reset() clears all state', () => {
     manager = createStateManager();
   });
 
-  test('reset clears sessionUpstreamMap', () => {
-    const map = manager.getSessionUpstreamMap();
-    map.set('session-1', { upstreamId: 'up-1', routeKey: 'route-1', timestamp: Date.now() });
-    assert.equal(map.size, 1);
+  test('reset clears sessionMap', () => {
+    manager.sessionMap.set('session-1', { upstreamId: 'up-1', routeKey: 'route-1', timestamp: Date.now() });
+    assert.equal(manager.sessionMap.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.sessionMap.size, 0);
   });
 
   test('reset clears upstreamSessionCounts', () => {
-    const map = manager.getUpstreamSessionCounts();
-    map.set('route-1', new Map([['up-1', 5]]));
-    assert.equal(map.size, 1);
+    manager.upstreamSessionCounts.set('route-1', new Map([['up-1', 5]]));
+    assert.equal(manager.upstreamSessionCounts.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.upstreamSessionCounts.size, 0);
   });
 
   test('reset clears roundRobinCounters', () => {
-    const map = manager.getRoundRobinCounters();
-    map.set('route-1', 5);
-    assert.equal(map.size, 1);
+    manager.roundRobinCounters.set('route-1', 5);
+    assert.equal(manager.roundRobinCounters.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
-  });
-
-  test('reset clears dynamicWeightState', () => {
-    const map = manager.getDynamicWeightState();
-    map.set('route-1:up-1', { currentWeight: 50, lastAdjustment: Date.now(), requestCount: 10 });
-    assert.equal(map.size, 1);
-
-    manager.reset();
-    assert.equal(map.size, 0);
-  });
-
-  test('reset clears recoveryTimers', () => {
-    const map = manager.getRecoveryTimers();
-    const timer = setTimeout(() => {}, 10000);
-    map.set('route-1', timer);
-    assert.equal(map.size, 1);
-
-    manager.reset();
-    assert.equal(map.size, 0);
-    clearTimeout(timer);
+    assert.equal(manager.roundRobinCounters.size, 0);
   });
 
   test('reset clears statsState', () => {
-    const map = manager.getStatsState();
-    map.set('route-1:up-1', { ttfbSamples: [100, 200], durationSamples: [500], errorCount: 0 });
-    assert.equal(map.size, 1);
+    manager.statsState.set('route-1:up-1', { ttfbSamples: [100, 200], durationSamples: [500], errorCount: 0 });
+    assert.equal(manager.statsState.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.statsState.size, 0);
   });
 
   test('reset clears errorState', () => {
-    const map = manager.getErrorState();
-    map.set('route-1:up-1', { errors: [{ timestamp: Date.now(), statusCode: 500 }] });
-    assert.equal(map.size, 1);
+    manager.errorState.set('route-1:up-1', { errors: [{ timestamp: Date.now(), statusCode: 500 }] });
+    assert.equal(manager.errorState.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.errorState.size, 0);
   });
 
   test('reset clears latencyState', () => {
-    const map = manager.getLatencyState();
-    map.set('route-1:up-1', { latencies: [{ timestamp: Date.now(), duration: 500 }] });
-    assert.equal(map.size, 1);
+    manager.latencyState.set('route-1:up-1', { latencies: [{ timestamp: Date.now(), duration: 500 }] });
+    assert.equal(manager.latencyState.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.latencyState.size, 0);
   });
 
   test('reset clears upstreamRequestCounts', () => {
-    const map = manager.getUpstreamRequestCounts();
-    map.set('route-1', new Map([['up-1', 10]]));
-    assert.equal(map.size, 1);
+    manager.upstreamRequestCounts.set('route-1', new Map([['up-1', 10]]));
+    assert.equal(manager.upstreamRequestCounts.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.upstreamRequestCounts.size, 0);
   });
 
   test('reset clears upstreamSlidingWindowCounts', () => {
-    const map = manager.getUpstreamSlidingWindowCounts();
-    map.set('route-1:up-1', [{ timestamp: Date.now() }]);
-    assert.equal(map.size, 1);
+    manager.upstreamSlidingWindowCounts.set('route-1:up-1', [{ timestamp: Date.now() }]);
+    assert.equal(manager.upstreamSlidingWindowCounts.size, 1);
 
     manager.reset();
-    assert.equal(map.size, 0);
+    assert.equal(manager.upstreamSlidingWindowCounts.size, 0);
   });
 
-  test('reset clears timeSlotCalculator', () => {
-    manager.setTimeSlotCalculator({ getTimeSlotWeight: () => 1.0 });
-    assert.ok(manager.getTimeSlotCalculator() !== null);
+  test('reset clears tokenStatsState', () => {
+    manager.tokenStatsState.set('route-1:up-1', {
+      inputTokens: [{ timestamp: Date.now(), count: 100 }],
+      outputTokens: [{ timestamp: Date.now(), count: 200 }],
+    });
+    assert.equal(manager.tokenStatsState.size, 1);
 
     manager.reset();
-    assert.equal(manager.getTimeSlotCalculator(), null);
+    assert.equal(manager.tokenStatsState.size, 0);
+  });
+
+  test('reset clears cleanupInterval', () => {
+    const interval = setInterval(() => {}, 10000);
+    manager.cleanupInterval = interval;
+
+    manager.reset();
+
+    assert.equal(manager.cleanupInterval, null);
   });
 });
 
 describe('StateManager - resetAllState module function', () => {
-  test('resetAllState clears all state on singleton', () => {
-    // Populate singleton state
-    stateManager.getSessionUpstreamMap().set('test', { upstreamId: 'up' });
-    stateManager.getRoundRobinCounters().set('route', 5);
-    stateManager.getDynamicWeightState().set('route:up', { currentWeight: 50 });
+  test('resetAllState clears singleton state', () => {
+    stateManager.sessionMap.set('test', { upstreamId: 'up' });
+    stateManager.roundRobinCounters.set('route', 5);
 
-    assert.equal(stateManager.getSessionUpstreamMap().size, 1);
+    assert.equal(stateManager.sessionMap.size, 1);
 
     resetAllState();
 
-    assert.equal(stateManager.getSessionUpstreamMap().size, 0);
-    assert.equal(stateManager.getRoundRobinCounters().size, 0);
-    assert.equal(stateManager.getDynamicWeightState().size, 0);
+    assert.equal(stateManager.sessionMap.size, 0);
+    assert.equal(stateManager.roundRobinCounters.size, 0);
   });
 });
 
 describe('StateManager - state isolation between instances', () => {
-  test('separate instances have separate sessionUpstreamMaps', () => {
+  test('separate instances have separate sessionMaps', () => {
     const manager1 = createStateManager();
     const manager2 = createStateManager();
 
-    const map1 = manager1.getSessionUpstreamMap();
-    const map2 = manager2.getSessionUpstreamMap();
+    manager1.sessionMap.set('session-1', { upstreamId: 'up-1' });
 
-    map1.set('session-1', { upstreamId: 'up-1' });
-
-    assert.equal(map1.size, 1);
-    assert.equal(map2.size, 0);
+    assert.equal(manager1.sessionMap.size, 1);
+    assert.equal(manager2.sessionMap.size, 0);
 
     manager1.reset();
     manager2.reset();
@@ -288,29 +243,10 @@ describe('StateManager - state isolation between instances', () => {
     const manager1 = createStateManager();
     const manager2 = createStateManager();
 
-    const counters1 = manager1.getRoundRobinCounters();
-    const counters2 = manager2.getRoundRobinCounters();
+    manager1.roundRobinCounters.set('route-1', 10);
 
-    counters1.set('route-1', 10);
-
-    assert.equal(counters1.get('route-1'), 10);
-    assert.equal(counters2.has('route-1'), false);
-
-    manager1.reset();
-    manager2.reset();
-  });
-
-  test('separate instances have separate dynamicWeightState', () => {
-    const manager1 = createStateManager();
-    const manager2 = createStateManager();
-
-    const state1 = manager1.getDynamicWeightState();
-    const state2 = manager2.getDynamicWeightState();
-
-    state1.set('route:up', { currentWeight: 50, lastAdjustment: Date.now(), requestCount: 5 });
-
-    assert.equal(state1.size, 1);
-    assert.equal(state2.size, 0);
+    assert.equal(manager1.roundRobinCounters.get('route-1'), 10);
+    assert.equal(manager2.roundRobinCounters.has('route-1'), false);
 
     manager1.reset();
     manager2.reset();
@@ -320,112 +256,14 @@ describe('StateManager - state isolation between instances', () => {
     const manager1 = createStateManager();
     const manager2 = createStateManager();
 
-    manager1.getSessionUpstreamMap().set('session-1', {});
-    manager2.getSessionUpstreamMap().set('session-2', {});
+    manager1.sessionMap.set('session-1', {});
+    manager2.sessionMap.set('session-2', {});
 
     manager1.reset();
 
-    assert.equal(manager1.getSessionUpstreamMap().size, 0);
-    assert.equal(manager2.getSessionUpstreamMap().size, 1);
+    assert.equal(manager1.sessionMap.size, 0);
+    assert.equal(manager2.sessionMap.size, 1);
 
     manager2.reset();
-  });
-});
-
-describe('StateManager - cleanupInterval management', () => {
-  let manager;
-
-  beforeEach(() => {
-    manager = createStateManager();
-  });
-
-  afterEach(() => {
-    manager.reset();
-  });
-
-  test('getCleanupInterval returns null initially', () => {
-    const interval = manager.getCleanupInterval();
-    assert.equal(interval, null);
-  });
-
-  test('setCleanupInterval stores the interval', () => {
-    const interval = setInterval(() => {}, 10000);
-    manager.setCleanupInterval(interval);
-
-    const result = manager.getCleanupInterval();
-    assert.strictEqual(result, interval);
-
-    clearInterval(interval);
-  });
-
-  test('reset clears cleanupInterval', () => {
-    const interval = setInterval(() => {}, 10000);
-    manager.setCleanupInterval(interval);
-
-    manager.reset();
-
-    assert.equal(manager.getCleanupInterval(), null);
-  });
-});
-
-describe('StateManager - module accessor functions', () => {
-  test('getSessionUpstreamMap returns singleton session map', () => {
-    const map = getSessionUpstreamMap();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getSessionUpstreamMap());
-  });
-
-  test('getUpstreamSessionCounts returns singleton counts map', () => {
-    const map = getUpstreamSessionCounts();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getUpstreamSessionCounts());
-  });
-
-  test('getRoundRobinCounters returns singleton counters map', () => {
-    const map = getRoundRobinCounters();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getRoundRobinCounters());
-  });
-
-  test('getDynamicWeightState returns singleton weight state map', () => {
-    const map = getDynamicWeightState();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getDynamicWeightState());
-  });
-
-  test('getRecoveryTimers returns singleton timers map', () => {
-    const map = getRecoveryTimers();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getRecoveryTimers());
-  });
-
-  test('getStatsState returns singleton stats state map', () => {
-    const map = getStatsState();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getStatsState());
-  });
-
-  test('getErrorState returns singleton error state map', () => {
-    const map = getErrorState();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getErrorState());
-  });
-
-  test('getLatencyState returns singleton latency state map', () => {
-    const map = getLatencyState();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getLatencyState());
-  });
-
-  test('getUpstreamRequestCounts returns singleton request counts map', () => {
-    const map = getUpstreamRequestCounts();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getUpstreamRequestCounts());
-  });
-
-  test('getUpstreamSlidingWindowCounts returns singleton sliding window counts map', () => {
-    const map = getUpstreamSlidingWindowCounts();
-    assert.ok(map instanceof Map);
-    assert.strictEqual(map, stateManager.getUpstreamSlidingWindowCounts());
   });
 });

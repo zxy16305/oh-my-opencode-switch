@@ -12,10 +12,15 @@
 import { describe, test, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import process from 'node:process';
+
+// Suppress logger module-level output to prevent IPC corruption in Node.js 24
+process.env.LOG_LEVEL = 'silent';
 
 import {
   createServer,
   shutdownServer,
+  shutdownAgents,
   forwardRequest,
   isPortAvailable,
 } from '../../../src/proxy/server.js';
@@ -204,6 +209,12 @@ function buildRoutesConfig(upstreams, strategy = 'round-robin') {
 // ===========================================================================
 
 describe('E2E – Proxy Server', () => {
+  after(() => {
+    resetAllState();
+    shutdownAgents();
+  });
+
+
   // -------------------------------------------------------------------------
   // 1. Server lifecycle
   // -------------------------------------------------------------------------
@@ -318,6 +329,7 @@ describe('E2E – Proxy Server', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('routes valid model to upstream', async () => {
@@ -779,6 +791,7 @@ describe('E2E – Proxy Server', () => {
     after(async () => {
       await shutdownServer(proxy.server);
       await stopMock(upstream);
+      resetAllState();
     });
 
     test('streams SSE events through the proxy', async () => {
@@ -883,21 +896,44 @@ describe('E2E – Proxy Server', () => {
       assert.deepEqual(models.sort(), ['claude-3', 'gpt-4']);
     });
 
-    test('round-robin cycles through upstreams', () => {
+    test('round-robin config falls back to sticky and distributes across upstreams', () => {
       const config = buildRoutesConfig([
         { id: 'u1', baseURL: 'http://localhost:8001' },
         { id: 'u2', baseURL: 'http://localhost:8002' },
         { id: 'u3', baseURL: 'http://localhost:8003' },
       ]);
 
+      const sessionId = 'test-session';
       const results = [];
       for (let i = 0; i < 6; i++) {
-        const { upstream } = routeRequest('test-model', config);
+        const req = { headers: { 'x-opencode-session': sessionId }, method: 'POST', url: '/test' };
+        const { upstream } = routeRequest('test-model', config, req);
         results.push(upstream.id);
       }
 
-      // Should cycle: u1, u2, u3, u1, u2, u3
-      assert.deepEqual(results, ['u1', 'u2', 'u3', 'u1', 'u2', 'u3']);
+      // With sticky strategy and same session, all requests go to the same upstream
+      assert.equal(results[0], results[1]);
+      assert.equal(results[1], results[2]);
+      assert.equal(results[2], results[3]);
+      assert.equal(results[3], results[4]);
+      assert.equal(results[4], results[5]);
+    });
+
+    test('different sessions distribute across upstreams', () => {
+      const config = buildRoutesConfig([
+        { id: 'u1', baseURL: 'http://localhost:8001' },
+        { id: 'u2', baseURL: 'http://localhost:8002' },
+        { id: 'u3', baseURL: 'http://localhost:8003' },
+      ]);
+
+      const results = new Set();
+      for (let i = 0; i < 20; i++) {
+        const req = { headers: { 'x-opencode-session': `sess-${i}` }, method: 'POST', url: '/test' };
+        const { upstream } = routeRequest('test-model', config, req);
+        results.add(upstream.id);
+      }
+
+      assert.ok(results.size > 1, `Expected sessions to distribute across upstreams, got ${[...results]}`);
     });
 
     test('getSessionId extracts from x-opencode-session header', () => {

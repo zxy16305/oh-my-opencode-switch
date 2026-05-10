@@ -229,11 +229,11 @@ describe('Dynamic Weight – adjustWeightForError', () => {
     assert.strictEqual(getDynamicWeight('route1', 'u2', 100), 50);
   });
 
-  test('9% error rate - no penalty applied', () => {
+  test('9% error rate - weight halved (>= 5% threshold)', () => {
     const upstreams = [makeUpstream({ id: 'test' })];
     const config = makeConfig();
 
-    // 9 errors out of 100 requests = 9% error rate
+    // 9 errors out of 100 requests = 9% error rate (>= 5% threshold)
     for (let i = 0; i < 100; i++) {
       incrementUpstreamRequestCount('route1', 'test');
     }
@@ -244,7 +244,7 @@ describe('Dynamic Weight – adjustWeightForError', () => {
     adjustWeightForError('route1', upstreams, config, errorData);
 
     const weight = getDynamicWeight('route1', 'test', 100);
-    assert.strictEqual(weight, 100);
+    assert.strictEqual(weight, 50);
   });
 
   test('10% error rate - weight halved', () => {
@@ -265,11 +265,11 @@ describe('Dynamic Weight – adjustWeightForError', () => {
     assert.strictEqual(weight, 50);
   });
 
-  test('29% error rate - weight halved', () => {
+  test('29% error rate - weight reduced to 20% (>= 15% threshold)', () => {
     const upstreams = [makeUpstream({ id: 'test' })];
     const config = makeConfig();
 
-    // 29 errors out of 100 requests = 29% error rate
+    // 29 errors out of 100 requests = 29% error rate (>= 15% threshold)
     for (let i = 0; i < 100; i++) {
       incrementUpstreamRequestCount('route1', 'test');
     }
@@ -280,7 +280,7 @@ describe('Dynamic Weight – adjustWeightForError', () => {
     adjustWeightForError('route1', upstreams, config, errorData);
 
     const weight = getDynamicWeight('route1', 'test', 100);
-    assert.strictEqual(weight, 50);
+    assert.strictEqual(weight, 20);
   });
 
   test('30% error rate - weight reduced to 10% of original', () => {

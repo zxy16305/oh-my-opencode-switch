@@ -11,7 +11,6 @@ import {
   resetAllState,
   getDynamicWeight,
   setDynamicWeight,
-  incrementSuccessCount,
   resetSuccessCount,
   getDynamicWeightState,
   getCurrentWeightLevel,
@@ -22,45 +21,45 @@ import {
 // Tests for consecutive success count and weight recovery
 // ===========================================================================
 
-describe('Weight Recovery – incrementSuccessCount', () => {
+describe('Weight Recovery – adjustWeightForSuccess (count accumulation)', () => {
   beforeEach(() => resetAllState());
   afterEach(() => resetAllState());
 
-  test('incrementSuccessCount increases consecutiveSuccessCount by 1', () => {
+  test('adjustWeightForSuccess increases consecutiveSuccessCount by 1', () => {
     const routeKey = 'route1';
     const upstreamId = 'upstream1';
 
-    // Initial state should have no consecutiveSuccessCount
+    // Initial state does not exist
     const initialState = getDynamicWeightState(routeKey, upstreamId);
-    assert.strictEqual(initialState?.consecutiveSuccessCount, undefined);
+    assert.strictEqual(initialState, null);
 
-    // Call incrementSuccessCount
-    incrementSuccessCount(routeKey, upstreamId);
+    // Call adjustWeightForSuccess once
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
-    // Check count increased to 1
+    // Check count is 1
     const state = getDynamicWeightState(routeKey, upstreamId);
     assert.strictEqual(state?.consecutiveSuccessCount, 1);
   });
 
-  test('multiple incrementSuccessCount calls accumulate count', () => {
+  test('multiple adjustWeightForSuccess calls accumulate count', () => {
     const routeKey = 'route1';
     const upstreamId = 'upstream1';
 
-    // Call incrementSuccessCount 3 times
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
+    // Call adjustWeightForSuccess 3 times
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Check count is 3
     const state = getDynamicWeightState(routeKey, upstreamId);
     assert.strictEqual(state?.consecutiveSuccessCount, 3);
   });
 
-  test('incrementSuccessCount stores count in dynamicWeightState', () => {
+  test('adjustWeightForSuccess stores count in dynamicWeightState', () => {
     const routeKey = 'route1';
     const upstreamId = 'upstream1';
 
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Verify state exists and has the expected structure
     const state = getDynamicWeightState(routeKey, upstreamId);
@@ -71,9 +70,9 @@ describe('Weight Recovery – incrementSuccessCount', () => {
   test('different upstreams have independent success counts', () => {
     const routeKey = 'route1';
 
-    incrementSuccessCount(routeKey, 'upstream1');
-    incrementSuccessCount(routeKey, 'upstream1');
-    incrementSuccessCount(routeKey, 'upstream2');
+    adjustWeightForSuccess(routeKey, 'upstream1', 100);
+    adjustWeightForSuccess(routeKey, 'upstream1', 100);
+    adjustWeightForSuccess(routeKey, 'upstream2', 100);
 
     const state1 = getDynamicWeightState(routeKey, 'upstream1');
     const state2 = getDynamicWeightState(routeKey, 'upstream2');
@@ -83,9 +82,9 @@ describe('Weight Recovery – incrementSuccessCount', () => {
   });
 
   test('different routes have independent success counts', () => {
-    incrementSuccessCount('route1', 'upstream1');
-    incrementSuccessCount('route1', 'upstream1');
-    incrementSuccessCount('route2', 'upstream1');
+    adjustWeightForSuccess('route1', 'upstream1', 100);
+    adjustWeightForSuccess('route1', 'upstream1', 100);
+    adjustWeightForSuccess('route2', 'upstream1', 100);
 
     const state1 = getDynamicWeightState('route1', 'upstream1');
     const state2 = getDynamicWeightState('route2', 'upstream1');
@@ -104,9 +103,9 @@ describe('Weight Recovery – resetSuccessCount', () => {
     const upstreamId = 'upstream1';
 
     // Build up some count
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Verify count is 3
     const stateBefore = getDynamicWeightState(routeKey, upstreamId);
@@ -123,11 +122,11 @@ describe('Weight Recovery – resetSuccessCount', () => {
   test('resetSuccessCount only affects specified upstream', () => {
     const routeKey = 'route1';
 
-    incrementSuccessCount(routeKey, 'upstream1');
-    incrementSuccessCount(routeKey, 'upstream1');
-    incrementSuccessCount(routeKey, 'upstream2');
-    incrementSuccessCount(routeKey, 'upstream2');
-    incrementSuccessCount(routeKey, 'upstream2');
+    adjustWeightForSuccess(routeKey, 'upstream1', 100);
+    adjustWeightForSuccess(routeKey, 'upstream1', 100);
+    adjustWeightForSuccess(routeKey, 'upstream2', 100);
+    adjustWeightForSuccess(routeKey, 'upstream2', 100);
+    adjustWeightForSuccess(routeKey, 'upstream2', 100);
 
     // Reset only upstream1
     resetSuccessCount(routeKey, 'upstream1');
@@ -148,9 +147,10 @@ describe('Weight Recovery – resetSuccessCount', () => {
       resetSuccessCount(routeKey, upstreamId);
     });
 
-    // State should now exist with count 0
+    // State was never created (no adjustWeightForSuccess/setDynamicWeight called),
+    // so getDynamicWeightState still returns null
     const state = getDynamicWeightState(routeKey, upstreamId);
-    assert.strictEqual(state?.consecutiveSuccessCount, 0);
+    assert.strictEqual(state, null);
   });
 });
 
@@ -170,12 +170,12 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     const reducedWeight = getDynamicWeight(routeKey, upstreamId, initialWeight);
     assert.strictEqual(reducedWeight, 50);
 
-    // Call incrementSuccessCount 5 times (threshold)
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
+    // Call adjustWeightForSuccess 5 times (threshold)
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Weight should have increased (recovery triggered)
     const recoveredWeight = getDynamicWeight(routeKey, upstreamId, initialWeight);
@@ -197,11 +197,11 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     // Reduce weight first
     setDynamicWeight(routeKey, upstreamId, 50);
 
-    // Call incrementSuccessCount only 4 times
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
+    // Call adjustWeightForSuccess only 4 times
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Weight should still be 50 (no recovery yet)
     const weight = getDynamicWeight(routeKey, upstreamId, initialWeight);
@@ -222,7 +222,7 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
 
     // 5 successes - recovery triggers, count resets to 0
     for (let i = 0; i < 5; i++) {
-      incrementSuccessCount(routeKey, upstreamId);
+      adjustWeightForSuccess(routeKey, upstreamId, 100);
     }
 
     const weightAfter5 = getDynamicWeight(routeKey, upstreamId, initialWeight);
@@ -231,7 +231,7 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     assert.strictEqual(stateAfter5?.consecutiveSuccessCount, 0);
 
     // 6th success - starts new count
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     const stateAfter6 = getDynamicWeightState(routeKey, upstreamId);
     assert.strictEqual(stateAfter6?.consecutiveSuccessCount, 1);
@@ -246,10 +246,10 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     setDynamicWeight(routeKey, upstreamId, 40);
 
     // 4 successes
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     // Simulate error - reset count
     resetSuccessCount(routeKey, upstreamId);
@@ -263,7 +263,7 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     assert.strictEqual(state?.consecutiveSuccessCount, 0);
 
     // Need 5 more successes to trigger recovery
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
     const stateAfter1 = getDynamicWeightState(routeKey, upstreamId);
     assert.strictEqual(stateAfter1?.consecutiveSuccessCount, 1);
   });
@@ -279,7 +279,7 @@ describe('Weight Recovery – recovery trigger at threshold', () => {
     // Trigger recovery 5 times (each recovery should not exceed 100)
     for (let cycle = 0; cycle < 3; cycle++) {
       for (let i = 0; i < 5; i++) {
-        incrementSuccessCount(routeKey, upstreamId);
+        adjustWeightForSuccess(routeKey, upstreamId, 100);
       }
     }
 
@@ -299,7 +299,7 @@ describe('Weight Recovery – state structure', () => {
     const routeKey = 'route1';
     const upstreamId = 'upstream1';
 
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     const state = getDynamicWeightState(routeKey, upstreamId);
     assert.ok(state, 'State should exist');
@@ -318,7 +318,7 @@ describe('Weight Recovery – state structure', () => {
     setDynamicWeight(routeKey, upstreamId, 50);
 
     // Increment success count
-    incrementSuccessCount(routeKey, upstreamId);
+    adjustWeightForSuccess(routeKey, upstreamId, 100);
 
     const state = getDynamicWeightState(routeKey, upstreamId);
 

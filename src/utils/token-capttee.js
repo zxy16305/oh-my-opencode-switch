@@ -5,6 +5,9 @@ import { parseTokenUsage } from './token-parser.js';
  * Transform stream that captures token usage from API responses.
  * Forwards all data unchanged while parsing SSE or JSON responses.
  */
+
+const MAX_RESPONSE_CHUNKS = 500;
+
 export class TokenCaptivee extends Transform {
   constructor(options = {}) {
     super(options);
@@ -20,6 +23,9 @@ export class TokenCaptivee extends Transform {
     const data = chunk.toString();
     this.push(chunk);
     this._responseChunks.push(chunk);
+    if (this._responseChunks.length > MAX_RESPONSE_CHUNKS) {
+      this._responseChunks.shift();
+    }
 
     if (this._isSSE === null) {
       this._isSSE = this._detectSSE(data);
@@ -38,6 +44,7 @@ export class TokenCaptivee extends Transform {
     if (!this._isSSE && this._jsonBuffer) {
       this._parseNonStreamingJson();
     }
+    this._responseChunks.length = 0;
     callback();
   }
 

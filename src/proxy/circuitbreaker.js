@@ -194,6 +194,14 @@ export class CircuitBreaker {
       this.states.clear();
     }
   }
+
+  prune(activeProviderIds) {
+    for (const [providerId] of this.states) {
+      if (!activeProviderIds.has(providerId)) {
+        this.states.delete(providerId);
+      }
+    }
+  }
 }
 
 /**

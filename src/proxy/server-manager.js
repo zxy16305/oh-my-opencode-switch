@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import { createServer, shutdownServer, isPortAvailable, forwardRequest } from './server.js';
+import { createServer, shutdownServer, shutdownAgents, isPortAvailable, forwardRequest } from './server.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
@@ -1006,6 +1006,7 @@ export class ProxyServerManager {
             logger.error(`[${instanceName}] Failed to persist time slot data: ${err.message}`);
           });
         }, HOUR_MS);
+        inst.timeSlotSaveTimer.unref();
       }
 
       const timeSlotCheckTimer = setInterval(() => {
@@ -1045,11 +1046,13 @@ export class ProxyServerManager {
     const shutdown = async () => {
       logger.info(`[${instanceName}] Shutting down proxy server...`);
       await this._shutdownInstance(instanceName);
+      shutdownAgents();
       process.exit(0);
     };
 
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+    this._shutdownHandler = shutdown;
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
   }
 
   async _shutdownInstance(instanceName) {
@@ -1086,6 +1089,12 @@ export class ProxyServerManager {
     }
     inst.server = null;
     inst.port = null;
+
+    if (this._shutdownHandler) {
+      process.removeListener('SIGINT', this._shutdownHandler);
+      process.removeListener('SIGTERM', this._shutdownHandler);
+      this._shutdownHandler = null;
+    }
   }
 
   async stop(instanceName) {
@@ -1139,6 +1148,12 @@ export class ProxyServerManager {
       logger.success(`[${name}] Proxy server stopped (was on port ${inst.port})`);
       inst.server = null;
       inst.port = null;
+
+      if (this._shutdownHandler) {
+        process.removeListener('SIGINT', this._shutdownHandler);
+        process.removeListener('SIGTERM', this._shutdownHandler);
+        this._shutdownHandler = null;
+      }
     } catch (error) {
       logger.error(`[${name}] Failed to stop proxy server: ${error.message}`);
       process.exit(1);

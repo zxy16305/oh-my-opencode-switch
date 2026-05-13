@@ -38,16 +38,11 @@ export const SSE_HEADERS = {
 export function isPortAvailable(port) {
   return new Promise((resolve) => {
     const tester = net.createServer();
-    tester.once('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        resolve(false);
-      } else {
-        resolve(false);
-      }
+    tester.once('error', () => {
+      tester.close(() => resolve(false));
     });
     tester.once('listening', () => {
-      tester.close();
-      resolve(true);
+      tester.close(() => resolve(true));
     });
     tester.listen(port);
   });
@@ -289,7 +284,11 @@ export function shutdownServer(server) {
       return;
     }
 
+    let settled = false;
+
     server.close((err) => {
+      if (settled) return;
+      settled = true;
       if (err) {
         reject(err);
       } else {
@@ -297,9 +296,13 @@ export function shutdownServer(server) {
       }
     });
 
-    setTimeout(() => {
-      server.closeAllConnections?.();
-      resolve();
-    }, 5000).unref();
+    const forceTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        server.closeAllConnections?.();
+        resolve();
+      }
+    }, 5000);
+    forceTimer.unref();
   });
 }

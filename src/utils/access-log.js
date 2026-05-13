@@ -72,11 +72,19 @@ const writeQueue = (() => {
           resolve();
           return;
         }
+        const FLUSH_TIMEOUT_MS = 5000;
+        const start = Date.now();
+        let timeoutTimer = null;
         const check = () => {
+          if (Date.now() - start > FLUSH_TIMEOUT_MS) {
+            resolve();
+            return;
+          }
           if (entries.length === 0 && !processing) {
+            if (timeoutTimer) clearTimeout(timeoutTimer);
             resolve();
           } else {
-            setTimeout(check, 20);
+            timeoutTimer = setTimeout(check, 20);
           }
         };
         check();

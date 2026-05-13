@@ -382,6 +382,9 @@ export function handleLogsStream(req, res, sseClients) {
   req.on('close', () => {
     sseClients.delete(res);
   });
+  res.on('close', () => {
+    sseClients.delete(res);
+  });
 }
 
 /**
@@ -678,14 +681,25 @@ export async function handleProxyRegister(req, res, options = {}) {
           if (Object.keys(limitConfig).length > 0) modelConfig.limit = limitConfig;
         }
 
+        // Remove inherited top-level `thinking` (belongs only under `options.thinking`)
+        delete modelConfig.thinking;
+
         // Route-level thinking override — highest priority
         if (route.thinking) {
-          modelConfig.thinking = cloneDeep(route.thinking);
+          if (!modelConfig.options) modelConfig.options = {};
+          modelConfig.options.thinking = cloneDeep(route.thinking);
         }
 
         // Route-level reasoningEffort override — highest priority
         if (route.reasoningEffort) {
-          modelConfig.reasoning = { effort: route.reasoningEffort };
+          if (!modelConfig.options) modelConfig.options = {};
+          modelConfig.options.reasoningEffort = route.reasoningEffort;
+          modelConfig.reasoning = true;
+        }
+
+        // thinking.type=disabled overrides reasoning to false
+        if (modelConfig.options?.thinking?.type === 'disabled') {
+          modelConfig.reasoning = false;
         }
 
         providerCfg.models[virtualModel] = modelConfig;

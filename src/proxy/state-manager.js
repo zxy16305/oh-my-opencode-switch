@@ -11,6 +11,8 @@ export class StateManager {
     this.upstreamSessionCounts = new Map();
     /** @type {Map<string, number>} */
     this.roundRobinCounters = new Map();
+    /** @type {Map<string, Map<string, number>>} */
+    this.pendingAssignments = new Map();
     /** @type {Map<string, { ttfbSamples: number[], durationSamples: number[], errorCount: number }>} */
     this.statsState = new Map();
     /** @type {Map<string, { errors: Array<{ timestamp: number, statusCode: number }> }>} */
@@ -33,6 +35,7 @@ export class StateManager {
     this.sessionMap.clear();
     this.upstreamSessionCounts.clear();
     this.roundRobinCounters.clear();
+    this.pendingAssignments.clear();
     this.statsState.clear();
     this.errorState.clear();
     this.latencyState.clear();

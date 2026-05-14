@@ -89,6 +89,10 @@ describe('StateManager - state maps are initialized', () => {
     assert.ok(manager.roundRobinCounters instanceof Map);
   });
 
+  test('pendingAssignments is a Map', () => {
+    assert.ok(manager.pendingAssignments instanceof Map);
+  });
+
   test('dynamicWeightState is not present (handled separately)', () => {
     // dynamicWeightState is managed by router.js compatibility layer, not StateManager
     assert.equal(manager.dynamicWeightState, undefined);
@@ -148,6 +152,14 @@ describe('StateManager - reset() clears all state', () => {
 
     manager.reset();
     assert.equal(manager.roundRobinCounters.size, 0);
+  });
+
+  test('reset clears pendingAssignments', () => {
+    manager.pendingAssignments.set('route-1', new Map([['up-1', 1]]));
+    assert.equal(manager.pendingAssignments.size, 1);
+
+    manager.reset();
+    assert.equal(manager.pendingAssignments.size, 0);
   });
 
   test('reset clears statsState', () => {

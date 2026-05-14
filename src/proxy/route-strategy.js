@@ -6,7 +6,13 @@
 import { stateManager } from './state-manager.js';
 import { RouterError } from './errors.js';
 import { calculateEffectiveWeight, calculateLeastLoadedScore } from './weight-calculator.js';
-import { getUpstreamRequestCountInWindow } from './stats-collector.js';
+import {
+  getPendingAssignmentCount,
+  getSessionCountForUpstream,
+  incrementPendingAssignment,
+} from './session-manager.js';
+
+const SCORE_EPSILON = 1e-9;
 
 /**
  * Get the StateManager instance to use (provided or singleton)
@@ -20,8 +26,7 @@ function getState(state) {
 /**
  * 选择负载最低的 upstream（考虑动态权重）
  * effectiveWeight = min(staticWeight, latencyWeight, errorWeight)
- * score = (requestCount + 1) / effectiveWeight（越低越好）
- * 使用滑动窗口请求计数，避免长期运行后权重被稀释
+ * score = (activeSessions + pendingAssignments + 1) / effectiveWeight（越低越好）
  * @param {StateManager} [state] - State manager instance
  * @param {Upstream[]} upstreams
  * @param {string} routeKey
@@ -66,35 +71,31 @@ function selectLeastLoadedUpstream(
   const candidates = [];
 
   for (const { upstream, effectiveWeight } of validUpstreams) {
-    const requestCount = getUpstreamRequestCountInWindow(sm, routeKey, upstream.id);
+    const activeSessions = getSessionCountForUpstream(sm, routeKey, upstream.id);
+    const pendingAssignments = getPendingAssignmentCount(sm, routeKey, upstream.id);
+    const score = calculateLeastLoadedScore(activeSessions + pendingAssignments, effectiveWeight);
 
-    const score = calculateLeastLoadedScore(requestCount, effectiveWeight);
-
-    if (score < bestScore) {
+    if (score < bestScore - SCORE_EPSILON) {
       bestScore = score;
       candidates.length = 0;
       candidates.push({ upstream, effectiveWeight });
-    } else if (score === bestScore) {
+    } else if (Math.abs(score - bestScore) <= SCORE_EPSILON) {
       candidates.push({ upstream, effectiveWeight });
     }
   }
 
-  // Tie-breaking: use weighted random selection among candidates
-  if (candidates.length === 1) {
-    return candidates[0].upstream;
-  }
+  const selectedCandidate =
+    candidates.length === 1 ? candidates[0] : selectRoundRobinCandidate(sm, routeKey, candidates);
 
-  const totalWeight = candidates.reduce((sum, candidate) => sum + candidate.effectiveWeight, 0);
-  let random = Math.random() * totalWeight;
+  incrementPendingAssignment(sm, routeKey, selectedCandidate.upstream.id);
+  return selectedCandidate.upstream;
+}
 
-  for (const candidate of candidates) {
-    random -= candidate.effectiveWeight;
-    if (random <= 0) {
-      return candidate.upstream;
-    }
-  }
-
-  return candidates[candidates.length - 1].upstream;
+function selectRoundRobinCandidate(sm, routeKey, candidates) {
+  const counter = sm.roundRobinCounters.get(routeKey) ?? 0;
+  const selectedCandidate = candidates[counter % candidates.length];
+  sm.roundRobinCounters.set(routeKey, counter + 1);
+  return selectedCandidate;
 }
 
 export { selectLeastLoadedUpstream };

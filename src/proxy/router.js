@@ -14,6 +14,7 @@ import {
   getSessionId,
   startSessionCleanup,
   stopSessionCleanup,
+  decrementPendingAssignment,
   incrementSessionCount,
 } from './session-manager.js';
 
@@ -382,6 +383,7 @@ export function selectUpstreamSticky(
     timestamp: Date.now(),
     requestCount: 1,
   });
+  decrementPendingAssignment(sm, routeKey, selected.id);
 
   return selected;
 }
@@ -513,6 +515,7 @@ export function resetAllState(state = null) {
   sm.roundRobinCounters.clear();
   sm.sessionMap.clear();
   sm.upstreamSessionCounts.clear();
+  sm.pendingAssignments?.clear();
   stats.resetStats(sm);
   stopSessionCleanup(sm);
 

@@ -5,7 +5,11 @@
 
 import { logger } from '../utils/logger.js';
 import { stateManager } from './state-manager.js';
-import { incrementSessionCount, decrementSessionCount } from './session-manager.js';
+import {
+  incrementSessionCount,
+  decrementPendingAssignment,
+  decrementSessionCount,
+} from './session-manager.js';
 import { selectLeastLoadedUpstream } from './route-strategy.js';
 
 /**
@@ -77,6 +81,7 @@ export function failoverStickySession(
     timestamp: Date.now(),
     requestCount: 1,
   });
+  decrementPendingAssignment(sm, routeKey, next.id);
 
   return next;
 }

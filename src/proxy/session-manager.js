@@ -65,6 +65,50 @@ export function decrementSessionCount(state, routeKey, upstreamId) {
   }
 }
 
+function getOrCreatePendingCountMap(state, routeKey) {
+  const sm = getState(state);
+  const pendingAssignments = sm.pendingAssignments;
+  if (!pendingAssignments.has(routeKey)) {
+    pendingAssignments.set(routeKey, new Map());
+  }
+  return pendingAssignments.get(routeKey);
+}
+
+export function getSessionCountForUpstream(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  const countMap = sm.upstreamSessionCounts.get(routeKey);
+  return countMap?.get(upstreamId) ?? 0;
+}
+
+export function incrementPendingAssignment(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  const countMap = getOrCreatePendingCountMap(sm, routeKey);
+  countMap.set(upstreamId, (countMap.get(upstreamId) ?? 0) + 1);
+}
+
+export function decrementPendingAssignment(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  const countMap = sm.pendingAssignments.get(routeKey);
+  if (!countMap) {
+    return;
+  }
+
+  const current = countMap.get(upstreamId) ?? 0;
+  if (current <= 1) {
+    countMap.delete(upstreamId);
+    if (countMap.size === 0) {
+      sm.pendingAssignments.delete(routeKey);
+    }
+  } else {
+    countMap.set(upstreamId, current - 1);
+  }
+}
+
+export function getPendingAssignmentCount(state, routeKey, upstreamId) {
+  const sm = getState(state);
+  return sm.pendingAssignments.get(routeKey)?.get(upstreamId) ?? 0;
+}
+
 /**
  * Count unique sessions by route and upstream, iterating sessionMap.
  * Returns Map<routeKey, Map<upstreamId, count>> — same shape as upstreamSessionCounts.

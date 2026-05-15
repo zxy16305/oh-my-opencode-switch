@@ -17,6 +17,9 @@
     "auth": {
       "$ref": "#/definitions/auth"
     },
+    "mcpProxy": {
+      "$ref": "#/definitions/mcpProxy"
+    },
     "reliability": {
       "$ref": "#/definitions/reliability"
     }
@@ -318,6 +321,32 @@
       "required": [],
       "additionalProperties": false,
       "description": "Authentication configuration for the proxy server"
+    },
+    "mcpProxyEntry": {
+      "type": "object",
+      "properties": {
+        "upstream": {
+          "type": "string",
+          "format": "uri",
+          "description": "Upstream MCP server URL to proxy to"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/(?!_internal/)",
+          "description": "Local path to expose this MCP proxy at (must start with /, must NOT start with /_internal/)"
+        }
+      },
+      "required": ["upstream", "path"],
+      "additionalProperties": false,
+      "description": "Single MCP proxy entry configuration"
+    },
+    "mcpProxy": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/mcpProxyEntry"
+      },
+      "description": "Map of MCP proxy names to their configurations. Each entry creates a proxy endpoint."
     },
     "reliability": {
       "type": "object",

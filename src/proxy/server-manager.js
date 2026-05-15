@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import { createServer, shutdownServer, shutdownAgents, isPortAvailable, forwardRequest } from './server.js';
+import { McpProxy } from './mcp-proxy/index.js';
 import { ProxyConfigManager } from '../core/ProxyConfigManager.js';
 import {
   routeRequest,
@@ -155,7 +156,17 @@ export class ProxyServerManager {
       process.exit(1);
     }
 
+    // Initialize MCP proxy if configured
+    let mcpProxy = null;
+    if (config.mcpProxy && Object.keys(config.mcpProxy).length > 0) {
+      mcpProxy = new McpProxy(config.mcpProxy);
+      for (const [name, entry] of Object.entries(config.mcpProxy)) {
+        logger.info(`[mcp-proxy] ${name}: ${entry.path} → ${entry.upstream}`);
+      }
+    }
+
     inst._currentRoutes = routes;
+    inst._mcpProxy = mcpProxy;
     weightManager.initRoutes(routes);
 
     inst.circuitBreaker = new CircuitBreaker(config.reliability || DEFAULT_CIRCUIT_BREAKER_OPTIONS);
@@ -172,6 +183,12 @@ export class ProxyServerManager {
     const requestHandler = async (req, res) => {
       if (req.url === '/_internal/logs/stream' && req.method === 'GET') {
         handleLogsStream(req, res, sseClients);
+        return;
+      }
+
+      // MCP proxy routes (SSE - must be checked before body collection)
+      if (mcpProxy && mcpProxy.matches(req.url)) {
+        mcpProxy.handle(req, res);
         return;
       }
 
@@ -396,6 +413,9 @@ export class ProxyServerManager {
                 capttee._debugPaths = { msgDir, meta };
 
                 fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                fs.writeFile(`${msgDir}/headers.json`, JSON.stringify(req.headers, null, 2)).catch(
+                  () => {}
+                );
                 fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
                 if (endpointResult.needsTransform) {
                   fs.writeFile(`${msgDir}/transformed.json`, forwardBody).catch(() => {});
@@ -510,6 +530,10 @@ export class ProxyServerManager {
                           retryCapttee._debugPaths = { msgDir, meta };
 
                           fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                          fs.writeFile(
+                            `${msgDir}/headers.json`,
+                            JSON.stringify(req.headers, null, 2)
+                          ).catch(() => {});
                           fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
                           logger.raw(`[debugbody] Saved -> ${msgDir}/`);
                         } catch {
@@ -805,6 +829,10 @@ export class ProxyServerManager {
                         retryCapttee._debugPaths = { msgDir, meta };
 
                         fs.writeFile(`${msgDir}/original.json`, body).catch(() => {});
+                        fs.writeFile(
+                          `${msgDir}/headers.json`,
+                          JSON.stringify(req.headers, null, 2)
+                        ).catch(() => {});
                         fs.writeFile(`${msgDir}/forwarded.json`, forwardBody).catch(() => {});
                         logger.raw(`[debugbody] Saved -> ${msgDir}/`);
                       } catch {
@@ -1276,6 +1304,18 @@ export class ProxyServerManager {
       }
 
       weightManager.reloadConfig(newRoutes);
+
+      // Update MCP proxy routes if configured
+      if (config.mcpProxy && inst._mcpProxy) {
+        inst._mcpProxy.updateRoutes(config.mcpProxy);
+        logger.info(`[${name}] MCP proxy routes reloaded`);
+      } else if (config.mcpProxy && !inst._mcpProxy) {
+        inst._mcpProxy = new McpProxy(config.mcpProxy);
+        logger.info(`[${name}] MCP proxy initialized from reload`);
+      } else if (!config.mcpProxy && inst._mcpProxy) {
+        inst._mcpProxy.updateRoutes({});
+        logger.info(`[${name}] MCP proxy disabled from reload`);
+      }
 
       const cleanedSessions = cleanRemovedUpstreamSessions(newRoutes);
 

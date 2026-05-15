@@ -5,10 +5,11 @@
  *
  * Scenarios covered:
  * 1. Directory structure verification
- * 2. Response body capture (JSON and SSE)
- * 3. Meta file verification
- * 4. Folder name sanitization
- * 5. Error handling (silent failures)
+ * 2. Request header capture
+ * 3. Response body capture (JSON and SSE)
+ * 4. Meta file verification
+ * 5. Folder name sanitization
+ * 6. Error handling (silent failures)
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -180,6 +181,10 @@ function createProxyWithDebugBody(port, routesConfig) {
             path.join(msgDir, 'original.json'),
             rawBody.toString() || '{}'
           ).catch(() => {});
+          fs.writeFile(
+            path.join(msgDir, 'headers.json'),
+            JSON.stringify(req.headers, null, 2)
+          ).catch(() => {});
 
           const forwardBody = JSON.stringify({ ...parsed, model: selected.model });
           fs.writeFile(
@@ -235,12 +240,14 @@ function createProxyWithDebugBody(port, routesConfig) {
 /**
  * Wait for file to exist with retry
  */
-async function waitForFile(filePath, maxWaitMs = 2000) {
+async function waitForFile(filePath, maxWaitMs = 5000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
-      await fs.access(filePath);
-      return true;
+      const stat = await fs.stat(filePath);
+      if (stat.size > 0) {
+        return true;
+      }
     } catch {
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -305,7 +312,7 @@ describe('Proxy Debugbody Feature', () => {
   // -------------------------------------------------------------------------
   // 1. Directory Structure Verification
   // -------------------------------------------------------------------------
-  it('should create directory with correct format and 4 files', async () => {
+  it('should create directory with correct format and 5 files', async () => {
     const PORT = 18401;
     mockUpstream = await startMockUpstream((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -352,22 +359,66 @@ describe('Proxy Debugbody Feature', () => {
     // Timestamp is 18 chars: 8 digits + T + 6 digits + dot + 2 digits (or similar)
     assert.ok(/^\d{8}T\d{6}\.\d{2}$/.test(parts[0]) || /^\d{8}T\d{6}\d{2}$/.test(parts[0]), 'First part should be timestamp format');
 
-    // Verify 4 files exist
+    // Verify 5 files exist
     const msgDir = path.join(getDebugBodiesDir(), ourDir);
     const files = await listFiles(msgDir);
     
     assert.ok(files.includes('original.json'), 'Should have original.json');
+    assert.ok(files.includes('headers.json'), 'Should have headers.json');
     assert.ok(files.includes('forwarded.json'), 'Should have forwarded.json');
     assert.ok(files.includes('meta.json'), 'Should have meta.json');
     assert.ok(
       files.includes('response.json') || files.includes('response.sse'),
       'Should have response.json or response.sse'
     );
-    assert.equal(files.length, 4, 'Should have exactly 4 files');
+    assert.equal(files.length, 5, 'Should have exactly 5 files');
   });
 
   // -------------------------------------------------------------------------
-  // 2. Response Body Capture - JSON
+  // 2. Request Header Capture
+  // -------------------------------------------------------------------------
+  it('should capture request headers in headers.json', async () => {
+    const PORT = 18410;
+    mockUpstream = await startMockUpstream((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ id: 'test', choices: [] }));
+    });
+
+    const routesConfig = buildRoutesConfig([
+      { id: 'mock-headers', provider: 'headers-provider', baseURL: `http://127.0.0.1:${mockUpstream.port}` },
+    ]);
+    proxy = await createProxyWithDebugBody(PORT, routesConfig);
+
+    await httpFetch(PORT, '/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'x-session-id': 'headers-session',
+        'x-custom-debug': 'debug-value',
+      },
+      body: JSON.stringify({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'Test' }],
+      }),
+    });
+
+    await new Promise((r) => setTimeout(r, 500));
+
+    const dirs = await listDebugDirs();
+    const ourDir = dirs.find((d) => d.includes('headers-session'));
+    assert.ok(ourDir, 'Should create directory for header capture request');
+
+    const headersPath = path.join(getDebugBodiesDir(), ourDir, 'headers.json');
+    const exists = await waitForFile(headersPath);
+    assert.ok(exists, 'headers.json should exist');
+
+    const headers = JSON.parse(await fs.readFile(headersPath, 'utf-8'));
+    assert.equal(headers['x-session-id'], 'headers-session');
+    assert.equal(headers['x-custom-debug'], 'debug-value');
+    assert.equal(headers['content-type'], 'application/json');
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. Response Body Capture - JSON
   // -------------------------------------------------------------------------
   it('should capture JSON response in response.json', async () => {
     const PORT = 18402;
@@ -425,7 +476,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. Response Body Capture - SSE
+  // 3. Response Body Capture - SSE
   // -------------------------------------------------------------------------
   it('should capture SSE response in response.sse', async () => {
     const PORT = 18403;
@@ -478,7 +529,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 3. Meta File Verification
+  // 4. Meta File Verification
   // -------------------------------------------------------------------------
   it('should have complete meta.json with all required fields', async () => {
     const PORT = 18404;
@@ -523,7 +574,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Folder Name Sanitization
+  // 5. Folder Name Sanitization
   // -------------------------------------------------------------------------
   it('should sanitize invalid characters in sessionId', async () => {
     const PORT = 18405;
@@ -572,7 +623,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Folder Name Sanitization - Edge cases
+  // 5. Folder Name Sanitization - Edge cases
   // -------------------------------------------------------------------------
   it('should handle empty/missing sessionId with "unknown"', async () => {
     const PORT = 18406;
@@ -604,7 +655,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Error Handling - Silent failures
+  // 6. Error Handling - Silent failures
   // -------------------------------------------------------------------------
   it('should not crash when file writes fail', async () => {
     const PORT = 18407;
@@ -632,7 +683,7 @@ describe('Proxy Debugbody Feature', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Error Handling - Normal proxy operation continues
+  // 6. Error Handling - Normal proxy operation continues
   // -------------------------------------------------------------------------
   it('should continue normal proxy operation even if debug body fails', async () => {
     const PORT = 18408;

@@ -77,11 +77,25 @@ export const authSchema = z.object({
   keys: z.array(authKeySchema).default([]),
 });
 
+export const mcpProxyEntrySchema = z.object({
+  upstream: z.string().url('Upstream URL must be a valid URL'),
+  path: z.string()
+    .min(1, 'Path is required')
+    .startsWith('/', 'Path must start with /')
+    .refine(
+      (v) => !v.startsWith('/_internal/'),
+      'MCP proxy path must not start with /_internal/',
+    ),
+});
+
+export const mcpProxySchema = z.record(z.string(), mcpProxyEntrySchema);
+
 export const proxyConfigSchema = z.object({
   version: z.literal(1).optional(),
   port: z.number().int().positive().default(3000),
   routes: routesSchema.default({}),
   auth: authSchema.optional(),
+  mcpProxy: mcpProxySchema.optional(),
 });
 
 export function validateProxyConfig(config) {

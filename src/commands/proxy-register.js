@@ -267,17 +267,28 @@ export async function registerAction(options = {}) {
         }
       }
 
-      // Route-level thinking override — highest priority
-      if (route.thinking) {
-        modelConfig.thinking = cloneDeep(route.thinking);
-      }
+        // Remove inherited top-level `thinking` (belongs only under `options.thinking`)
+        delete modelConfig.thinking;
 
-      // Route-level reasoningEffort override — highest priority
-      if (route.reasoningEffort) {
-        modelConfig.reasoning = { effort: route.reasoningEffort };
-      }
+        // Route-level thinking override — highest priority
+        if (route.thinking) {
+          if (!modelConfig.options) modelConfig.options = {};
+          modelConfig.options.thinking = cloneDeep(route.thinking);
+        }
 
-      providerConfig.models[virtualModel] = modelConfig;
+        // Route-level reasoningEffort override — highest priority
+        if (route.reasoningEffort) {
+          if (!modelConfig.options) modelConfig.options = {};
+          modelConfig.options.reasoningEffort = route.reasoningEffort;
+          modelConfig.reasoning = true;
+        }
+
+        // thinking.type=disabled overrides reasoning to false
+        if (modelConfig.options?.thinking?.type === 'disabled') {
+          modelConfig.reasoning = false;
+        }
+
+        providerConfig.models[virtualModel] = modelConfig;
       modelList.push(virtualModel);
     }
   };

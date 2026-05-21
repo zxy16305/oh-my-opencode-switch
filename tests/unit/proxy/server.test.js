@@ -288,6 +288,49 @@ describe('Server – forwardRequest()', () => {
     });
     assert.equal(capturedHeaders['keep-alive'], undefined);
   });
+
+  test('skips only the current response when onProxyRes returns false', async () => {
+    const firstUpstreamPort = allocPort();
+    await startUpstream(firstUpstreamPort, (_req, res) => {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Too Many Requests' } }));
+    });
+
+    const retryUpstreamPort = allocPort();
+    await startUpstream(retryUpstreamPort, (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'x-used-provider': 'retry' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+
+    const proxyPort = allocPort();
+    const server = http.createServer((clientReq, clientRes) => {
+      forwardRequest(clientReq, clientRes, `http://127.0.0.1:${firstUpstreamPort}/`, {
+        onProxyRes: (proxyRes) => {
+          if (proxyRes.statusCode !== 429) return;
+
+          forwardRequest(clientReq, clientRes, `http://127.0.0.1:${retryUpstreamPort}/`, {
+            body: JSON.stringify({ retry: true }),
+            headers: { 'content-type': 'application/json' },
+          });
+          return false;
+        },
+      });
+    });
+    track(server);
+    await new Promise((resolve, reject) => {
+      server.listen(proxyPort, resolve);
+      server.once('error', reject);
+    });
+
+    const response = await Promise.race([
+      httpGet(proxyPort, '/'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000)),
+    ]);
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers['x-used-provider'], 'retry');
+    assert.deepEqual(JSON.parse(response.body), { ok: true });
+  });
 });
 
 describe('Server – keep-alive agent()', () => {

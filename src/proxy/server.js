@@ -100,7 +100,7 @@ function buildProxyOptions(clientReq, targetUrl, extraHeaders = {}) {
  * @param {http.IncomingMessage} clientReq
  * @param {http.ServerResponse} clientRes
  * @param {string} targetUrl
- * @param {{ onProxyReq?: (proxyReq: http.ClientRequest, clientReq: http.IncomingMessage) => void, onProxyRes?: (proxyRes: http.IncomingMessage, clientReq: http.IncomingMessage) => void, onError?: (error: Error, phase: string) => void, body?: string | Buffer, headers?: Record<string, string> }} [options]
+ * @param {{ onProxyReq?: (proxyReq: http.ClientRequest, clientReq: http.IncomingMessage) => void, onProxyRes?: (proxyRes: http.IncomingMessage, clientReq: http.IncomingMessage) => void | false, onError?: (error: Error, phase: string) => void, body?: string | Buffer, headers?: Record<string, string> }} [options]
  */
 export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
   let parsedTarget;
@@ -121,12 +121,11 @@ export function forwardRequest(clientReq, clientRes, targetUrl, options = {}) {
 
   const proxyReq = transport.request(proxyOptions, (proxyRes) => {
     if (options.onProxyRes) {
-      options.onProxyRes(proxyRes, clientReq);
-    }
-
-    if (clientRes._retry429) {
-      proxyRes.resume(); // Skip response for 429 retry
-      return;
+      const shouldContinue = options.onProxyRes(proxyRes, clientReq);
+      if (shouldContinue === false) {
+        proxyRes.resume();
+        return;
+      }
     }
 
     if (isSSE(proxyRes.headers)) {

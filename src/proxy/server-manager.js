@@ -453,8 +453,6 @@ export class ProxyServerManager {
                   route.upstreams.length > 1 &&
                   retryCount < MAX_RETRIES
                 ) {
-                  res._retry429 = true;
-
                   const nextUpstream = failoverStickySession(
                     sessionId,
                     upstream.id,
@@ -673,7 +671,7 @@ export class ProxyServerManager {
                       },
                     });
 
-                    return;
+                    return false;
                   }
                 }
               }
